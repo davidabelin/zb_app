@@ -119,6 +119,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Contents of config folder
 config/
 
 # Spyder project settings
