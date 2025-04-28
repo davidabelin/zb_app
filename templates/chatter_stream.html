@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Zenbot Dokusan{% endblock %}
+{% block content %}
+<div class="chat-container">
+  <header class="chat-header">
+      <h2>Chat with ZM Mumonbot</h2>
+      <i>(Or one of the other <b>ZM Zenbot</b> varieties now in training...)</i>
+      <div id="chatPreface"></div> <!-- Koan text goes here and stays through chat -->
+  </header>
+
+  <body>
+    <div id="chat-box"></div>
+    <input type="text" id="user-input">
+    <button id="send-button">Send</button>
+
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        let conversationId = null; // Initialize to null
+
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            const message = userInput.value;
+            userInput.value = '';
+            displayMessage('user', message);
+
+            // Send message to server
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            
+            fetch('/chat', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ message: message })
+            })
+            .then(response => {
+                // Check if the response is successful
+                if (!response.ok) {
+                    console.error("Response was not ok: ", response);
+                    throw new Error('Network response was not ok');
+                }
+                // Check for stream response
+                if (response.headers.get('content-type').includes('text/event-stream')) {
+                    // Handle streaming response
+                    handleStreamResponse(response)
+                } else {
+                    console.log("Response not a stream.");
+                    throw new Error("Response not a stream.");
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                displayMessage('system', "An error occurred.");
+            });
+        }
+
+        async function handleStreamResponse(response) {
+            const source = new EventSource('/chat');
+            source.onmessage = event => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.response === '[DONE]') {
+                        source.close();
+                    } else {
+                        displayMessage('assistant', data.response);
+                    }
+                } catch (error) {
+                    console.error('Error parsing JSON:', error);
+                    displayMessage('system', 'Error processing message from server.');
+                }
+            };
+
+            source.onerror = error => {
+                console.error('EventSource error:', error);
+                displayMessage('system', 'Connection error. Retrying...');
+            };
+        }
+        
+        async function readStream(reader) {
+            let result = await reader.read();
+            while (!result.done) {
+              const chunk = new TextDecoder().decode(result.value);
+              displayMessage('assistant', chunk)
+              result = await reader.read();
+            }
+        }
+
+        function displayMessage(role, message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add(role);
+            messageDiv.textContent = message;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    </script>
+</body>
+</div>
+{% endblock %}

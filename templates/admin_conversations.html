@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Zenbot Dokusan{% endblock %}
+{% block content %}
+<section>
+    <i>(For Administrative Use Only.)</i>
+    <br>
+</section>
+<header>
+    <h1>Zenbot Dokusan</h1>
+    <h2>GCS Bucket Storage</h2>
+    <p>List of Saved Session Transcripts</p>
+</header>
+<section>
+    <ul>
+      {% for conversation_id in conversation_ids %}
+        <li>
+          <a href="{{ url_for('admin_conversation_detail', conversation_id=conversation_id) }}">
+            {{ conversation_id }}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+    <br>
+	<a href="{{ url_for('download_chats') }}"><b>Download all.</b></a>
+</section>
+{% endblock %}

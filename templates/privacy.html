@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+{% extends "base.html" %}
+{% block title %}Privacy Policy{% endblock %}
+{% block content %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <header>
+        <h1>Zenbot Dokusan Web App Privacy Policy</h1>
+    </header>
+
+    <main>
+        <section>
+            <h2>Overview</h2>
+            <p>Your privacy is important to us. This policy has been developed to reassure you that we won't misuse, or even use at all, any important information we may collect from you while use the site. There is little or no personal information collected by us when you use our site and services, and we safeguard even that.</p>
+        </section>
+
+        <section>
+            <h2>Information We Collect</h2>
+            <p>We may collect personal data such as your name and email address through OAuth authentication services. This information is used solely to provide access to the functionalities of our site and will not be shared with third parties without your consent.</p>
+        </section>
+
+        <section>
+            <h2>Use of OAuth</h2>
+            <p>Sometimes, we may use Google OAuth to authenticate users. During the OAuth process, we may request your Google profile and email address. This information is used to log you into the site and use its services.</p>
+        </section>
+
+        <section>
+            <h2>Data Security</h2>
+            <p>We take reasonable measures to protect your data from unauthorized access, use, or disclosure. However, please be aware that no method of transmitting or storing data is completely secure.</p>
+        </section>
+
+        <section>
+            <h2>Changes to This Policy</h2>
+            <p>We may update this privacy policy from time to time. Any changes will be posted on this page, and we encourage you to review it periodically.</p>
+        </section>
+
+        <section>
+            <h2>Contact Us</h2>
+            <p>If you have any questions or concerns regarding this privacy policy, please contact us at: wikiscient@gmail.com</p>
+        </section>
+    </main>
+</body>
+{% endblock %}
+</html>

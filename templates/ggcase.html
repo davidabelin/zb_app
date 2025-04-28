@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+    <h1>Case Study from the <i>Gateless Gate</i> Collection</h1>
+</header>
+<body>
+    <div id="koan-container" data-case-id={{ caseId or 0 }}>Loading koan...</div>
+</body>
+{% endblock %}
+{% block footer %}
+    <a href="/gg"><b>Back to List of Cases</b></a>
+{% endblock %}
