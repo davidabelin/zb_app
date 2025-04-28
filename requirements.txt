@@ -1,0 +1,16 @@
+Werkzeug>=2.0.3  # Ensure compatibility with Flask
+Flask>=2.3.2
+flask_session
+flask_login
+gunicorn>=20.1.0
+google-cloud-storage>=2.9.0
+google-cloud-firestore
+requests>=2.28.2
+python-dotenv
+openai>=1.61.0
+protobuf
+pyyaml
+black==23.9.1
+flake8==6.0.0
+mypy==1.5.1
+pre-commit==3.4.0

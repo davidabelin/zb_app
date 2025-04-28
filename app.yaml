@@ -1,0 +1,16 @@
+runtime: python39
+entrypoint:  gunicorn --timeout 30 -b :$PORT main:app
+
+handlers:
+  - url: /static
+    static_dir: static
+
+env_variables:
+  GOOGLE_CLOUD_PROJECT: zenbot-434517
+  GOOGLE_API_KEY: AIzaSyBsZ98ixt3QBghGxxNrDoGsx9G5xFF3-DA
+  GOOGLE_APPLICATION_CREDENTIALS: config/google_zenbot_434517.json
+  OPENAI_API_KEY:  sk-svcacct-QKr7LzsvrTk1Ie3_7h_4mLhH6YBGaOf0P-oVAo85TIjxL_KIUdEg2eP0RKFeGX0ET3BlbkFJnsCqSGnchkPJiiaXHR5x8I2Q9D6NyO0katpPKBa3Lgxqb_0GHblTiMt01cpQYusA
+
+  FLASK_SECRET_KEY: 482937561034
+
+service_account: zenbot-sa@zenbot-434517.iam.gserviceaccount.com
