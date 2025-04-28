@@ -78,8 +78,12 @@ def get_next_model(config=config, case_id=None, student=None):
 
 # Load starting params for very first session after last app update:
 #CLARGS=get_next_model()
-def reset_test(case_id=None, student=None):
-    session_mgr.reset(case_id, student)
+def reset_test(config=config, case_id=None, student=None):
+    try:
+        session_mgr.reset(case_id, student)
+    except Exception as e:
+        logging.error(f"utilities.reset_test() failed: {e}")
+
 
 # Load starting params thereafter with /reset_test:
 def reset_test_og(config=config, case_id=None, student=None):
@@ -182,15 +186,9 @@ def get_model_reply(messages):
                          or else the OpenAI error if there was a problem 
         '''
     try:
-        #print(f"get_model_reply().messages[0].TYPE: {type(messages[0])}")
-        #print(f"get_model_reply().messages[0]:")
-        #print(messages[0])
         completion = BOTLING.chat.completions.create(
                                 messages=messages,
                                 **session_mgr.args)
-        #print(f"get_model_reply().completion.choices[0].message.TYPE: {type(completion.choices[0].message)}")
-        #print(f"get_model_reply().completion.choices[0].message:")
-        #print(completion.choices[0].message)
         return completion.choices[0].message.content #to /prompt_and_reply()
     except openai.APIConnectionError as e:
         logging.error(f"OpenAI API connection error: {e}")
@@ -208,9 +206,6 @@ def prompt_and_reply(messages, prompt):
         Returns: messages (dict of str) with completion appended
         Or an error...?
     '''
-    #Not necessary really:
-    #if not isinstance(prompt, str) or len(prompt) > 2048:  # string and length limit
-    #    return jsonify({"error": "/prompt_and_reply(): Invalid input."}), 400
     messages.append({"role": "user", "content": prompt})
     assistant_reply = get_model_reply(messages) 
     messages.append({"role": "assistant", "content": assistant_reply})
