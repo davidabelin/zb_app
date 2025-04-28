@@ -133,7 +133,7 @@ def save_chat():
             messages = get_messages_from_firestore(conversation_id)
             if messages:
                 # Prepare to archive:
-                params = utipy.CLARGS.copy()
+                params = utipy.session_mgr.args.copy()
                 params['model'] = utipy.config.MODEL_NAME
                 params.update({'conversation_id': conversation_id})
                 case_id = request.cookies.get('case_id')
@@ -218,7 +218,7 @@ def zb_api_save_chat():
         conversation_id = data.get('conversation_id')
         if conversation_id:
             # Prepare to archive:
-            params = utipy.CLARGS.copy()
+            params = utipy.session_mgr.args.copy()
             params.update({'conversation_id': conversation_id})
             params['model'] = utipy.config.MODEL_NAME
             params.update({'loss': utipy.config.TRAINING_LOSS})
