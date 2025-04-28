@@ -1,6 +1,7 @@
 # C:\Users\David\Documents\Local_Python\zenbot\zb_app\main.py
-# Web App: 'Zenbot Dokusan' v7.0 https://zenbot-434517.uw.r.appspot.com/
+# Web App: 'Zenbot Dokusan' v7.1 https://zenbot-434517.uw.r.appspot.com/
 # -- API SCHEMAS v3.0.x
+# GitHub repo https://github.com/davidabelin/zb_app
 
 import os
 import logging

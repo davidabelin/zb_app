@@ -9,6 +9,32 @@ from flask import request, jsonify  # For error responses in prompt_and_reply an
 import openai
 from openai import OpenAI
 from config import Config
+import json
+
+class SessionManager:
+    def __init__(self, config):
+        self.config = config
+        self.args = self._get_next_args()
+
+    def _get_next_args(self, case_id=None, student=None) -> dict:
+        # Essentially move your existing get_next_model() here:
+        self.config.CASE_ID = case_id
+        self.config.STUDENT = student
+        # pick a new model name & loss
+        model_key = rnd.choice(list(self.config.MODELS.keys()))
+        self.config.MODEL_NAME = model_key
+        self.config.TRAINING_LOSS = self.config.MODEL_LOSSES[model_key]
+        # build the args dict
+        clargs = self.config.PARAMS.copy()
+        clargs["model"] = self.config.MODELS[model_key]
+        profile = rnd.choice(list(self.config.MODEL_ARGS))
+        clargs.update(self.config.MODEL_ARGS[profile])
+        return clargs
+
+    def reset(self, case_id=None, student=None) -> dict:
+        """Call whenever you need a brand-new session_mgr.args set."""
+        self.args = self._get_next_args(case_id, student)
+        return self.args
 
 # #### Instantiation of persistent variables:
 # Global presets imported from config.py
@@ -21,8 +47,9 @@ BUCKET = storage.Client().bucket(config.BUCKET_NAME)
 DB = firestore.Client()
 
 # Botling evaluation tools
+session_mgr = SessionManager(config)
 
-# Reset botling model and test parameters, chosen randomly
+# Reset botling model and test parameters, chosen rndly
 # Must be called before EVERY chat when in Evaluation Mode
 def get_next_model(config=config, case_id=None, student=None):
     '''
@@ -39,7 +66,7 @@ def get_next_model(config=config, case_id=None, student=None):
     # Reset changed params
     # Access the first item in the MODEL dict
     #config.MODEL_NAME = next(iter(config.MODELS.keys()))
-    # OR randomly
+    # OR rndly
     config.MODEL_NAME = rnd.choice(list(config.MODELS.keys()))
     config.TRAINING_LOSS = config.MODEL_LOSSES[config.MODEL_NAME]
     clargs = config.PARAMS.copy()
@@ -50,10 +77,12 @@ def get_next_model(config=config, case_id=None, student=None):
     return clargs
 
 # Load starting params for very first session after last app update:
-CLARGS=get_next_model()
+#CLARGS=get_next_model()
+def reset_test(case_id=None, student=None):
+    session_mgr.reset(case_id, student)
 
 # Load starting params thereafter with /reset_test:
-def reset_test(config=config, case_id=None, student=None):
+def reset_test_og(config=config, case_id=None, student=None):
     '''
     Globally load new test model and parameters
     Called at start of every new dokusan session
@@ -112,7 +141,7 @@ def get_model_stream(messages):
         stream = BOTLING.chat.completions.create(
                                 messages=messages,
                                 stream=True,  # streaming enabled!
-                                **CLARGS)
+                                **session_mgr.args)
         for chunk in stream:
             if chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
@@ -158,7 +187,7 @@ def get_model_reply(messages):
         #print(messages[0])
         completion = BOTLING.chat.completions.create(
                                 messages=messages,
-                                **CLARGS)
+                                **session_mgr.args)
         #print(f"get_model_reply().completion.choices[0].message.TYPE: {type(completion.choices[0].message)}")
         #print(f"get_model_reply().completion.choices[0].message:")
         #print(completion.choices[0].message)
@@ -188,6 +217,11 @@ def prompt_and_reply(messages, prompt):
     return messages # back to chat() or zb_api_chat()
 
 def save_chat_to_file(data, params, file_path):
+    jsonl_content = to_jsonl(params, data)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(jsonl_content)
+
+def save_chat_to_file_og(data, params, file_path):
     # Sent from /save_chat()
     # Convert data to JSONL format
     lines = [json.dumps(params)] + [json.dumps(item) for item in data]
@@ -204,6 +238,11 @@ def get_chat_from_file(file_path):
     return data
 
 def save_chat_to_bucket(data, params, blob_name):
+    jsonl_content = to_jsonl(params, data)
+    blob = BUCKET.blob(blob_name)
+    blob.upload_from_string(jsonl_content, content_type="application/jsonl")
+
+def save_chat_to_bucket_og(data, params, blob_name):
     # Convert data to JSONL format
     lines = [json.dumps(params)] + [json.dumps(item) for item in data]
     jsonl_content = '\n'.join(lines)
@@ -272,6 +311,16 @@ def download_all():
 
 # ########## ADDITIONAL FUNCTIONALITY #######
 #
+
+def to_jsonl(params: dict, messages: list) -> str:
+    """
+    Convert a params dict and a list of message‐dicts into a JSONL string.
+    First line is the params JSON, each subsequent line is one message.
+    """
+    lines = [json.dumps(params)] + [json.dumps(item) for item in messages]
+    return "\n".join(lines)
+
+
 def load_memory_logbook():
     '''
     Load existing memory logbook from GCS bucket.
