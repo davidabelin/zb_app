@@ -1,38 +1,39 @@
-# utilities.py
+
+# utilities.py (refactored for Config.make_params)
 from datetime import datetime
-import os
+#import os
 import json
 import random as rnd
 import logging
 from google.cloud import storage, firestore
-from flask import request, jsonify  # For error responses in prompt_and_reply and get_model_reply
+from flask import request, jsonify
 import openai
 from openai import OpenAI
 from config import Config
-import json
+from models import MODEL_LOSSES
 
 class SessionManager:
-    def __init__(self, config):
+    def __init__(self, config: Config):
         self.config = config
         self.args = self._get_next_args()
 
     def _get_next_args(self, case_id=None, student=None) -> dict:
-        # Essentially move your existing get_next_model() here:
+        # Update dynamic state
         self.config.CASE_ID = case_id
         self.config.STUDENT = student
-        # pick a new model name & loss
+        # Select a random model
         model_key = rnd.choice(list(self.config.MODELS.keys()))
         self.config.MODEL_NAME = model_key
-        self.config.TRAINING_LOSS = self.config.MODEL_LOSSES[model_key]
-        # build the args dict
-        clargs = self.config.PARAMS.copy()
-        clargs["model"] = self.config.MODELS[model_key]
-        profile = rnd.choice(list(self.config.MODEL_ARGS))
-        clargs.update(self.config.MODEL_ARGS[profile])
-        return clargs
+        # Set training loss from MODEL_LOSSES
+        self.config.TRAINING_LOSS = MODEL_LOSSES.get(model_key, 0.0)
+        # Choose a random profile
+        profile = rnd.choice(list(self.config.MODEL_ARGS.keys()))
+        # Build parameters using the dataclass helper
+        params = self.config.make_params(profile)
+        return params
 
     def reset(self, case_id=None, student=None) -> dict:
-        """Call whenever you need a brand-new session_mgr.args set."""
+        """Reset session parameters for a new conversation."""
         self.args = self._get_next_args(case_id, student)
         return self.args
 
@@ -40,247 +41,114 @@ class ModelAPIError(Exception):
     """Raised when an OpenAI API call fails."""
     pass
 
-# #### Instantiation of persistent variables:
-# Global presets imported from config.py
+# Instantiate global clients and state
 config = Config()
-# Client for model training
 BOTLING = OpenAI(api_key=config.OPENAI_API_KEY)
-# Cloud storage for archiving chats
 BUCKET = storage.Client().bucket(config.BUCKET_NAME)
-# Firestore client for in-chat storage
 DB = firestore.Client()
 
-# Load starting params for very first session after last app update:
-# CLARGS=get_next_model()
-# Use these instead
-session_mgr = SessionManager(config) #better Botling evaluation tools
+# Initialize session manager
+session_mgr = SessionManager(config)
 
-# Reset botling model and test parameters, chosen rndly
-# Must be called before EVERY chat when in Evaluation Mode
-def get_next_model(config=config, case_id=None, student=None):
-    '''
-    config: object containing preset model params
-    returns next model and parameters
-    '''
-    config.CASE_ID = case_id
-    config.STUDENT = student
-    config.KOAN = {
-        'id': case_id,
-        'title': 'None',
-        'body': 'Empty'
-    }
-    # Reset changed params
-    # Access the first item in the MODEL dict
-    #config.MODEL_NAME = next(iter(config.MODELS.keys()))
-    # OR rndly
-    config.MODEL_NAME = rnd.choice(list(config.MODELS.keys()))
-    config.TRAINING_LOSS = config.MODEL_LOSSES[config.MODEL_NAME]
-    clargs = config.PARAMS.copy()
-    clargs['model'] = config.MODELS[config.MODEL_NAME]
-    test_params = rnd.choice(list(config.MODEL_ARGS.keys()))
-    for arg in config.MODEL_ARGS[test_params]:
-        clargs[arg] = config.MODEL_ARGS[test_params][arg]
-    return clargs
-
-def reset_test(config=config, case_id=None, student=None):
+def reset_test(case_id=None, student=None):
+    """Reset the session manager for a fresh conversation."""
     try:
-        session_mgr.reset(case_id, student)
+        return session_mgr.reset(case_id, student)
     except Exception as e:
-        err_str = f"utilities.reset_test() failed: {e}"
-        logging.error(err_str)
-        raise ModelAPIError(err_str)
+        err_msg = f"utilities.reset_test() failed: {e}"
+        logging.error(err_msg)
+        raise ModelAPIError(err_msg)
 
-# Load starting params thereafter with /reset_test:
-def reset_test_og(config=config, case_id=None, student=None):
-    '''
-    Globally load new test model and parameters
-    Called at start of every new dokusan session
-    '''
-    try:
-        global CLARGS
-        CLARGS = get_next_model(config, case_id, student)
-    except Exception as e:
-        logging.error(f"utilities.reset_test() failed: {e}")
-    return
+# ---------------- Session Tools ------------
 
-# ########## CHAT FUNCTIONS MOVED FROM MAIN.PY ###########
-def get_cid(student=None):
+def get_cid(student=None) -> str:
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     if student:
-        conversation_id = f'zb-{student}-{timestamp}'
-    elif config.LOCAL:
-        conversation_id = f'zb-local-{timestamp}'
-    else:
-        conversation_id = f'zb-app-{timestamp}'
-    return conversation_id
+        return f'zb-{student}-{timestamp}'
+    return f'zb-local-{timestamp}' if config.LOCAL else f'zb-app-{timestamp}'
 
-def save_messages_to_firestore(conversation_id, messages):
+def save_messages_to_firestore(conversation_id: str, messages: list) -> None:
     try:
-        doc_ref = DB.collection('conversations').document(conversation_id)
-        doc_ref.set({'messages': messages})
+        DB.collection('conversations').document(conversation_id).set({'messages': messages})
     except Exception as e:
         logging.error(f"Error saving messages to Firestore: {e}")
 
-def get_messages_from_firestore(conversation_id):
+def get_messages_from_firestore(conversation_id: str) -> list:
     try:
-        doc_ref = DB.collection('conversations').document(conversation_id)
-        doc = doc_ref.get()
-        # Retrieve messages if already chatting
+        doc = DB.collection('conversations').document(conversation_id).get()
         if doc.exists:
             return doc.to_dict().get('messages', [])
-        # Else start a new conversation
-        if config.LOCAL: print("Firestore: document not found. Starting a new conversation.")
     except Exception as e:
-        #print(f"Error getting messages from Firestore: {e}")
         logging.error(f"Error retrieving messages from Firestore: {e}")
+    # Fallback to starter chat
     return config.START_CHATS['smiles'].copy()
 
-def delete_messages_from_firestore(conversation_id):
+def delete_messages_from_firestore(conversation_id: str) -> None:
     DB.collection('conversations').document(conversation_id).delete()
 
-def get_model_stream(messages):
-    ''' NEW Streaming feature being implemented..
-        Request completion from Client using pretrained model BOTLING
-        Params:
-            messages: (dict of strings) the full transcript up to this point in chat
-        Returns:
-            stream: returns the streaming response from the 'botling' (f.t. model)
-    '''
+# ---------------- Model Interaction ------------
+
+def get_model_stream(messages: list):
+    """Streamed completion from the model."""
     try:
         stream = BOTLING.chat.completions.create(
-                                messages=messages,
-                                stream=True,  # streaming enabled!
-                                **session_mgr.args)
+            messages=messages,
+            stream=True,
+            **session_mgr.args
+        )
         for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-    except openai.APIConnectionError as e:
-        logging.error(f"OpenAI API connection error: {e}")
-        raise ModelAPIError(f"Connection error: {e}")
-    except openai.APIError as e:
-        logging.error(f"OpenAI API error: {e}")
-        raise ModelAPIError(f"API error: {e}")
-    except Exception as e:
-        logging.error(f"Unexpected error in get_model_stream(): {e}")
-        raise ModelAPIError(f"Unexpected model error: {e}")
+            text = chunk.choices[0].delta.content
+            if text:
+                yield text
+    except openai.OpenAIError as e:
+        logging.error(f"OpenAI error: {e}")
+        raise ModelAPIError(str(e))
 
-def prompt_and_stream(messages, prompt):
-    ''' NEW Streaming feature being implemented..'''
-    if not isinstance(prompt, str) or len(prompt) > 2048:  # string and length limit
-        return jsonify({"error": "/prompt_and_reply(): Invalid input."}), 400
+def get_model_reply(messages: list) -> str:
+    """Synchronous completion from the model."""
+    try:
+        completion = BOTLING.chat.completions.create(
+            messages=messages,
+            **session_mgr.args
+        )
+        return completion.choices[0].message.content
+    except openai.OpenAIError as e:
+        logging.error(f"OpenAI error: {e}")
+        raise ModelAPIError(str(e))
+
+# ---------------- Prompt ----------------
+
+def prompt_and_stream(messages: list, prompt: str):
+    if not isinstance(prompt, str) or len(prompt) > 2048:
+        return jsonify({"error": "Invalid input."}), 400
     messages.append({"role": "user", "content": prompt})
-    #return messages # back to chat() or zb_api_chat()
-    response_generator = get_model_reply(messages)
-    # Accumulate the chunks and yield the complete reply
     full_reply = ""
-    for chunk in response_generator:
+    for chunk in get_model_stream(messages):
         full_reply += chunk
-        yield "data: " + json.dumps({"response": chunk}) + "\n\n" #SSE formatting
+        yield "data: " + json.dumps({"response": chunk}) + "\n\n"
     messages.append({"role": "assistant", "content": full_reply})
     yield "data: " + json.dumps({"response": "[DONE]"}) + "\n\n"
 
-def get_model_reply(messages):
-    ''' 
-        Request completion from Client using pretrained model BOTLING
-        Params:
-            messages (dict of strings):
-                    the full transcript up to this point in chat,
-                    with user's prompt appended
-        Returns:
-            reply (str): the chat completion string (expected in completion.choices[0].message.content)
-                         or else the OpenAI error if there was a problem 
-        '''
-    try:
-        completion = BOTLING.chat.completions.create(
-                                messages=messages,
-                                **session_mgr.args)
-        return completion.choices[0].message.content 
-        # back to /prompt_and_reply()
-    except openai.APIConnectionError as e:
-        logging.error(f"OpenAI API connection error: {e}")
-        raise ModelAPIError(f"Connection error: {e}")
-    except openai.APIError as e:
-        logging.error(f"OpenAI API error: {e}")
-        raise ModelAPIError(f"API error: {e}")
-    except Exception as e:
-        logging.error(f"Unexpected error in get_model_reply(): {e}")
-        raise ModelAPIError(f"Unexpected model error: {e}")
-
-def prompt_and_reply(messages, prompt):
-    ''' Messages (dict of str) + Prompt(str) = Completion (str) from the botling
-        Returns: messages (dict of str) with completion appended
-        Or an error...?
-    '''
+def prompt_and_reply(messages: list, prompt: str) -> list:
     messages.append({"role": "user", "content": prompt})
-    assistant_reply = get_model_reply(messages) 
-    messages.append({"role": "assistant", "content": assistant_reply})
-    return messages # back to chat() or zb_api_chat()
+    reply = get_model_reply(messages)
+    messages.append({"role": "assistant", "content": reply})
+    return messages
 
-def save_chat_to_file(data, params, file_path):
-    jsonl_content = to_jsonl(params, data)
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(jsonl_content)
+# ---------------- GCS Files ----------------
 
-def save_chat_to_file_og(data, params, file_path):
-    # Sent from /save_chat()
-    # Convert data to JSONL format
-    lines = [json.dumps(params)] + [json.dumps(item) for item in data]
-    jsonl_content = '\n'.join(lines)
-    # Save locally
+def to_jsonl(params: dict, messages: list) -> str:
+    lines = [json.dumps(params)] + [json.dumps(m) for m in messages]
+    return "\n".join(lines)
+
+def save_chat_to_file(data: list, params: dict, file_path: str) -> None:
+    content = to_jsonl(params, data)
     with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(jsonl_content)
+        f.write(content)
 
-def get_chat_from_file(file_path):
-    data = []
-    with open(file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            data.append(json.loads(line.strip()))
-    return data
-
-def save_chat_to_bucket(data, params, blob_name):
-    jsonl_content = to_jsonl(params, data)
+def save_chat_to_bucket(data: list, params: dict, blob_name: str) -> None:
     blob = BUCKET.blob(blob_name)
-    blob.upload_from_string(jsonl_content, content_type="application/jsonl")
-
-def save_chat_to_bucket_og(data, params, blob_name):
-    # Convert data to JSONL format
-    lines = [json.dumps(params)] + [json.dumps(item) for item in data]
-    jsonl_content = '\n'.join(lines)
-    # Save to Google Cloud Storage
-    blob = BUCKET.blob(blob_name)
-    blob.upload_from_string(jsonl_content, content_type='application/jsonl')
-
-def list_conversation_files_in_gcs():
-    blobs = BUCKET.list_blobs(prefix='zbchats/')
-    conversation_files = [blob.name for blob in blobs if blob.name.endswith('.jsonl')]
-    return conversation_files
-
-def get_conversation_from_gcs(conversation_id):
-    filename = f'zbchats/{conversation_id}.jsonl'
-    blob = BUCKET.blob(filename)
-    if blob.exists():
-        content = blob.download_as_string()
-        lines = content.decode('utf-8').splitlines()
-        messages = [json.loads(line) for line in lines] #[1:]
-        return messages
-    else:
-        if config.LOCAL: print(f"No conversation found with ID {conversation_id}.")
-        return None
-
-def get_all_conversations_from_gcs():
-    ''' Returns dictionary by id of all conversations in GCS bucket'''
-    blobs = BUCKET.list_blobs(prefix='zbchats/')
-    conversations = {}
-    for blob in blobs:
-        if blob.name.endswith('.jsonl'):
-            conversation_id = blob.name.split('/')[-1].replace('.jsonl', '')
-            content = blob.download_as_string()
-            lines = content.decode('utf-8').splitlines()
-            # First line is params
-            # Keep it in; BOTLING_params = json.loads(lines[0])
-            messages = [json.loads(line) for line in lines] #[1:]]
-            conversations[conversation_id] = messages
-    return conversations
+    blob.upload_from_string(to_jsonl(params, data), content_type='application/jsonl')
 
 def download_all():
     '''    Retrieve all chats from GCS and save locally.
@@ -294,9 +162,9 @@ def download_all():
                 filename = c_id.replace('\"', '') + ".jsonl"
                 filepath = os.path.join('config', 'zbchats', filename)
                 print("c_id: ", c_id.replace('\"', ''), "\tfilepath: ", filepath)
-                #lines = [json.dumps(item) for item in c_text]
-                jsonl_content = to_jsonl({}) #, if messages) or else pass {})
-                            #originally '\n'.join(lines)
+                lines = [json.dumps(item) for item in c_text]
+                #print(f"lines[0]: {lines[0]}")
+                jsonl_content = '\n'.join(lines)
                 # Save in relative local app directory for now
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(jsonl_content)
@@ -309,17 +177,16 @@ def download_all():
         logging.error(f"Unknown exception in download_all(): {e}")
         return False
 
-# ########## ADDITIONAL FUNCTIONALITY #######
-#
+def list_conversation_files_in_gcs() -> list:
+    return [b.name for b in BUCKET.list_blobs(prefix='zbchats/') if b.name.endswith('.jsonl')]
 
-def to_jsonl(params: dict, messages: list) -> str:
-    """
-    Convert a params dict and a list of message‐dicts into a JSONL string.
-    First line is the params JSON, each subsequent line is one message.
-    """
-    lines = [json.dumps(params)] + [json.dumps(item) for item in messages]
-    return "\n".join(lines)
+def get_conversation_from_gcs(conversation_id: str) -> list:
+    blob = BUCKET.blob(f'zbchats/{conversation_id}.jsonl')
+    if blob.exists():
+        return [json.loads(line) for line in blob.download_as_string().decode().splitlines()]
+    return None
 
+# -------- Logbook ------------------
 def load_memory_logbook():
     '''
     Load existing memory logbook from GCS bucket.
@@ -343,6 +210,8 @@ def update_logbook():
         logbook = []
         if config.LOCAL: print(f"No memory logbook found in GCS Bucket.")
     return logbook
+
+# --------- Koan Work --------------
 
 def koan_startup(koan=config.KOAN):
     start_with_koan = [
@@ -399,18 +268,20 @@ def create_koan_conversation(config=config):
         logging.error(f"Error in create_koan_conversation: {e}")
         return None
 
-def get_request_data():  # Helper function to handle both GET and POST data
-    logging.info(f"get_request_data(): request.method = {request.method}")
+# -------- Assorted Helpers --------
+
+def get_request_data() -> dict:
     if request.method == 'POST':
-        data = request.get_json()
-        if not data:  # Handle empty or malformed JSON in POST
-            logging.warning(f"get_request_data(): POST request data is empty")
-            data = {} # <--- Add this line.
-        logging.info(f"get_request_data(): POST data = {data}") # <--- Modified to capture data
-    else: # GET
-        data = request.args # ImmutableMultiDict; convert to regular dict:
-        data = data.to_dict()
-        logging.info(f"get_request_data(): GET data = {data}")
+        data = request.get_json(silent=True) or {}
+    else:
+        data = request.args.to_dict()
+    return data
+
+def get_chat_from_local_file(file_path):
+    data = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            data.append(json.loads(line.strip()))
     return data
 
 def process_chat(conversation_id, user_input):

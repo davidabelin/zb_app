@@ -1,5 +1,5 @@
 # C:\Users\David\Documents\Local_Python\zenbot\zb_app\main.py
-# Web App: 'Zenbot Dokusan' v7.1 https://zenbot-434517.uw.r.appspot.com/
+# Web App: 'Zenbot Dokusan' v7.2 https://zenbot-434517.uw.r.appspot.com/
 # -- API SCHEMAS v3.0.x
 # GitHub repo https://github.com/davidabelin/zb_app
 
@@ -13,8 +13,8 @@ import utilities as utipy
 from utilities import (get_cid, save_messages_to_firestore, get_messages_from_firestore, get_request_data,
                        delete_messages_from_firestore, save_chat_to_bucket, reset_test,
                        prompt_and_reply, prompt_and_stream, save_chat_to_file,
-                       get_conversation_from_gcs, download_all, list_conversation_files_in_gcs,
-                       create_koan_conversation, load_memory_logbook, update_logbook,
+                       get_conversation_from_gcs, list_conversation_files_in_gcs,
+                       create_koan_conversation, load_memory_logbook, update_logbook, download_all,
                        ModelAPIError)  # Import utility functions
 
 # Log settings -- set in utilities.py
