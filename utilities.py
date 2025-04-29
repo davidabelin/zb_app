@@ -36,6 +36,10 @@ class SessionManager:
         self.args = self._get_next_args(case_id, student)
         return self.args
 
+class ModelAPIError(Exception):
+    """Raised when an OpenAI API call fails."""
+    pass
+
 # #### Instantiation of persistent variables:
 # Global presets imported from config.py
 config = Config()
@@ -46,8 +50,10 @@ BUCKET = storage.Client().bucket(config.BUCKET_NAME)
 # Firestore client for in-chat storage
 DB = firestore.Client()
 
-# Botling evaluation tools
-session_mgr = SessionManager(config)
+# Load starting params for very first session after last app update:
+# CLARGS=get_next_model()
+# Use these instead
+session_mgr = SessionManager(config) #better Botling evaluation tools
 
 # Reset botling model and test parameters, chosen rndly
 # Must be called before EVERY chat when in Evaluation Mode
@@ -76,14 +82,13 @@ def get_next_model(config=config, case_id=None, student=None):
         clargs[arg] = config.MODEL_ARGS[test_params][arg]
     return clargs
 
-# Load starting params for very first session after last app update:
-#CLARGS=get_next_model()
 def reset_test(config=config, case_id=None, student=None):
     try:
         session_mgr.reset(case_id, student)
     except Exception as e:
-        logging.error(f"utilities.reset_test() failed: {e}")
-
+        err_str = f"utilities.reset_test() failed: {e}"
+        logging.error(err_str)
+        raise ModelAPIError(err_str)
 
 # Load starting params thereafter with /reset_test:
 def reset_test_og(config=config, case_id=None, student=None):
@@ -151,13 +156,13 @@ def get_model_stream(messages):
                 yield chunk.choices[0].delta.content
     except openai.APIConnectionError as e:
         logging.error(f"OpenAI API connection error: {e}")
-        return jsonify({"error": str(e), "message": "Unable to connect to the AI model. Please check your network connection."}), 500
+        raise ModelAPIError(f"Connection error: {e}")
     except openai.APIError as e:
         logging.error(f"OpenAI API error: {e}")
-        return jsonify({"error": str(e), "message": "An error occurred with the AI model. Please try again later."}), 500
+        raise ModelAPIError(f"API error: {e}")
     except Exception as e:
-        logging.error(f"Unexpected error thrown in /get_model_reply(): {e}")
-        return jsonify({"error": str(e), "message": "Unexpected error thrown in /get_model_reply()."}), 500
+        logging.error(f"Unexpected error in get_model_stream(): {e}")
+        raise ModelAPIError(f"Unexpected model error: {e}")
 
 def prompt_and_stream(messages, prompt):
     ''' NEW Streaming feature being implemented..'''
@@ -189,17 +194,17 @@ def get_model_reply(messages):
         completion = BOTLING.chat.completions.create(
                                 messages=messages,
                                 **session_mgr.args)
-        return completion.choices[0].message.content #to /prompt_and_reply()
+        return completion.choices[0].message.content 
+        # back to /prompt_and_reply()
     except openai.APIConnectionError as e:
         logging.error(f"OpenAI API connection error: {e}")
-        return f"OpenAI API connection error caught in /get_model_reply():\n{e}"
+        raise ModelAPIError(f"Connection error: {e}")
     except openai.APIError as e:
         logging.error(f"OpenAI API error: {e}")
-        return f"OpenAI API error caught in /get_model_reply():\n{e}"
+        raise ModelAPIError(f"API error: {e}")
     except Exception as e:
-        logging.error(f"Unexpected error caught in /get_model_reply(): {e}")
-        return f"Unexpected error caught in /get_model_reply():\n{e}"
-    # All return strings back to /prompt_and_reply()
+        logging.error(f"Unexpected error in get_model_reply(): {e}")
+        raise ModelAPIError(f"Unexpected model error: {e}")
 
 def prompt_and_reply(messages, prompt):
     ''' Messages (dict of str) + Prompt(str) = Completion (str) from the botling
@@ -289,9 +294,9 @@ def download_all():
                 filename = c_id.replace('\"', '') + ".jsonl"
                 filepath = os.path.join('config', 'zbchats', filename)
                 print("c_id: ", c_id.replace('\"', ''), "\tfilepath: ", filepath)
-                lines = [json.dumps(item) for item in c_text]
-                #print(f"lines[0]: {lines[0]}")
-                jsonl_content = '\n'.join(lines)
+                #lines = [json.dumps(item) for item in c_text]
+                jsonl_content = to_jsonl({}) #, if messages) or else pass {})
+                            #originally '\n'.join(lines)
                 # Save in relative local app directory for now
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(jsonl_content)
@@ -315,7 +320,6 @@ def to_jsonl(params: dict, messages: list) -> str:
     lines = [json.dumps(params)] + [json.dumps(item) for item in messages]
     return "\n".join(lines)
 
-
 def load_memory_logbook():
     '''
     Load existing memory logbook from GCS bucket.
@@ -329,7 +333,7 @@ def load_memory_logbook():
     else:
         if config.LOCAL: print(f"No memory logbook found in GCS Bucket.")
         return []
-    
+
 def update_logbook():
     '''
     Load existing memory logbook, append a new entry to the end, and save back to GCS bucket.

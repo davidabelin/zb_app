@@ -12,9 +12,10 @@ from werkzeug.exceptions import BadRequest
 import utilities as utipy
 from utilities import (get_cid, save_messages_to_firestore, get_messages_from_firestore, get_request_data,
                        delete_messages_from_firestore, save_chat_to_bucket, reset_test,
-                       prompt_and_reply, save_chat_to_file, list_conversation_files_in_gcs,
-                       get_conversation_from_gcs, download_all,
-                       create_koan_conversation, load_memory_logbook, update_logbook)  # Import utility functions
+                       prompt_and_reply, prompt_and_stream, save_chat_to_file,
+                       get_conversation_from_gcs, download_all, list_conversation_files_in_gcs,
+                       create_koan_conversation, load_memory_logbook, update_logbook,
+                       ModelAPIError)  # Import utility functions
 
 # Log settings -- set in utilities.py
 logging.basicConfig(level=utipy.config.LOG_LEVEL)   #, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,7 +42,14 @@ def chatter():
         return render_template('chatter_stream.html')
     else:
         return render_template('chatter.html')
-
+# ########## FLASK ERROR HANDLING ###########
+@app.errorhandler(ModelAPIError)
+def handle_model_error(err):
+    logging.error(f"ModelAPIError handler caught: {err}")
+    return jsonify({
+        "error": "model_error",
+        "message": str(err)
+    }), 502
 # ########## CHAT ROUTES ###########
 @app.route('/chat', methods=['POST', 'GET'])
 def chat():
@@ -87,7 +95,6 @@ def chat():
                         break # Exit loop
             # Prepare response as an SSE stream
             response = Response(stream(), mimetype='text/event-stream')
-
         save_messages_to_firestore(conversation_id, messages)
         # Set conversation ID in cookies if not already set
         if not request.cookies.get('conversation_id'):
