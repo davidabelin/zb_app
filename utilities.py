@@ -46,6 +46,7 @@ config = Config()
 BOTLING = OpenAI(api_key=config.OPENAI_API_KEY)
 BUCKET = storage.Client().bucket(config.BUCKET_NAME)
 DB = firestore.Client()
+MEMORY_LOGBOOK = config.MEMORY_LOGBOOK
 
 # Initialize session manager
 session_mgr = SessionManager(config)
@@ -158,7 +159,7 @@ def save_chat_to_bucket(data: list, params: dict, blob_name: str) -> None:
     blob = BUCKET.blob(blob_name)
     blob.upload_from_string(to_jsonl(params, data), content_type='application/jsonl')
 
-def  get_all_conversations_from_gcs():
+def get_all_conversations_from_gcs():
     ''' Returns dictionary by id of all conversations in GCS bucket'''
     blobs = BUCKET.list_blobs(prefix='zbchats/')
     conversations = {}
@@ -209,29 +210,32 @@ def get_conversation_from_gcs(conversation_id: str) -> list:
     return None
 
 # -------- Memory Logbook ------------------
-def load_memory_logbook():
-    '''
-    Load existing memory logbook from GCS bucket.
-    '''
-    blob = BUCKET.blob(config.MEMORY_LOGBOOK)
-    if blob.exists():
-        content = blob.download_as_string()
-        lines = content.decode('utf-8').splitlines()
-        memories = [json.loads(line) for line in lines]
-        return memories
-    else:
-        if config.LOCAL: print(f"No memory logbook found in GCS Bucket.")
+
+def load_memory_logbook() -> list:
+    # existing loader: download JSONL and return list of dicts
+    try:
+        payload = BUCKET.blob(MEMORY_LOGBOOK).download_as_text()
+        return [json.loads(line) for line in payload.splitlines() if line.strip()]
+    except Exception:
         return []
 
-def update_logbook():
-    '''
-    Load existing memory logbook, append a new entry to the end, and save back to GCS bucket.
-    '''
+def update_logbook(new_entry: dict) -> list:
+    """
+    Append one entry to the logbook and save.
+    """
     logbook = load_memory_logbook()
-    if not logbook or len(logbook)==0:
-        logbook = []
-        if config.LOCAL: print(f"No memory logbook found in GCS Bucket.")
+    logbook.append(new_entry)
+    save_logbook(logbook)
     return logbook
+
+def save_logbook(logbook: list):
+    """
+    Overwrite the entire memory logbook with the provided list.
+    """
+    lines = [json.dumps(item) for item in logbook]
+    payload = "\n".join(lines)
+    blob = BUCKET.blob(MEMORY_LOGBOOK)
+    blob.upload_from_string(payload, content_type='application/jsonl')
 
 # --------- Koan Work --------------
 
