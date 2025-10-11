@@ -1,7 +1,7 @@
 
 # utilities.py (refactored for Config.make_params)
 from datetime import datetime
-#import os
+import os
 import json
 import random as rnd
 import logging
@@ -86,7 +86,7 @@ def get_messages_from_firestore(conversation_id: str) -> list:
 def delete_messages_from_firestore(conversation_id: str) -> None:
     DB.collection('conversations').document(conversation_id).delete()
 
-# ---------------- Model Interaction ------------
+# ---------------- Interacting ------------
 
 def get_model_stream(messages: list):
     """Streamed completion from the model."""
@@ -116,7 +116,7 @@ def get_model_reply(messages: list) -> str:
         logging.error(f"OpenAI error: {e}")
         raise ModelAPIError(str(e))
 
-# ---------------- Prompt ----------------
+# ---------------- Prompting ----------------
 
 def prompt_and_stream(messages: list, prompt: str):
     if not isinstance(prompt, str) or len(prompt) > 2048:
@@ -135,20 +135,42 @@ def prompt_and_reply(messages: list, prompt: str) -> list:
     messages.append({"role": "assistant", "content": reply})
     return messages
 
-# ---------------- GCS Files ----------------
-
-def to_jsonl(params: dict, messages: list) -> str:
-    lines = [json.dumps(params)] + [json.dumps(m) for m in messages]
-    return "\n".join(lines)
-
+# ---------------- LOCAL Files ----------------
 def save_chat_to_file(data: list, params: dict, file_path: str) -> None:
     content = to_jsonl(params, data)
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(content)
 
+def get_chat_from_local_file(file_path):
+    data = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            data.append(json.loads(line.strip()))
+    return data
+
+# ---------------- GCS BUCKET Files ----------------
+
+def to_jsonl(params: dict, messages: list) -> str:
+    lines = [json.dumps(params)] + [json.dumps(m) for m in messages]
+    return "\n".join(lines)
+
 def save_chat_to_bucket(data: list, params: dict, blob_name: str) -> None:
     blob = BUCKET.blob(blob_name)
     blob.upload_from_string(to_jsonl(params, data), content_type='application/jsonl')
+
+def  get_all_conversations_from_gcs():
+    ''' Returns dictionary by id of all conversations in GCS bucket'''
+    blobs = BUCKET.list_blobs(prefix='zbchats/')
+    conversations = {}
+    for blob in blobs:
+        if blob.name.endswith('.jsonl'):
+            conversation_id = blob.name.split('/')[-1].replace('.jsonl', '')
+            content = blob.download_as_string()
+            lines = content.decode('utf-8').splitlines()
+            # First line is params
+            messages = [json.loads(line) for line in lines] #[1:]]
+            conversations[conversation_id] = messages
+    return conversations
 
 def download_all():
     '''    Retrieve all chats from GCS and save locally.
@@ -186,7 +208,7 @@ def get_conversation_from_gcs(conversation_id: str) -> list:
         return [json.loads(line) for line in blob.download_as_string().decode().splitlines()]
     return None
 
-# -------- Logbook ------------------
+# -------- Memory Logbook ------------------
 def load_memory_logbook():
     '''
     Load existing memory logbook from GCS bucket.
@@ -275,13 +297,6 @@ def get_request_data() -> dict:
         data = request.get_json(silent=True) or {}
     else:
         data = request.args.to_dict()
-    return data
-
-def get_chat_from_local_file(file_path):
-    data = []
-    with open(file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            data.append(json.loads(line.strip()))
     return data
 
 def process_chat(conversation_id, user_input):

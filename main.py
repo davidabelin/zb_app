@@ -1,5 +1,5 @@
 # C:\Users\David\Documents\Local_Python\zenbot\zb_app\main.py
-# Web App: 'Zenbot Dokusan' v7.2 https://zenbot-434517.uw.r.appspot.com/
+# Web App: 'Zenbot Dokusan' v7.21 https://zenbot-434517.uw.r.appspot.com/
 # -- API SCHEMAS v3.0.x
 # GitHub repo https://github.com/davidabelin/zb_app
 
@@ -42,6 +42,7 @@ def chatter():
         return render_template('chatter_stream.html')
     else:
         return render_template('chatter.html')
+
 # ########## FLASK ERROR HANDLING ###########
 @app.errorhandler(ModelAPIError)
 def handle_model_error(err):
@@ -50,6 +51,7 @@ def handle_model_error(err):
         "error": "model_error",
         "message": str(err)
     }), 502
+
 # ########## CHAT ROUTES ###########
 @app.route('/chat', methods=['POST', 'GET'])
 def chat():
@@ -169,10 +171,11 @@ def save_chat():
     except Exception as e:
         logging.error(f" Exception in save_chat(): {e}")
         return jsonify({'error': str(e)}), 500
-# ########## END OF OUTGOING #############
+# ########## END OF OUTGOING ROUTES##########
 
-# ########## INCOMING API ROUTES #############
-# TO DO provide POST methods, too
+# ########## INCOMING API ROUTES ############
+# TO DO provide POST methods, too!!
+
 @app.route('/zb_api/chat', methods=['GET']) # all GET for simplicity  , 'POST'
 def zb_api_chat():
     try:
