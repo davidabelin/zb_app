@@ -1,7 +1,13 @@
 # C:\Users\David\Documents\Local_Python\zenbot\zb_app\main.py
+<<<<<<< HEAD
 # Web App: 'Zenbot Dokusan' v7.21 https://zenbot-434517.uw.r.appspot.com/
 # -- API SCHEMAS v3.0.x
 # GitHub repo https://github.com/davidabelin/zb_app
+=======
+# Web App: 'Zenbot Dokusan' https://zenbot-434517.uw.r.appspot.com/
+# Version 7.3 -- API SCHEMAS v3.0.x
+# See GitHub repo https://github.com/davidabelin/zb_app
+>>>>>>> 709cba9f08e1bbdf84b4739140ddd29f529acd28
 
 import os
 import logging
@@ -13,9 +19,9 @@ import utilities as utipy
 from utilities import (get_cid, save_messages_to_firestore, get_messages_from_firestore, get_request_data,
                        delete_messages_from_firestore, save_chat_to_bucket, reset_test,
                        prompt_and_reply, prompt_and_stream, save_chat_to_file,
-                       get_conversation_from_gcs, list_conversation_files_in_gcs,
+                       get_conversation_from_gcs, list_conversation_files_in_gcs, save_logbook,
                        create_koan_conversation, load_memory_logbook, update_logbook, download_all,
-                       ModelAPIError)  # Import utility functions
+                       ModelAPIError, save_logbook as replace_logbook)  # Import utility functions
 
 # Log settings -- set in utilities.py
 logging.basicConfig(level=utipy.config.LOG_LEVEL)   #, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -174,7 +180,11 @@ def save_chat():
 # ########## END OF OUTGOING ROUTES##########
 
 # ########## INCOMING API ROUTES ############
+<<<<<<< HEAD
 # TO DO provide POST methods, too!!
+=======
+# TO DO eventually NOT NOW provide POST methods, too!!
+>>>>>>> 709cba9f08e1bbdf84b4739140ddd29f529acd28
 
 @app.route('/zb_api/chat', methods=['GET']) # all GET for simplicity  , 'POST'
 def zb_api_chat():
@@ -266,25 +276,76 @@ def zb_api_conversations_list():
     conversation_ids = [file_name.split('/')[-1].replace('.jsonl', '') for file_name in conversation_files]
     return jsonify({'status': 'success', 'conversation_ids': conversation_ids}), 200
 
-@app.route('/zb_api/load_memory_logbook', methods=['GET']) # all GET for simplicity  , 'POST'
+@app.route('/zb_api/conversations/<conversation_id>', methods=['GET']) # all GET for simplicity  , 'POST'
+def zb_api_conversation(conversation_id):
+    # No request data needed for this endpoint (conversation_id is a path parameter).
+    if not conversation_id:
+        return jsonify({'conversation_id': None, 'messages': None, 'status': 'Missing conversation_id.'}), 404
+    messages = get_conversation_from_gcs(conversation_id)
+    if not messages:
+        return jsonify({'conversation_id': conversation_id, 'messages': None, 'status': 'Conversation not found.'}), 404
+    return jsonify({'conversation_id': conversation_id, 'messages': messages, 'status': 'success'}), 200
+
+# —— Memory Logbook APIs —— #
+@app.route('/zb_api/load_memory_logbook', methods=['GET'])
 def zb_api_load_memory_logbook():
     memories = load_memory_logbook()
-    if not memories or len(memories)==0:
+    if not memories:
         return jsonify({'memories': None, 'status': 'Memory logbook not found.'}), 404
     return jsonify({'memories': memories, 'status': 'success'}), 200
 
-@app.route('/zb_api/update_memory_logbook', methods=['GET']) # all GET for simplicity  , 'POST'
+@app.route('/zb_api/update_memory_logbook', methods=['GET', 'POST'])
 def zb_api_update_memory_logbook():
-    memories = load_memory_logbook()
-    if not memories or len(memories)==0:
-        return jsonify({'memories': None, 'status': 'Memory logbook not found.'}), 404
-    update_logbook(memories)
-    
-    return jsonify({'memories': memories, 'status': 'success'}), 200
+    """
+    GET:  build a new entry from query params, append it, and return updated list.
+    POST: accept JSON body with either:
+          - { "entry": { … } }       → append single entry
+          - { "full_logbook": [ … ] } → replace entire logbook
+    """
+    # — GET branch (for simplicity) —
+    if request.method == 'GET':
+        entry = dict(request.args)
+        if not entry:
+            return jsonify({"error": "No query parameters provided to form a memory entry"}), 400
+        try:
+            updated = update_logbook(entry)
+            return jsonify({'memories': updated, 'status': 'appended via GET'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
+    # — POST branch —
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    # Case A: append one new entry
+    if 'entry' in data:
+        entry = data['entry']
+        if not isinstance(entry, dict):
+            return jsonify({"error": "'entry' must be an object"}), 400
+        try:
+            updated = update_logbook(entry)
+            return jsonify({'memories': updated, 'status': 'entry appended via POST'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    # Case B: replace entire logbook
+    if 'full_logbook' in data:
+        full = data['full_logbook']
+        if not isinstance(full, list):
+            return jsonify({"error": "'full_logbook' must be an array"}), 400
+        try:
+            replace_logbook(full)
+            return jsonify({'memories': full, 'status': 'logbook replaced via POST'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    return jsonify({
+        "error": "JSON body must contain either 'entry' or 'full_logbook'"
+    }), 400
 # # ########## END OF API ROUTES #############
 
-# ########## Display source texts #############
+# ########## Display source texts ############
 # Mumonkan/Gateless-Gate source commentary
 @app.route('/gg')
 def gg():
