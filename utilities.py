@@ -159,11 +159,7 @@ def save_chat_to_bucket(data: list, params: dict, blob_name: str) -> None:
     blob = BUCKET.blob(blob_name)
     blob.upload_from_string(to_jsonl(params, data), content_type='application/jsonl')
 
-<<<<<<< HEAD
-def  get_all_conversations_from_gcs():
-=======
 def get_all_conversations_from_gcs():
->>>>>>> 709cba9f08e1bbdf84b4739140ddd29f529acd28
     ''' Returns dictionary by id of all conversations in GCS bucket'''
     blobs = BUCKET.list_blobs(prefix='zbchats/')
     conversations = {}
@@ -214,29 +210,20 @@ def get_conversation_from_gcs(conversation_id: str) -> list:
     return None
 
 # -------- Memory Logbook ------------------
-<<<<<<< HEAD
-def load_memory_logbook():
-    '''
-    Load existing memory logbook from GCS bucket.
-    '''
-    blob = BUCKET.blob(config.MEMORY_LOGBOOK)
-    if blob.exists():
-        content = blob.download_as_string()
-        lines = content.decode('utf-8').splitlines()
-        memories = [json.loads(line) for line in lines]
-        return memories
-    else:
-        if config.LOCAL: print(f"No memory logbook found in GCS Bucket.")
-=======
-
 def load_memory_logbook() -> list:
-    # existing loader: download JSONL and return list of dicts
+    """
+    Load existing memory logbook from the GCS bucket.
+
+    Stored format is JSONL (one JSON object per line).
+    """
     try:
         payload = BUCKET.blob(MEMORY_LOGBOOK).download_as_text()
-        return [json.loads(line) for line in payload.splitlines() if line.strip()]
     except Exception:
->>>>>>> 709cba9f08e1bbdf84b4739140ddd29f529acd28
+        if config.LOCAL:
+            print("No memory logbook found in GCS Bucket.")
         return []
+
+    return [json.loads(line) for line in payload.splitlines() if line.strip()]
 
 def update_logbook(new_entry: dict) -> list:
     """

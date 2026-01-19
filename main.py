@@ -1,13 +1,6 @@
-# C:\Users\David\Documents\Local_Python\zenbot\zb_app\main.py
-<<<<<<< HEAD
-# Web App: 'Zenbot Dokusan' v7.21 https://zenbot-434517.uw.r.appspot.com/
-# -- API SCHEMAS v3.0.x
-# GitHub repo https://github.com/davidabelin/zb_app
-=======
-# Web App: 'Zenbot Dokusan' https://zenbot-434517.uw.r.appspot.com/
-# Version 7.3 -- API SCHEMAS v3.0.x
-# See GitHub repo https://github.com/davidabelin/zb_app
->>>>>>> 709cba9f08e1bbdf84b4739140ddd29f529acd28
+# Web App: Zenbot Dokusan
+# https://zenbot-434517.uw.r.appspot.com/
+# API schemas live in `../zenbot_knowledge/action_schemas.yaml`
 
 import os
 import logging
@@ -180,11 +173,7 @@ def save_chat():
 # ########## END OF OUTGOING ROUTES##########
 
 # ########## INCOMING API ROUTES ############
-<<<<<<< HEAD
-# TO DO provide POST methods, too!!
-=======
-# TO DO eventually NOT NOW provide POST methods, too!!
->>>>>>> 709cba9f08e1bbdf84b4739140ddd29f529acd28
+# Note: most endpoints are GET-only for simplicity unless otherwise specified.
 
 @app.route('/zb_api/chat', methods=['GET']) # all GET for simplicity  , 'POST'
 def zb_api_chat():
@@ -340,9 +329,33 @@ def zb_api_update_memory_logbook():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    # Legacy: treat a direct MemoryEntry body as an append.
+    if isinstance(data, dict):
+        try:
+            updated = update_logbook(data)
+            return jsonify({'memories': updated, 'status': 'entry appended via POST (legacy body)'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     return jsonify({
         "error": "JSON body must contain either 'entry' or 'full_logbook'"
     }), 400
+
+
+@app.route('/appendMemoryLogbookEntry', methods=['POST'])
+def append_memory_logbook_entry_legacy():
+    """
+    Legacy endpoint for older GPT Action specs.
+    Accepts a direct MemoryEntry JSON body and appends it to the logbook.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+    try:
+        updated = update_logbook(data)
+        return jsonify({'memories': updated, 'status': 'entry appended (legacy endpoint)'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 # # ########## END OF API ROUTES #############
 
 # ########## Display source texts ############
@@ -371,7 +384,7 @@ def admin_conversations():
     conversation_ids = [file_name.split('/')[-1].replace('.jsonl', '') for file_name in conversation_files]
     return render_template('admin_conversations.html', conversation_ids=conversation_ids)
 
-@app.route('/admin/conversations/<conversation_id>}')
+@app.route('/admin/conversations/<conversation_id>')
 #@login_required
 def admin_conversation_detail(conversation_id):
     if not conversation_id:

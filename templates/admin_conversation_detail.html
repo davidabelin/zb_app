@@ -8,23 +8,22 @@
     <h2>GCS Bucket Storage</h2>
     <h2>Conversation ID: {{ conversation_id }}</h2>
 </header>
-<body>
-    <div class="nav"><a href="{{ url_for('admin_conversations') }}">Back to List of Sessions</a></div>
-    <div class="nav"><a href="{{ url_for('chat') }}" conversation_id="{{ conversation_id }}" messages="{{ messages }}">Reload Session</a></div>
-    <br>
-    <section>
-        <ul>
-          {% for message in messages %}
-            {% if message.role %}
-              <li><strong>{{ message.role }}:</strong> {{ message.content }}</li>
-            {% else %}
-              <u>Params</u>:
-              {% for param, value in message.items() %}
-                <li><b>{{ param }}</b>: {{ value }}</li>
-              {% endfor %}
-            {% endif %}
-          {% endfor %}
-        </ul>
-    </section>
-</body>
+<section>
+  <div class="nav"><a href="{{ url_for('admin_conversations') }}">Back to List of Sessions</a></div>
+  <br>
+  <section>
+      <ul>
+        {% for message in messages %}
+          {% if message.role %}
+            <li><strong>{{ message.role }}:</strong> {{ message.content }}</li>
+          {% else %}
+            <u>Params</u>:
+            {% for param, value in message.items() %}
+              <li><b>{{ param }}</b>: {{ value }}</li>
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+      </ul>
+  </section>
+</section>
 {% endblock %}

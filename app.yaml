@@ -1,4 +1,4 @@
-runtime: python39
+runtime: python314
 entrypoint:  gunicorn --timeout 30 -b :$PORT main:app
 
 handlers:

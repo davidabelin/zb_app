@@ -35,6 +35,22 @@ function getCookie(name) {
   if (parts.length === 2) return parts.pop().split(';').shift();
 }
 
+function escapeHtml(unsafe) {
+  return String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function renderMarkdownSafe(markdownText) {
+  if (typeof marked === 'undefined') {
+    return escapeHtml(markdownText);
+  }
+  return marked.parse(escapeHtml(markdownText));
+}
+
 /* ============================================= *
   * 2) GATELESS GATE LIST PAGE (gg.html)          *
   *    - Load the list of Koans into #caseList    *
@@ -180,11 +196,20 @@ function initChatterPage() {
         if (matching) {
           const preface = document.getElementById('chatPreface');
           if (preface) {
+            preface.innerHTML = '';
             const koanDiv = document.createElement('div');
             koanDiv.className = 'koan-preface';
-            koanDiv.innerHTML = 
-              `<u>Case #${matching.id}: ${matching.title}</u>
-              ${matching.body}`;
+
+            const titleDiv = document.createElement('div');
+            const titleU = document.createElement('u');
+            titleU.textContent = `Case #${matching.id}: ${matching.title}`;
+            titleDiv.appendChild(titleU);
+
+            const bodyDiv = document.createElement('div');
+            bodyDiv.textContent = matching.body;
+
+            koanDiv.appendChild(titleDiv);
+            koanDiv.appendChild(bodyDiv);
             preface.appendChild(koanDiv);
           }
         }
@@ -208,6 +233,7 @@ function initChatterPage() {
   const saveChatButton = document.getElementById('chatSave');
   if (saveChatButton) {
     saveChatButton.addEventListener('click', saveChat);
+    saveChatButton.disabled = !convId;
   }
   // Send button
   const chatButton = document.getElementById('chatSend');
@@ -233,21 +259,94 @@ function initChatterPage() {
   * CORE CHAT FUNCTIONS         *
   * ============================== */
 async function startChat(prompt) {
+  const chatButton = document.getElementById('chatSend');
+  const chatInput = document.getElementById('chatInput');
+  const saveChatButton = document.getElementById('chatSave');
+
   try {
+    if (chatInput) chatInput.value = '';
+    appendChatMessage('Student', prompt);
+    if (chatButton) chatButton.disabled = true;
     showLoadingSpinner();
+
     const response = await fetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: prompt })
+      body: JSON.stringify({
+        message: prompt,
+        conversation_id: getCookie('conversation_id') || ''
+      })
     });
-    const data = await response.json();
 
-    appendChatMessage('Student', prompt);
-    appendChatMessage('Mumonbot', data.response);
+    if (!response.ok) {
+      const fallback = await response.text();
+      throw new Error(`HTTP ${response.status}: ${fallback}`);
+    }
+
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+
+    // Streaming response (SSE)
+    if (contentType.includes('text/event-stream')) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'zenbot-message';
+      messageDiv.innerHTML = `<strong>Mumonbot:</strong><br><span class="message-content"></span>`;
+      const contentEl = messageDiv.querySelector('.message-content');
+
+      const chatResults = document.getElementById('chatResults');
+      if (chatResults) {
+        chatResults.appendChild(messageDiv);
+        chatResults.scrollTop = chatResults.scrollHeight;
+      }
+
+      let buffer = '';
+      let fullText = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+
+        for (const evt of events) {
+          for (const line of evt.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+
+            let data;
+            try {
+              data = JSON.parse(payload);
+            } catch (e) {
+              console.warn('Bad SSE JSON payload:', payload);
+              continue;
+            }
+
+            const chunk = data?.response;
+            if (chunk === '[DONE]') {
+              if (contentEl) contentEl.innerHTML = renderMarkdownSafe(fullText);
+              continue;
+            }
+
+            if (typeof chunk === 'string') {
+              fullText += chunk;
+              if (contentEl) contentEl.textContent = fullText;
+              if (chatResults) chatResults.scrollTop = chatResults.scrollHeight;
+            }
+          }
+        }
+      }
+    } else {
+      // Non-streaming JSON response
+      const data = await response.json();
+      appendChatMessage('Mumonbot', data.response);
+    }
 
     const inputEl = document.getElementById('chatInput');
     if (inputEl) {
-      inputEl.value = '';
       inputEl.focus();
     }
     /* Feature On hold
@@ -259,9 +358,13 @@ async function startChat(prompt) {
     }
     */
   } catch (error) {
+    appendChatMessage('System', `Error: ${error?.message || String(error)}`);
     handleError(error, 'chatPreface', 'Error starting chat.');
   } finally {
     hideLoadingSpinner();
+    if (chatButton) chatButton.disabled = false;
+    if (chatInput) chatInput.focus();
+    if (saveChatButton) saveChatButton.disabled = !(getCookie('conversation_id'));
   }
 }
 
@@ -274,22 +377,10 @@ function appendChatMessage(sender, message) {
   const messageDiv = document.createElement('div');
   messageDiv.className = (sender === 'Student') ? 'user-message' : 'zenbot-message';
 
-  // TO DO: FIX HUGE line-spaces or paddings in chat bubbles
-  // -- FIX ERROR Details: SyntaxError: Unexpected token '<', " <"... is not valid JSON
-  // -- CHECK Is an HTML error page is being returned instead of JSON, from...?
-  // -- CHECK What needs 'valid JSON'?
-  // Use Marked.js to convert Markdown to HTML
   try {
-    if (message.includes('<br>'))
-      console.warn('appendChatMessage(): <br> --> \n');
-      console.warn('Raw message: ', message);
-      message = message.replace('<br>', '\n');
-    if (message.includes('<') || message.includes('>'))
-      console.warn('appendChatMessage().message.includes(< || >)');
-      console.warn('Raw message: ', message);
-      message = message.replace('<', '(').replace('>', ')');
-    const htmlContent = marked.parse(message);
-    messageDiv.innerHTML = `<strong>${sender}:</strong><br>${htmlContent}`;
+    const text = String(message ?? '');
+    const htmlContent = renderMarkdownSafe(text);
+    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong><br>${htmlContent}`;
   } catch (error) {
     // handleError(error, 'chatPreface', 'Formatting error in appendChatMessage script.');
     messageDiv.innerHTML = `<strong>${sender}</strong> caused error:<br>${error}`;
@@ -302,8 +393,10 @@ function appendChatMessage(sender, message) {
 
 function clearChat() {
   let resetButton = document.getElementById('chatEnd');
-  resetButton.disabled = true;
-  setTimeout(() => resetButton.disabled = false, 3000); // Re-enable after 3s
+  if (resetButton) {
+    resetButton.disabled = true;
+    setTimeout(() => resetButton.disabled = false, 3000); // Re-enable after 3s
+  }
 
   // To avoid accidental button clicks
   if (confirm("Are you sure you want to reset? This cannot be undone.")) {
@@ -311,9 +404,12 @@ function clearChat() {
     document.cookie = 'conversation_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     document.cookie = 'case_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     // Clear chat display
-    document.getElementById('chatResults').innerHTML = '';
-    document.getElementById('chatInput').value = '';
-    document.getElementById('chatPreface').innerHTML = '';
+    const chatResults = document.getElementById('chatResults');
+    const chatInput = document.getElementById('chatInput');
+    const chatPreface = document.getElementById('chatPreface');
+    if (chatResults) chatResults.innerHTML = '';
+    if (chatInput) chatInput.value = '';
+    if (chatPreface) chatPreface.innerHTML = '';
     // Reset URL to just /chatter
     window.history.replaceState(null, '', '/chatter');
  }

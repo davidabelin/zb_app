@@ -6,7 +6,7 @@
   <header class="chat-header">
       <h2>Chat with ZM Mumonbot</h2>
       <i>(Or one of the other <b>ZM Zenbot</b> varieties now in training...)</i>
-      <div id="chatPreface"></div> <!-- Koan text goes here and stays through chat a-->
+      <div id="chatPreface"></div> <!-- Koan text goes here and stays through chat -->
   </header>
 
   <!-- Scrollable chat messages in the middle -->
@@ -15,10 +15,12 @@
   <!-- Input area pinned at bottom -->
   <section class="chat-input-area">
       <textarea id="chatInput" rows="3" placeholder="Speak..."></textarea>
-      <br>
       <div class="chat-buttons">
           <button id="chatSend">Send</button>  <button id="chatSave">Save</button>
-          <red-button id="chatEnd">Reset</button>
+          <button id="chatEnd" class="button-danger">Reset</button>
+      </div>
+      <div class="chat-help">
+        <small>Enter to send • Shift+Enter for a newline • Use <code>(bows)</code> to end a dokusan</small>
       </div>
   </section>
 </div>

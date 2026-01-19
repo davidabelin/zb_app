@@ -81,7 +81,6 @@
   }
   
   /* ========== Buttons ========== */
-  red-button, 
   button {
     font-family: inherit;
     border: none;
@@ -102,14 +101,15 @@
     transform: scale(1.05);
   }
 
-  red-button {
-    color: red;
+  .button-danger {
+    background-color: #7a1f1f;
+    color: #fff;
   }
-  red-button:hover{
-    background-color: #186028;
-    color: #ffd0b0;
-    font-size: 1em;
-    transform: scale(1.1);
+  .button-danger:hover{
+    background-color: #5f1717;
+    color: #fff;
+    font-size: 0.95em;
+    transform: scale(1.05);
   }
   /* ========== Links ========== */
   a {
@@ -163,12 +163,12 @@
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 80vh; /* Or 100vh if you want a truly full screen from top to bottom */
-  max-width: 800px; /* Limit width so it doesn't stretch on large monitors. Adjust as desired */
-  margin: 0 auto;   /* Centers horizontally if the width is narrower than the screen */
+  height: 80vh; /* Or 100vh for full screen */
+  max-width: 800px;
+  margin: 0 auto;
   border: 1px solid #ddd;
   border-radius: 4px;
-  overflow: hidden; /* Ensures child sections won't visually overflow */
+  overflow: hidden;
 }
 
 /* TO DO Header area does not scroll; it’s “fixed” in the flex flow. */
@@ -192,14 +192,15 @@
   padding: 0.5em;
   border-top: 1px solid #ccc;
   display: flex;
-  align-items: flex-start; /* So the textarea lines up at the top of the row */
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.5em;
 }
 
 /* Expand textarea to fill the horizontal space,
    but still allow row resizing if needed. */
 .chat-input-area textarea {
-  flex: 1;          /* Make the textarea expand to fill leftover space */
+  width: 100%;
   resize: vertical; /* Let user drag the corner to make it bigger if desired */
   font-size: 1em;
   font-family: Georgia, sans-serif;
@@ -210,9 +211,15 @@
 /* Buttons area on the right. */
 .chat-buttons {
   display: flex;
-  flex-direction: column; /* column to stack the two buttons vertically, or row if you prefer side by side */
-  /*align-items: center; /* comment out for column flex */
-  gap: 0.25em;
+  flex-direction: row;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.chat-help {
+  color: #333;
+}
 }
 
   /* ========== Chat Message Bubbles ========== */
@@ -232,7 +239,7 @@
     border-radius: 5px;
     /* For preserving line breaks inside messages if they have \n */
     white-space: pre-wrap; /*  or 'pre-line', 'white-space-collapse'; */
-    line-height: 1.05;
+    line-height: 1.25;
   }
 
   /* ========== Media Queries for Mobile ========== */
