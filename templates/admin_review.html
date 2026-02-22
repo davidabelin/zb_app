@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Admin Review{% endblock %}
+{% block content %}
+<section>
+  <i>(Local admin only.)</i>
+</section>
+<header>
+  <h1>Zenbot Dokusan</h1>
+  <h2>Local Session Review</h2>
+  <p>Pending: {{ pending_total }}</p>
+</header>
+<section>
+  <div class="nav">
+    <a href="{{ url_for('admin_conversations') }}">GCS Admin</a>
+    &nbsp;|&nbsp;
+    <a href="{{ url_for('admin_review') }}">Refresh</a>
+  </div>
+
+  {% set prev_offset = offset - limit %}
+  {% if prev_offset < 0 %}{% set prev_offset = 0 %}{% endif %}
+  {% set next_offset = offset + limit %}
+
+  <p>
+    Showing {{ offset + 1 if rows|length > 0 else 0 }}–{{ offset + (rows|length) }}
+    (page size {{ limit }})
+  </p>
+  <p>
+    <a href="{{ url_for('admin_review', offset=prev_offset, limit=limit) }}">Prev</a>
+    |
+    {% if next_offset < pending_total %}
+      <a href="{{ url_for('admin_review', offset=next_offset, limit=limit) }}">Next</a>
+    {% else %}
+      Next
+    {% endif %}
+  </p>
+
+  <script>
+    function toggleExclusive(id, which) {
+      const useBox = document.querySelector('input[name="use_' + id + '"]');
+      const dontBox = document.querySelector('input[name="dont_' + id + '"]');
+      if (!useBox || !dontBox) return;
+      if (which === 'use' && useBox.checked) dontBox.checked = false;
+      if (which === 'dont' && dontBox.checked) useBox.checked = false;
+    }
+  </script>
+
+  <form method="post">
+    <table style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;">Use</th>
+          <th style="text-align:left;">Don&#39;t use</th>
+          <th style="text-align:left;">Conversation</th>
+          <th style="text-align:left;">Source</th>
+          <th style="text-align:left;">Preview</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr style="border-top: 1px solid #ddd;">
+          <td>
+            <input type="checkbox" name="use_{{ r.id }}" value="1" onchange="toggleExclusive('{{ r.id }}','use')">
+          </td>
+          <td>
+            <input type="checkbox" name="dont_{{ r.id }}" value="1" onchange="toggleExclusive('{{ r.id }}','dont')">
+          </td>
+          <td>
+            <a href="{{ url_for('admin_review_view', record_id=r.id) }}" target="_blank" rel="noopener noreferrer">
+              {{ r.conversation_id }}
+            </a>
+          </td>
+          <td><small>{{ r.source_path }}</small></td>
+          <td>
+            <div><b>U:</b> {{ r.preview_user }}</div>
+            <div><b>A:</b> {{ r.preview_assistant }}</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <br>
+    <button type="submit">Choose</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Review {{ row.conversation_id }}{% endblock %}
+{% block content %}
+<section>
+  <i>(Local admin only.)</i>
+</section>
+<header>
+  <h1>Zenbot Dokusan</h1>
+  <h2>Local Session Detail</h2>
+  <h3>{{ row.conversation_id }}</h3>
+</header>
+<section>
+  <div class="nav"><a href="{{ url_for('admin_review') }}">Back to Review List</a></div>
+  <p><b>Source:</b> {{ row.source_path }}</p>
+  <p><b>File:</b> <code>{{ session_path }}</code></p>
+
+  {% if metadata %}
+    <h3>Metadata</h3>
+    <pre style="white-space: pre-wrap;">{{ metadata | tojson(indent=2) }}</pre>
+  {% endif %}
+
+  <h3>Messages</h3>
+  {% if messages|length == 0 %}
+    <p><i>No parseable messages found.</i></p>
+  {% endif %}
+
+  <ul>
+    {% for m in messages %}
+      <li style="margin-bottom: 12px;">
+        <b>{{ m.role }}</b>
+        <pre style="white-space: pre-wrap; margin: 4px 0;">{{ m.content }}</pre>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

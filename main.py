@@ -1,12 +1,13 @@
-# Web App: Zenbot Dokusan
-# https://zenbot-434517.uw.r.appspot.com/
+# Web App: Zenbot Dokusan  --  https://zenbot-434517.uw.r.appspot.com/
 # API schemas live in `../zenbot_knowledge/action_schemas.yaml`
 
 import os
 import logging
 import json
+import csv
+from pathlib import Path
 from flask import (Flask, jsonify, render_template, send_from_directory,
-                   make_response, abort, request, Response)
+                   make_response, abort, request, Response, redirect, url_for)
 from werkzeug.exceptions import BadRequest
 import utilities as utipy
 from utilities import (get_cid, save_messages_to_firestore, get_messages_from_firestore, get_request_data,
@@ -114,7 +115,7 @@ def chat():
 @app.route('/chat_case/<case_id>', methods=['GET', 'POST'])
 def chat_case(case_id):
     """Create a new conversation with the user’s selected Koan as context.
-        TO be called only from /ggcase route 
+        To be called only from /ggcase route 
     """
     try:
         if not case_id:
@@ -175,15 +176,21 @@ def save_chat():
 # ########## INCOMING API ROUTES ############
 # Note: most endpoints are GET-only for simplicity unless otherwise specified.
 
-@app.route('/zb_api/chat', methods=['GET']) # all GET for simplicity  , 'POST'
+@app.route('/zb_api/chat', methods=['GET']) # all GET for simplicity
 def zb_api_chat():
+    conversation_id = None
     try:
-        data = get_request_data() # Handles both GET and POST...
+        data = get_request_data()
         api_prompt = data.get('message')
         if not api_prompt:
-            abort(400, description="Missing 'message' parameter") # More informative error
+            return jsonify({
+                "status": "failure",
+                "error": "Missing required 'message' parameter.",
+                "conversation_id": None,
+            }), 400
+
         conversation_id = data.get('conversation_id', request.cookies.get('conversation_id', ''))
-        if conversation_id and conversation_id!='':
+        if conversation_id and conversation_id != '':
             # Continue ongoing conversation:
             messages = get_messages_from_firestore(conversation_id)
         else: # Initialize a new conversation with 'generic' preset context
@@ -192,19 +199,32 @@ def zb_api_chat():
             conversation_id = get_cid(student=utipy.config.STUDENT)
             messages = utipy.config.START_CHATS['smiles'].copy()
         messages = prompt_and_reply(messages, api_prompt)
-        if "error caught in" in messages[-1]['content']:
-            raise Exception(messages[-1]['content'])
         save_messages_to_firestore(conversation_id, messages)
-        return jsonify({"conversation_id": conversation_id, "response": messages[-1]['content']}), 200
+        return jsonify({
+            "status": "success",
+            "conversation_id": conversation_id,
+            "response": messages[-1]['content'],
+        }), 200
+    except ModelAPIError:
+        raise
     except BadRequest as e:
         logging.exception(f"/zb_api/chat BadRequest error: {e}")  # Log the full traceback
-        return jsonify({"conversation_id": conversation_id, "response": str(e)}), 400
+        return jsonify({
+            "status": "failure",
+            "error": str(e),
+            "conversation_id": conversation_id,
+        }), 400
     except Exception as e:
         logging.exception(f"/zb_api/chat error: {e}")  # Log the full traceback
-        return jsonify({"conversation_id": conversation_id, "response": str(e)}), 500 # Generic error
+        return jsonify({
+            "status": "failure",
+            "error": str(e),
+            "conversation_id": conversation_id,
+        }), 500 # Generic error
 
 @app.route('/zb_api/chat_case/<case_id>', methods=['GET']) # all GET for simplicity  , 'POST'
 def zb_api_chat_case(case_id):
+    conversation_id = None
     try:
         data = get_request_data() # Handles both GET and POST
         student = data.get('student', 'api-case')
@@ -212,11 +232,27 @@ def zb_api_chat_case(case_id):
         reset_test(case_id=case_id, student=student) # Generate new random set of test botling and params
         conversation_id = create_koan_conversation()
         if conversation_id is None:  # Handle potential errors in create_koan_conversation
-            abort(500, description=f"No conversation_id returned by create_koan_conversation() for case #{case_id}.")
-        return jsonify({'error': 'success', 'conversation_id': conversation_id}), 200
+            return jsonify({
+                "status": "failure",
+                "error": f"No conversation_id returned by create_koan_conversation() for case #{case_id}.",
+                "conversation_id": None,
+                "case_id": str(case_id) if case_id is not None else None,
+            }), 500
+        return jsonify({
+            "status": "success",
+            "conversation_id": conversation_id,
+            "case_id": str(case_id),
+        }), 200
+    except ModelAPIError:
+        raise
     except Exception as e:  # Catch any other exceptions
         logging.exception(f"Exception in /zb_api/chat_case/{case_id}: {e}")  # Log traceback
-        return jsonify({"error": str(e), 'conversation_id': conversation_id}), 500
+        return jsonify({
+            "status": "failure",
+            "error": str(e),
+            "conversation_id": conversation_id,
+            "case_id": str(case_id) if case_id is not None else None,
+        }), 500
 
 @app.route('/zb_api/save_chat', methods=['GET']) # all GET for simplicity  , 'POST'
 def zb_api_save_chat():
@@ -225,7 +261,7 @@ def zb_api_save_chat():
         student = data.get('student', utipy.config.STUDENT)
         case_id = data.get('case_id', request.cookies.get('case_id', ''))
         conversation_id = data.get('conversation_id')
-        if conversation_id:
+        if conversation_id and str(conversation_id).strip():
             # Prepare to archive:
             params = utipy.session_mgr.args.copy()
             params.update({'conversation_id': conversation_id})
@@ -236,8 +272,11 @@ def zb_api_save_chat():
                 params.update({'case_id': case_id})
             messages = get_messages_from_firestore(conversation_id)
             if not messages or len(messages) <= 0:
-                # Handle missing messages the easy way...
-                messages = utipy.config.START_CHATS['random'].copy()
+                return jsonify({
+                    "status": "failure",
+                    "error": "No messages found for conversation_id.",
+                    "conversation_id": conversation_id,
+                }), 404
             # Save to GCS
             filename = f"{conversation_id}.jsonl"
             blob_name = f'zbchats/{filename}'
@@ -250,22 +289,26 @@ def zb_api_save_chat():
             return jsonify({'status': 'success', "error" : "None"}), 200
         # Missing or blank conversation_id
         logging.error("Error in zb_api_save_chat: 'No conversation_id provided.'")
-        return jsonify({"status": "failure",
-                        "error": "No conversation_id provided in zb_api_save_chat()"}), 404
+        return jsonify({
+            "status": "failure",
+            "error": "No conversation_id provided in zb_api_save_chat().",
+        }), 400
     # Log any exception and return it to caller
+    except ModelAPIError:
+        raise
     except Exception as e:
         logging.exception(f"Exception in zb_api_save_chat: {e}") # Log traceback
         return jsonify({"status": "failure",
                         "error": "Exception caught in zb_api_save_chat: " + str(e)}), 500  # Generic error response
 
-@app.route('/zb_api/conversations/list', methods=['GET']) # all GET for simplicity  , 'POST'
+@app.route('/zb_api/conversations/list', methods=['GET']) # all GET for simplicity
 def zb_api_conversations_list():
     # No request data needed for this endpoint.
     conversation_files = list_conversation_files_in_gcs()
     conversation_ids = [file_name.split('/')[-1].replace('.jsonl', '') for file_name in conversation_files]
     return jsonify({'status': 'success', 'conversation_ids': conversation_ids}), 200
 
-@app.route('/zb_api/conversations/<conversation_id>', methods=['GET']) # all GET for simplicity  , 'POST'
+@app.route('/zb_api/conversations/<conversation_id>', methods=['GET']) # all GET for simplicity
 def zb_api_conversation(conversation_id):
     # No request data needed for this endpoint (conversation_id is a path parameter).
     if not conversation_id:
@@ -279,11 +322,13 @@ def zb_api_conversation(conversation_id):
 @app.route('/zb_api/load_memory_logbook', methods=['GET'])
 def zb_api_load_memory_logbook():
     memories = load_memory_logbook()
-    if not memories:
-        return jsonify({'memories': None, 'status': 'Memory logbook not found.'}), 404
-    return jsonify({'memories': memories, 'status': 'success'}), 200
+    return jsonify({
+        'memories': memories,
+        'status': 'success' if memories else 'empty',
+        'count': len(memories),
+    }), 200
 
-@app.route('/zb_api/update_memory_logbook', methods=['GET', 'POST'])
+@app.route('/zb_api/update_memory_logbook', methods=['GET', 'POST']) # all GET and POST
 def zb_api_update_memory_logbook():
     """
     GET:  build a new entry from query params, append it, and return updated list.
@@ -291,11 +336,29 @@ def zb_api_update_memory_logbook():
           - { "entry": { … } }       → append single entry
           - { "full_logbook": [ … ] } → replace entire logbook
     """
-    # — GET branch (for simplicity) —
+    # - GET branch (for simplicity) -
     if request.method == 'GET':
-        entry = dict(request.args)
-        if not entry:
+        raw = request.args.to_dict(flat=False)
+        if not raw:
             return jsonify({"error": "No query parameters provided to form a memory entry"}), 400
+        entry = {k: (v[0] if isinstance(v, list) and len(v) == 1 else v) for k, v in raw.items()}
+
+        # Allow common list fields to be passed as comma-separated strings in GET requests.
+        list_fields = {'koans_used', 'key_insights', 'lessons_learned', 'user_instructions'}
+        json_fields = {'session_evaluations'}
+        for key in list_fields:
+            val = entry.get(key)
+            if isinstance(val, str):
+                entry[key] = [part.strip() for part in val.split(',') if part.strip()]
+
+        for key in json_fields:
+            val = entry.get(key)
+            if isinstance(val, str) and val.strip().startswith(('[', '{')):
+                try:
+                    entry[key] = json.loads(val)
+                except Exception:
+                    pass
+
         try:
             updated = update_logbook(entry)
             return jsonify({'memories': updated, 'status': 'appended via GET'}), 200
@@ -338,8 +401,7 @@ def zb_api_update_memory_logbook():
             return jsonify({'error': str(e)}), 500
 
     return jsonify({
-        "error": "JSON body must contain either 'entry' or 'full_logbook'"
-    }), 400
+        "error": "JSON body must contain either 'entry' or 'full_logbook'"}), 400
 
 
 @app.route('/appendMemoryLogbookEntry', methods=['POST'])
@@ -356,6 +418,27 @@ def append_memory_logbook_entry_legacy():
         return jsonify({'memories': updated, 'status': 'entry appended (legacy endpoint)'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+#### TO DO IMPLEMENT/ FINISH AS NEEDED: 
+@app.route('/zb_api/get_random_koan', methods=['GET'])
+def zb_api_get_random_koan():
+    case_id = utipy.get_random_koan_case_id()
+    if not case_id:
+        return jsonify({'case_id': None, 'case_text': "", 'status': 'Random number not generated.'}), 404
+
+    koan = utipy.get_mmnk_case(case_id)
+    if not koan:
+        return jsonify({'case_id': case_id, 'case_text': "", 'koan': None, 'status': "koan not found"}), 404
+
+    case_text = koan.get('body', '')
+    return jsonify({
+        'case_id': str(koan.get('id', case_id)),
+        'case_text': case_text if isinstance(case_text, str) else '',
+        'koan': koan,
+        'status': "success",
+    }), 200
+
+
 # # ########## END OF API ROUTES #############
 
 # ########## Display source texts ############
@@ -377,6 +460,166 @@ def serve_pdf(filename):
 # ###### End of displaying source texts ########
 
 # ########## DATA ADMINISTRATION #############
+
+
+# ---- Local Review UI (local server only) ----
+
+def _require_local_admin() -> None:
+    if not utipy.config.LOCAL:
+        abort(404)
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _trainset04_review_csv_path() -> Path:
+    return _repo_root() / 'training' / 'trainset04' / 'review.csv'
+
+
+def _load_review_rows() -> tuple[list[dict[str, str]], list[str]]:
+    review_path = _trainset04_review_csv_path()
+    if not review_path.exists():
+        abort(500, description=f"Missing review.csv at {review_path}")
+    with review_path.open('r', encoding='utf-8', newline='') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        headers = reader.fieldnames or []
+    return rows, headers
+
+
+def _write_review_rows(headers: list[str], rows: list[dict[str, str]]) -> None:
+    review_path = _trainset04_review_csv_path()
+    with review_path.open('w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _update_review_keep(decisions: dict[str, str]) -> None:
+    rows, headers = _load_review_rows()
+    if 'id' not in headers or 'keep' not in headers:
+        abort(500, description="review.csv must include 'id' and 'keep' columns")
+
+    changed = 0
+    for r in rows:
+        rid = (r.get('id') or '').strip()
+        if rid in decisions:
+            r['keep'] = decisions[rid]
+            changed += 1
+
+    _write_review_rows(headers, rows)
+    logging.info(f"/admin/review wrote {changed} decisions")
+
+
+def _session_path_from_review_row(row: dict[str, str]) -> Path:
+    rel = (row.get('source_path') or '').strip()
+    if not rel:
+        abort(500, description='review.csv row missing source_path')
+
+    root = _repo_root().resolve()
+    sessions_root = (root / 'collected_sessions').resolve()
+    candidate = (root / rel).resolve()
+
+    if sessions_root != candidate and sessions_root not in candidate.parents:
+        abort(400, description='Invalid source_path (not under collected_sessions)')
+    if not candidate.exists():
+        abort(404, description=f"Missing session file: {candidate}")
+    return candidate
+
+
+def _is_message_obj(obj: object) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    role = obj.get('role')
+    content = obj.get('content')
+    return role in {'system', 'user', 'assistant'} and isinstance(content, str)
+
+
+def _parse_session_jsonl(path: Path) -> tuple[dict, list[dict[str, str]]]:
+    metadata: dict = {}
+    messages: list[dict[str, str]] = []
+
+    for line in path.read_text(encoding='utf-8').splitlines():
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+
+        if _is_message_obj(obj):
+            messages.append({'role': obj['role'], 'content': obj['content']})
+        elif not metadata and isinstance(obj, dict):
+            metadata = obj
+
+    return metadata, messages
+
+
+@app.route('/admin/review', methods=['GET', 'POST'])
+def admin_review():
+    _require_local_admin()
+
+    rows, _headers = _load_review_rows()
+
+    if request.method == 'POST':
+        decisions: dict[str, str] = {}
+        for k in request.form.keys():
+            if k.startswith('use_'):
+                decisions[k[len('use_'):]] = '1'
+            elif k.startswith('dont_'):
+                decisions[k[len('dont_'):]] = '0'
+
+        if decisions:
+            _update_review_keep(decisions)
+
+        return redirect(url_for('admin_review'))
+
+    pending = [r for r in rows if not (r.get('keep') or '').strip()]
+
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except Exception:
+        offset = 0
+    try:
+        limit = int(request.args.get('limit', 50))
+    except Exception:
+        limit = 50
+    limit = min(max(10, limit), 200)
+
+    page = pending[offset: offset + limit]
+
+    return render_template(
+        'admin_review.html',
+        rows=page,
+        pending_total=len(pending),
+        offset=offset,
+        limit=limit,
+    )
+
+
+@app.route('/admin/review/view/<record_id>')
+def admin_review_view(record_id):
+    _require_local_admin()
+
+    rows, _headers = _load_review_rows()
+    row = next((r for r in rows if (r.get('id') or '') == record_id), None)
+    if not row:
+        abort(404)
+
+    session_path = _session_path_from_review_row(row)
+    metadata, messages = _parse_session_jsonl(session_path)
+
+    return render_template(
+        'admin_review_view.html',
+        row=row,
+        session_path=str(session_path),
+        metadata=metadata,
+        messages=messages,
+    )
+
+# ---- End Local Review UI ----
+
 @app.route('/admin/conversations')
 #@login_required
 def admin_conversations():

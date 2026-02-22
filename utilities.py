@@ -5,10 +5,31 @@ import os
 import json
 import random as rnd
 import logging
-from google.cloud import storage, firestore
+from pathlib import Path
+from typing import Optional
+
+# Optional Google Cloud dependencies. The app can run locally without them, but
+# features backed by GCS/Firestore will be disabled unless installed.
+try:
+    from google.cloud import storage, firestore
+except ModuleNotFoundError:
+    storage = None
+    firestore = None
+    logging.warning(
+        "utilities: Google Cloud libs not installed; GCS/Firestore disabled. "
+        "Install `google-cloud-storage` and `google-cloud-firestore`."
+    )
 from flask import request, jsonify
-import openai
-from openai import OpenAI
+try:
+    import openai
+    from openai import OpenAI
+except ModuleNotFoundError:
+    openai = None
+    OpenAI = None
+    logging.warning(
+        "utilities: OpenAI Python SDK not installed; chat features disabled. "
+        "Install `openai` (see requirements.txt)."
+    )
 from config import Config
 from models import MODEL_LOSSES
 
@@ -43,10 +64,24 @@ class ModelAPIError(Exception):
 
 # Instantiate global clients and state
 config = Config()
-BOTLING = OpenAI(api_key=config.OPENAI_API_KEY)
-BUCKET = storage.Client().bucket(config.BUCKET_NAME)
-DB = firestore.Client()
+BOTLING = OpenAI(api_key=config.OPENAI_API_KEY) if OpenAI is not None else None
+
+BUCKET = None
+if storage is not None:
+    try:
+        BUCKET = storage.Client().bucket(config.BUCKET_NAME)
+    except Exception as e:
+        logging.warning(f"utilities: GCS bucket client unavailable: {e}")
+
+DB = None
+if firestore is not None:
+    try:
+        DB = firestore.Client()
+    except Exception as e:
+        logging.warning(f"utilities: Firestore client unavailable: {e}")
+
 MEMORY_LOGBOOK = config.MEMORY_LOGBOOK
+_LOCAL_LOGBOOK_PATH = Path(__file__).resolve().parent / 'config' / MEMORY_LOGBOOK
 
 # Initialize session manager
 session_mgr = SessionManager(config)
@@ -70,12 +105,16 @@ def get_cid(student=None) -> str:
 
 def save_messages_to_firestore(conversation_id: str, messages: list) -> None:
     try:
+        if not DB:
+            return
         DB.collection('conversations').document(conversation_id).set({'messages': messages})
     except Exception as e:
         logging.error(f"Error saving messages to Firestore: {e}")
 
 def get_messages_from_firestore(conversation_id: str) -> list:
     try:
+        if not DB:
+            return config.START_CHATS['smiles'].copy()
         doc = DB.collection('conversations').document(conversation_id).get()
         if doc.exists:
             return doc.to_dict().get('messages', [])
@@ -85,12 +124,18 @@ def get_messages_from_firestore(conversation_id: str) -> list:
     return config.START_CHATS['smiles'].copy()
 
 def delete_messages_from_firestore(conversation_id: str) -> None:
+    if not DB:
+        return
     DB.collection('conversations').document(conversation_id).delete()
 
 # ---------------- Interacting ------------
 
 def get_model_stream(messages: list):
     """Streamed completion from the model."""
+    if BOTLING is None or openai is None:
+        raise ModelAPIError(
+            "OpenAI client unavailable. Install `openai` and set `OPENAI_API_KEY`."
+        )
     try:
         stream = BOTLING.chat.completions.create(
             messages=messages,
@@ -101,21 +146,64 @@ def get_model_stream(messages: list):
             text = chunk.choices[0].delta.content
             if text:
                 yield text
-    except openai.OpenAIError as e:
+    except Exception as e:
         logging.error(f"OpenAI error: {e}")
         raise ModelAPIError(str(e))
 
 def get_model_reply(messages: list) -> str:
     """Synchronous completion from the model."""
+    if BOTLING is None or openai is None:
+        raise ModelAPIError(
+            "OpenAI client unavailable. Install `openai` and set `OPENAI_API_KEY`."
+        )
     try:
         completion = BOTLING.chat.completions.create(
             messages=messages,
             **session_mgr.args
         )
         return completion.choices[0].message.content
-    except openai.OpenAIError as e:
+    except Exception as e:
         logging.error(f"OpenAI error: {e}")
         raise ModelAPIError(str(e))
+
+### TO DO FINISH AS NEEDED
+
+def _load_mmnk_cases() -> list[dict]:
+    with open('static/mmnk.json', 'r', encoding='utf-8') as f:
+        payload = json.load(f)
+    cases = payload.get('cases', [])
+    return cases if isinstance(cases, list) else []
+
+def get_mmnk_case(case_id: str) -> Optional[dict]:
+    """Retrieve the koan case object for a given case ID from mmnk.json."""
+    try:
+        cases = _load_mmnk_cases()
+        return next((k for k in cases if str(k.get('id')) == str(case_id)), None)
+    except Exception as e:
+        logging.error(f"Error retrieving koan case for case ID {case_id}: {e}")
+        return None
+
+def get_random_koan_case_id() -> str:
+    """Retrieve a random koan case ID from mmnk.json (fallback: 1..48)."""
+    try:
+        cases = _load_mmnk_cases()
+        if cases:
+            koan = rnd.choice(cases)
+            return str(koan.get('id'))
+    except Exception as e:
+        logging.error(f"Error retrieving random koan case ID: {e}")
+
+    return str(rnd.choice(range(1, 49)))
+
+
+def get_mmnk_text(case_id: str) -> str:
+    """Retrieve the koan text for a given case ID from the mmnk.json dataset."""
+    koan = get_mmnk_case(case_id)
+    if not koan:
+        return ""
+    body = koan.get('body')
+    return body if isinstance(body, str) else ""
+
 
 # ---------------- Prompting ----------------
 
@@ -156,11 +244,15 @@ def to_jsonl(params: dict, messages: list) -> str:
     return "\n".join(lines)
 
 def save_chat_to_bucket(data: list, params: dict, blob_name: str) -> None:
+    if not BUCKET:
+        raise RuntimeError("GCS bucket client unavailable; cannot save chat to bucket.")
     blob = BUCKET.blob(blob_name)
     blob.upload_from_string(to_jsonl(params, data), content_type='application/jsonl')
 
 def get_all_conversations_from_gcs():
     ''' Returns dictionary by id of all conversations in GCS bucket'''
+    if not BUCKET:
+        return {}
     blobs = BUCKET.list_blobs(prefix='zbchats/')
     conversations = {}
     for blob in blobs:
@@ -201,29 +293,86 @@ def download_all():
         return False
 
 def list_conversation_files_in_gcs() -> list:
+    if not BUCKET:
+        return []
     return [b.name for b in BUCKET.list_blobs(prefix='zbchats/') if b.name.endswith('.jsonl')]
 
 def get_conversation_from_gcs(conversation_id: str) -> list:
+    if not BUCKET:
+        return None
     blob = BUCKET.blob(f'zbchats/{conversation_id}.jsonl')
     if blob.exists():
         return [json.loads(line) for line in blob.download_as_string().decode().splitlines()]
     return None
 
 # -------- Memory Logbook ------------------
+def _parse_logbook_payload(payload: str) -> list:
+    text = (payload or "").strip()
+    if not text:
+        return []
+
+    if text.startswith('['):
+        try:
+            data = json.loads(text)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    memories: list = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(obj, dict):
+            memories.append(obj)
+    return memories
+
+def _logbook_blob_candidates() -> list[str]:
+    candidates: list[str] = [MEMORY_LOGBOOK]
+    if MEMORY_LOGBOOK.endswith('.json'):
+        candidates.append(MEMORY_LOGBOOK[:-5] + '.jsonl')
+    elif not MEMORY_LOGBOOK.endswith('.jsonl'):
+        candidates.append(MEMORY_LOGBOOK + '.jsonl')
+    # Preserve order, remove duplicates.
+    seen = set()
+    unique: list[str] = []
+    for name in candidates:
+        if name and name not in seen:
+            unique.append(name)
+            seen.add(name)
+    return unique
+
 def load_memory_logbook() -> list:
     """
     Load existing memory logbook from the GCS bucket.
 
-    Stored format is JSONL (one JSON object per line).
+    Stored format is JSONL (one JSON object per line), but JSON arrays are also accepted.
     """
-    try:
-        payload = BUCKET.blob(MEMORY_LOGBOOK).download_as_text()
-    except Exception:
-        if config.LOCAL:
-            print("No memory logbook found in GCS Bucket.")
-        return []
+    payload = None
 
-    return [json.loads(line) for line in payload.splitlines() if line.strip()]
+    if BUCKET:
+        for blob_name in _logbook_blob_candidates():
+            try:
+                blob = BUCKET.blob(blob_name)
+                if not blob.exists():
+                    continue
+                payload = blob.download_as_text()
+                break
+            except Exception as e:
+                logging.warning(f"Error loading memory logbook blob '{blob_name}': {e}")
+
+    if payload is None:
+        try:
+            if _LOCAL_LOGBOOK_PATH.exists():
+                payload = _LOCAL_LOGBOOK_PATH.read_text(encoding='utf-8')
+        except Exception as e:
+            logging.warning(f"Error loading local memory logbook at {_LOCAL_LOGBOOK_PATH}: {e}")
+
+    return _parse_logbook_payload(payload or "")
 
 def update_logbook(new_entry: dict) -> list:
     """
@@ -238,10 +387,15 @@ def save_logbook(logbook: list):
     """
     Overwrite the entire memory logbook with the provided list.
     """
-    lines = [json.dumps(item) for item in logbook]
+    lines = [json.dumps(item, ensure_ascii=False, default=str) for item in logbook]
     payload = "\n".join(lines)
-    blob = BUCKET.blob(MEMORY_LOGBOOK)
-    blob.upload_from_string(payload, content_type='application/jsonl')
+
+    if BUCKET:
+        blob = BUCKET.blob(MEMORY_LOGBOOK)
+        blob.upload_from_string(payload, content_type='application/jsonl')
+    else:
+        _LOCAL_LOGBOOK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _LOCAL_LOGBOOK_PATH.write_text(payload, encoding='utf-8')
 
 # --------- Koan Work --------------
 
@@ -264,7 +418,6 @@ def koan_startup(koan=config.KOAN):
             "content": "(smiles)"
         }
     ]
-    #print(start_with_koan)
     return start_with_koan
 
 def create_koan_conversation(config=config):
