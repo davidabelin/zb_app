@@ -2,22 +2,32 @@ param(
   [string]$ProjectId = "zenbot-434517",
   [string]$ServiceAccount = "zenbot-sa@zenbot-434517.iam.gserviceaccount.com",
   [string]$Account = "",
-  [switch]$SkipPrompts
+  [switch]$SkipPrompts,
+  [switch]$SkipIamBinding
 )
 
 $ErrorActionPreference = "Stop"
 
 function Invoke-Gcloud {
-  param([string[]]$Args)
-  & gcloud @Args
+  param([Parameter(Mandatory = $true)][string[]]$GcloudArgs)
+  & gcloud @GcloudArgs
   if ($LASTEXITCODE -ne 0) {
-    throw "gcloud command failed: gcloud $($Args -join ' ')"
+    throw "gcloud command failed: gcloud $($GcloudArgs -join ' ')"
   }
 }
 
 if ($Account) {
   Invoke-Gcloud @("config", "set", "account", $Account)
 }
+
+$activeAccount = (& gcloud config get-value account 2>$null).Trim()
+if (-not $SkipIamBinding -and $activeAccount -like "*gserviceaccount.com") {
+  throw @"
+Active gcloud account is a service account ($activeAccount), which commonly lacks permission to set IAM policy bindings.
+Use a user account with sufficient IAM rights (e.g. Owner, Secret Manager Admin), or rerun with -SkipIamBinding if bindings are already in place.
+"@
+}
+
 Invoke-Gcloud @("config", "set", "project", $ProjectId)
 Invoke-Gcloud @(
   "services", "enable",
@@ -54,11 +64,13 @@ foreach ($name in $secrets) {
     }
   }
 
-  & gcloud secrets add-iam-policy-binding $name `
-    --member="serviceAccount:$ServiceAccount" `
-    --role="roles/secretmanager.secretAccessor"
-  if ($LASTEXITCODE -ne 0) {
-    throw "Failed to add IAM binding for $name"
+  if (-not $SkipIamBinding) {
+    & gcloud secrets add-iam-policy-binding $name `
+      --member="serviceAccount:$ServiceAccount" `
+      --role="roles/secretmanager.secretAccessor"
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to add IAM binding for $name"
+    }
   }
 }
 

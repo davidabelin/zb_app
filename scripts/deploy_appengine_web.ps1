@@ -1,12 +1,18 @@
 param(
   [string]$ProjectId = "zenbot-434517",
-  [string]$ChatApiBaseUrl
+  [string]$ChatApiBaseUrl,
+  [string]$ChatServiceName = "zb-chat-api",
+  [string]$Region = "us-central1"
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $ChatApiBaseUrl) {
-  throw "Provide -ChatApiBaseUrl from deployed Cloud Run chat service."
+  $ChatApiBaseUrl = (& gcloud run services describe $ChatServiceName --region $Region --project $ProjectId --format "value(status.url)" 2>$null).Trim()
+  if (-not $ChatApiBaseUrl) {
+    throw "Could not resolve Cloud Run URL. Provide -ChatApiBaseUrl explicitly."
+  }
+  Write-Host "Resolved Chat API URL from Cloud Run: $ChatApiBaseUrl"
 }
 
 gcloud config set project $ProjectId
