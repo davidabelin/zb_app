@@ -307,27 +307,53 @@ def get_model_stream(
     params: dict[str, Any],
 ) -> Generator[str, None, None]:
     client = _get_openai_client()
-    try:
-        stream = client.chat.completions.create(
-            messages=messages, stream=True, **params
-        )
-        for chunk in stream:
-            text = chunk.choices[0].delta.content
-            if text:
-                yield text
-    except Exception as e:
-        logging.error("OpenAI streaming error: %s", e)
-        raise ModelAPIError(str(e))
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        produced_output = False
+        try:
+            stream = client.chat.completions.create(
+                messages=messages, stream=True, **params
+            )
+            for chunk in stream:
+                text = chunk.choices[0].delta.content
+                if text:
+                    produced_output = True
+                    yield text
+            return
+        except Exception as e:
+            is_last = attempt >= max_attempts
+            if not produced_output and not is_last:
+                logging.warning(
+                    "OpenAI streaming attempt %s/%s failed before first token: %s",
+                    attempt,
+                    max_attempts,
+                    e,
+                )
+                time.sleep(0.75 * attempt)
+                continue
+            logging.error("OpenAI streaming error: %s", e)
+            raise ModelAPIError(str(e))
 
 
 def get_model_reply(messages: list[dict[str, str]], params: dict[str, Any]) -> str:
     client = _get_openai_client()
-    try:
-        completion = client.chat.completions.create(messages=messages, **params)
-        return completion.choices[0].message.content
-    except Exception as e:
-        logging.error("OpenAI error: %s", e)
-        raise ModelAPIError(str(e))
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        try:
+            completion = client.chat.completions.create(messages=messages, **params)
+            return completion.choices[0].message.content
+        except Exception as e:
+            if attempt < max_attempts:
+                logging.warning(
+                    "OpenAI reply attempt %s/%s failed: %s",
+                    attempt,
+                    max_attempts,
+                    e,
+                )
+                time.sleep(0.75 * attempt)
+                continue
+            logging.error("OpenAI error: %s", e)
+            raise ModelAPIError(str(e))
 
 
 def prompt_and_reply(
@@ -345,6 +371,17 @@ def _sse(payload: dict[str, Any]) -> str:
     return "data: " + json.dumps(payload) + "\n\n"
 
 
+def _friendly_model_error(raw_error: str) -> str:
+    text = (raw_error or "").lower()
+    if "insufficient_quota" in text or "exceeded your current quota" in text:
+        return "OpenAI quota exceeded for the configured API key."
+    if "rate limit" in text:
+        return "OpenAI rate limit reached. Please retry shortly."
+    if "authentication" in text or "invalid_api_key" in text:
+        return "OpenAI API key rejected. Check the configured key."
+    return "No model response received. Please retry."
+
+
 def prompt_and_stream(
     messages: list[dict[str, str]],
     prompt: str,
@@ -356,22 +393,60 @@ def prompt_and_stream(
 
     started = time.perf_counter()
     messages.append({"role": "user", "content": prompt})
-    yield _sse({"event": "start", "response": ""})
+    yield _sse(
+        {"event": "start", "response": "", "conversation_id": conversation_id}
+    )
 
     full_reply = ""
     first_token_time = None
-    for chunk in get_model_stream(messages, params):
-        if first_token_time is None:
-            first_token_time = time.perf_counter()
-            logging.info(
-                "stream first token conversation_id=%s latency_ms=%.1f",
-                conversation_id,
-                (first_token_time - started) * 1000,
-            )
-        full_reply += chunk
-        yield _sse({"response": chunk})
+    stream_error = None
+    try:
+        for chunk in get_model_stream(messages, params):
+            if first_token_time is None:
+                first_token_time = time.perf_counter()
+                logging.info(
+                    "stream first token conversation_id=%s latency_ms=%.1f",
+                    conversation_id,
+                    (first_token_time - started) * 1000,
+                )
+            if not isinstance(chunk, str):
+                chunk = str(chunk)
+            if not chunk:
+                continue
+            full_reply += chunk
+            yield _sse({"response": chunk})
+    except Exception as e:
+        stream_error = str(e)
+        logging.warning(
+            "stream failed conversation_id=%s error=%s; attempting fallback reply",
+            conversation_id,
+            e,
+        )
+        if not full_reply:
+            try:
+                fallback_reply = get_model_reply(messages, params)
+                if isinstance(fallback_reply, str) and fallback_reply:
+                    full_reply = fallback_reply
+                    yield _sse({"event": "fallback", "response": fallback_reply})
+            except Exception as fallback_error:
+                logging.error(
+                    "fallback reply failed conversation_id=%s error=%s",
+                    conversation_id,
+                    fallback_error,
+                )
 
-    messages.append({"role": "assistant", "content": full_reply})
+    if full_reply:
+        messages.append({"role": "assistant", "content": full_reply})
+    else:
+        user_error = _friendly_model_error(stream_error or "")
+        yield _sse(
+            {
+                "event": "error",
+                "error": user_error,
+                "details": stream_error or "",
+            }
+        )
+
     finished = time.perf_counter()
     logging.info(
         "stream complete conversation_id=%s elapsed_ms=%.1f chars=%s",
@@ -394,6 +469,7 @@ def save_chat_to_file(
     data: list[dict[str, Any]], params: dict[str, Any], file_path: str
 ) -> None:
     content = to_jsonl(params, data)
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
 

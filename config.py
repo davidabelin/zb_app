@@ -28,9 +28,16 @@ def _strtobool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_cloud_runtime() -> bool:
+    """Detect managed cloud runtimes (App Engine/Cloud Run)."""
+    if os.getenv("K_SERVICE"):
+        return True
+    return os.getenv("GAE_ENV", "").startswith("standard")
+
+
 def _load_local_env() -> None:
     """Load local dotenv files only for local/dev usage."""
-    if os.getenv("GAE_ENV", "").startswith("standard"):
+    if _is_cloud_runtime():
         return
     load_dotenv()
     load_dotenv("config/.env")
@@ -52,7 +59,7 @@ def _read_secret(project_id: str, secret_name: str) -> str:
         client = secretmanager.SecretManagerServiceClient()
         name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
         response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("utf-8")
+        return response.payload.data.decode("utf-8").strip()
     except Exception as e:
         logging.warning("Unable to read secret '%s': %s", secret_name, e)
         return ""
@@ -65,7 +72,9 @@ class Config:
         default_factory=lambda: os.getenv("GOOGLE_CLOUD_PROJECT", "zenbot-434517")
     )
     LOCAL: bool = field(
-        default_factory=lambda: not os.getenv("GAE_ENV", "").startswith("standard")
+        default_factory=lambda: _strtobool(
+            os.getenv("LOCAL"), default=not _is_cloud_runtime()
+        )
     )
 
     # Secret indirection env variables
@@ -203,7 +212,7 @@ class Config:
 
     def _resolve_secret(self, secret_name: str, fallback: str) -> str:
         value = _read_secret(self.GOOGLE_CLOUD_PROJECT, secret_name)
-        return value or fallback
+        return value or (fallback or "").strip()
 
     def make_params(
         self, profile: str, model_name: str | None = None

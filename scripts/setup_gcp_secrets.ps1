@@ -58,9 +58,15 @@ foreach ($name in $secrets) {
     } finally {
       [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
     }
-    $plain | gcloud secrets versions add $name --data-file=- *> $null
-    if ($LASTEXITCODE -ne 0) {
-      throw "Failed to add secret version for $name"
+    $tmp = New-TemporaryFile
+    try {
+      [System.IO.File]::WriteAllText($tmp, $plain, [System.Text.Encoding]::UTF8)
+      & gcloud secrets versions add $name --data-file=$tmp *> $null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to add secret version for $name"
+      }
+    } finally {
+      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
   }
 

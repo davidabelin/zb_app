@@ -342,8 +342,21 @@ async function startChat(prompt) {
 
             const chunk = data?.response;
             if (data?.event === "start") {
+              if (data?.conversation_id) {
+                setSessionValue("conversation_id", data.conversation_id);
+              }
               removeThinkingIndicator(thinkingNode);
               thinkingNode = null;
+              continue;
+            }
+
+            if (data?.event === "error") {
+              removeThinkingIndicator(thinkingNode);
+              thinkingNode = null;
+              const detailRaw = typeof data?.details === "string" ? data.details : "";
+              const detail = detailRaw.length > 220 ? `${detailRaw.slice(0, 220)}...` : detailRaw;
+              const detailSuffix = detail ? ` (${detail})` : "";
+              appendChatMessage("System", `${data?.error || "Chat stream failed."}${detailSuffix}`);
               continue;
             }
 
