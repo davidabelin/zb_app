@@ -12,8 +12,17 @@
 # below:
 .git
 .gitignore
+#!include:.gitignore
 
 # Python pycache:
 __pycache__/
 # Ignored by the build system
 /setup.cfg
+
+# Explicit deploy exclusions
+venv/
+config/
+.pytest_cache/
+.vscode/
+tests/
+upload-list.txt

@@ -2,6 +2,7 @@
 import json
 from utilities import to_jsonl  # once you’ve factored it out
 
+
 def test_to_jsonl_roundtrip(tmp_path):
     params = {"foo": "bar"}
     messages = [{"role": "user", "content": "Hello"}]

@@ -1,28 +1,31 @@
 /***************************************************************
- * scripts.js - Consolidated Code
+ * scripts.js
  ***************************************************************/
 
-/* ============================= *
-* 1) SPINNER & ERROR HANDLING   *
-* ============================= */
+const CHAT_API_BASE = (window.CHAT_API_BASE_URL || "").replace(/\/$/, "");
+
+function apiUrl(path) {
+  if (!CHAT_API_BASE) return path;
+  return `${CHAT_API_BASE}${path}`;
+}
+
 function showLoadingSpinner() {
-  const spinnerOverlay = document.createElement('div');
-  spinnerOverlay.className = 'spinner-overlay';
+  const spinnerOverlay = document.createElement("div");
+  spinnerOverlay.className = "spinner-overlay";
   spinnerOverlay.innerHTML = '<div class="spinner"></div>';
-  const container = document.getElementById('spinnerContainer') || document.body;
+  const container = document.getElementById("spinnerContainer") || document.body;
   container.appendChild(spinnerOverlay);
 }
 
 function hideLoadingSpinner() {
-  const spinnerOverlay = document.querySelector('.spinner-overlay');
+  const spinnerOverlay = document.querySelector(".spinner-overlay");
   if (spinnerOverlay) {
     spinnerOverlay.remove();
   }
 }
 
 function handleError(error, elementId, message) {
-  console.error('Error:', error);
-  console.error('Message:', message);
+  console.error("Error:", error);
   const targetElement = document.getElementById(elementId);
   if (targetElement) {
     targetElement.innerHTML = `<p><b>Error:</b> ${message}<br><b>Details:</b> ${error}</p>`;
@@ -32,51 +35,90 @@ function handleError(error, elementId, message) {
 function getCookie(name) {
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop().split(';').shift();
+  if (parts.length === 2) return parts.pop().split(";").shift();
+}
+
+function setCookie(name, value) {
+  document.cookie = `${name}=${value}; path=/`;
+}
+
+function clearCookie(name) {
+  document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+}
+
+function getSessionValue(key) {
+  const fromStorage = window.localStorage.getItem(key);
+  if (fromStorage) return fromStorage;
+  return getCookie(key) || "";
+}
+
+function setSessionValue(key, value) {
+  if (!value) return;
+  window.localStorage.setItem(key, value);
+  setCookie(key, value);
+}
+
+function clearSessionValue(key) {
+  window.localStorage.removeItem(key);
+  clearCookie(key);
 }
 
 function escapeHtml(unsafe) {
   return String(unsafe)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function renderMarkdownSafe(markdownText) {
-  if (typeof marked === 'undefined') {
+  if (typeof marked === "undefined") {
     return escapeHtml(markdownText);
   }
   return marked.parse(escapeHtml(markdownText));
 }
 
-/* ============================================= *
-  * 2) GATELESS GATE LIST PAGE (gg.html)          *
-  *    - Load the list of Koans into #caseList    *
-  * ============================================= */
+function appendThinkingIndicator() {
+  const chatResults = document.getElementById("chatResults");
+  if (!chatResults) return null;
+
+  const div = document.createElement("div");
+  div.className = "zenbot-thinking";
+  div.textContent = "Mumonbot is thinking...";
+  chatResults.appendChild(div);
+  chatResults.scrollTop = chatResults.scrollHeight;
+  return div;
+}
+
+function removeThinkingIndicator(node) {
+  if (node && node.parentNode) {
+    node.parentNode.removeChild(node);
+  }
+}
+
 function initGGList() {
   showLoadingSpinner();
-  fetch('/static/mmnk.json')
-    .then(response => response.json())
-    .then(data => {
-      const tocDiv = document.getElementById('caseList');
+  fetch("/static/mmnk.json")
+    .then((response) => response.json())
+    .then((data) => {
+      const tocDiv = document.getElementById("caseList");
       if (!tocDiv) return;
-      tocDiv.innerHTML = '';
-      const ul = document.createElement('ul');
-      data.cases.forEach(koan => {
-        const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.href = '/gg/' + koan.id;
-        a.textContent = koan.id + '. ' + koan.title;
+      tocDiv.innerHTML = "";
+      const ul = document.createElement("ul");
+      data.cases.forEach((koan) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = "/gg/" + koan.id;
+        a.textContent = koan.id + ". " + koan.title;
         li.appendChild(a);
         ul.appendChild(li);
       });
       tocDiv.appendChild(ul);
     })
-    .catch(error => {
+    .catch((error) => {
       console.error("Error loading JSON:", error);
-      const tocDiv = document.getElementById('caseList');
+      const tocDiv = document.getElementById("caseList");
       if (tocDiv) {
         tocDiv.textContent = "Failed to load cases.";
       }
@@ -86,126 +128,104 @@ function initGGList() {
     });
 }
 
-/* ========================================================== *
-  * 3) SINGLE KOAN PAGE (ggcase.html)                         *
-  *    - Load a specific Koan into koan-container             *
-  * ========================================================== */
 function initGGCasePage() {
-  //showLoadingSpinner();
-
-  const container = document.getElementById('koan-container');
+  const container = document.getElementById("koan-container");
   if (!container) return;
 
-  // Retrieve case_id from cookies or fallback to data attribute
-  let case_id = getCookie('case_id');
-  if (!case_id) {
-    case_id = container.getAttribute('data-case-id');
+  let caseId = getSessionValue("case_id");
+  if (!caseId) {
+    caseId = container.getAttribute("data-case-id");
   }
 
-  fetch('/static/mmnk.json')
-    .then(response => response.json())
-    .then(data => {
-      const koan = data.cases.find(k => k.id.toString() === case_id.toString());
+  fetch("/static/mmnk.json")
+    .then((response) => response.json())
+    .then((data) => {
+      const koan = data.cases.find((k) => k.id.toString() === caseId.toString());
       if (!koan) {
-        container.textContent = "Koan not found with caseID " + case_id + ".";
+        container.textContent = "Koan not found with caseID " + caseId + ".";
         return;
       }
-      container.innerHTML = '';
+      container.innerHTML = "";
 
-      const titleEl = document.createElement('div');
-      titleEl.className = 'koan-title';
-      titleEl.textContent = [koan.id, koan.title].join('. ');
+      const titleEl = document.createElement("div");
+      titleEl.className = "koan-title";
+      titleEl.textContent = [koan.id, koan.title].join(". ");
 
-      const bodyEl = document.createElement('div');
-      bodyEl.className = 'koan-body';
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "koan-body";
       bodyEl.textContent = koan.body;
 
-      const commentEl = document.createElement('div');
-      commentEl.className = 'koan-comment';
+      const commentEl = document.createElement("div");
+      commentEl.className = "koan-comment";
       commentEl.textContent = "Mumon's comment:\n" + koan.comment;
 
-      const verseEl = document.createElement('div');
-      verseEl.className = 'koan-verse';
-      verseEl.textContent = koan.verse.join('\n');
+      const verseEl = document.createElement("div");
+      verseEl.className = "koan-verse";
+      verseEl.textContent = koan.verse.join("\n");
 
       container.appendChild(titleEl);
       container.appendChild(bodyEl);
       container.appendChild(commentEl);
       container.appendChild(verseEl);
 
-      // "Bring to Dokusan" button => POST /chat_case => redirect
-      const discussBtn = document.createElement('button');
-      discussBtn.textContent = 'Bring to a Dokusan Session';
-      discussBtn.addEventListener('click', () => {
-      fetch(`/chat_case/${koan.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ case_id: case_id })
-      })
-      .then(r => {
-        if (!r.ok) {
-          throw new Error(`Server responded with status: ${r.status}`);
-        }
-        return r.json();
-      })
-      .then(res => {
-          if (res.error) {
-            // alert("res.error: " + res.error);
-            console.error("Error fetching /chat_case: " + res.error);
-          } else {
-            // Reset cookies for conversation_id and case_id
-            document.cookie = `conversation_id=${res.conversation_id}; path=/`;
-            document.cookie = `case_id=${res.case_id}; path=/`;
-            // Redirect without query parameters
-            window.location.href = '/chatter';
+      const discussBtn = document.createElement("button");
+      discussBtn.textContent = "Bring to a Dokusan Session";
+      discussBtn.addEventListener("click", async () => {
+        try {
+          const response = await fetch(apiUrl(`/chat_case/${koan.id}`), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ case_id: caseId }),
+            credentials: "include",
+          });
+          if (!response.ok) {
+            throw new Error(`Server responded with status: ${response.status}`);
           }
-        })
-        .catch(err => {
+
+          const res = await response.json();
+          if (res.error) {
+            throw new Error(res.error);
+          }
+
+          setSessionValue("conversation_id", res.conversation_id);
+          setSessionValue("case_id", res.case_id);
+          window.location.href = "/chatter";
+        } catch (err) {
           console.error("Error starting Koan chat:", err);
-          // alert("Failed to start Koan chat. Check console.");
-        });
-  });
-      container.appendChild(document.createElement('br'));
+        }
+      });
+
+      container.appendChild(document.createElement("br"));
       container.appendChild(discussBtn);
     })
-    .catch(error => {
+    .catch((error) => {
       console.error("Error loading JSON:", error);
       container.textContent = "Failed to load koan.";
-    })
-  }
+    });
+}
 
-/* ==================================== *
-  * 4) CHAT PAGE (chatter.html)          *
-  * ==================================== */
 function initChatterPage() {
-  // Read cookies
-  const convId = getCookie('conversation_id');
-  const case_id = getCookie('case_id');
-  if (!convId) {
-  // Handle the case where no conversation exists
-    console.info("No conversation ID found in cookies; assuming no koan chosen.");
-  }
-  // If case_id is present, fetch Koan to show in #chatPreface
-  // case_id should be present only when calling from /chat_case() route (and api)
-  if (case_id) {
-    showLoadingSpinner();
-    fetch('/static/mmnk.json')
-      .then(res => res.json())
-      .then(data => {
-        const matching = data.cases.find(k => k.id.toString() === case_id.toString());
-        if (matching) {
-          const preface = document.getElementById('chatPreface');
-          if (preface) {
-            preface.innerHTML = '';
-            const koanDiv = document.createElement('div');
-            koanDiv.className = 'koan-preface';
+  const convId = getSessionValue("conversation_id");
+  const caseId = getSessionValue("case_id");
 
-            const titleDiv = document.createElement('div');
-            const titleU = document.createElement('u');
+  if (caseId) {
+    fetch("/static/mmnk.json")
+      .then((res) => res.json())
+      .then((data) => {
+        const matching = data.cases.find((k) => k.id.toString() === caseId.toString());
+        if (matching) {
+          const preface = document.getElementById("chatPreface");
+          if (preface) {
+            preface.innerHTML = "";
+            const koanDiv = document.createElement("div");
+            koanDiv.className = "koan-preface";
+
+            const titleDiv = document.createElement("div");
+            const titleU = document.createElement("u");
             titleU.textContent = `Case #${matching.id}: ${matching.title}`;
             titleDiv.appendChild(titleU);
 
-            const bodyDiv = document.createElement('div');
+            const bodyDiv = document.createElement("div");
             bodyDiv.textContent = matching.body;
 
             koanDiv.appendChild(titleDiv);
@@ -214,40 +234,36 @@ function initChatterPage() {
           }
         }
       })
-      .catch(err => {
+      .catch((err) => {
         console.error("Failed to load Koan in chatter:", err);
-      })
-      .finally(() => {
-        hideLoadingSpinner();
       });
   }
 
-  // Set up chat events (Send/End/Clear)
-  // Clear button
-  // Restore button to chatter.html too
-  const endChatButton = document.getElementById('chatEnd');
+  const endChatButton = document.getElementById("chatEnd");
   if (endChatButton) {
-    endChatButton.addEventListener('click', clearChat);
+    endChatButton.addEventListener("click", clearChat);
   }
-  // Save button
-  const saveChatButton = document.getElementById('chatSave');
+
+  const saveChatButton = document.getElementById("chatSave");
   if (saveChatButton) {
-    saveChatButton.addEventListener('click', saveChat);
+    saveChatButton.addEventListener("click", saveChat);
     saveChatButton.disabled = !convId;
   }
-  // Send button
-  const chatButton = document.getElementById('chatSend');
-  const chatInput = document.getElementById('chatInput');
+
+  const chatButton = document.getElementById("chatSend");
+  const chatInput = document.getElementById("chatInput");
   if (chatInput) {
     chatInput.focus();
   }
+
   if (chatButton && chatInput) {
-    chatButton.addEventListener('click', () => {
+    chatButton.addEventListener("click", () => {
       const prompt = chatInput.value.trim();
       if (prompt) startChat(prompt);
     });
-    chatInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+
+    chatInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         chatButton.click();
       }
@@ -255,27 +271,28 @@ function initChatterPage() {
   }
 }
 
-/* ============================== *
-  * CORE CHAT FUNCTIONS         *
-  * ============================== */
 async function startChat(prompt) {
-  const chatButton = document.getElementById('chatSend');
-  const chatInput = document.getElementById('chatInput');
-  const saveChatButton = document.getElementById('chatSave');
+  const chatButton = document.getElementById("chatSend");
+  const chatInput = document.getElementById("chatInput");
+  const saveChatButton = document.getElementById("chatSave");
+
+  let thinkingNode = null;
 
   try {
-    if (chatInput) chatInput.value = '';
-    appendChatMessage('Student', prompt);
+    if (chatInput) chatInput.value = "";
+    appendChatMessage("Student", prompt);
     if (chatButton) chatButton.disabled = true;
-    showLoadingSpinner();
 
-    const response = await fetch('/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    thinkingNode = appendThinkingIndicator();
+
+    const response = await fetch(apiUrl("/chat"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: prompt,
-        conversation_id: getCookie('conversation_id') || ''
-      })
+        conversation_id: getSessionValue("conversation_id") || "",
+      }),
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -283,23 +300,22 @@ async function startChat(prompt) {
       throw new Error(`HTTP ${response.status}: ${fallback}`);
     }
 
-    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
 
-    // Streaming response (SSE)
-    if (contentType.includes('text/event-stream')) {
-      const messageDiv = document.createElement('div');
-      messageDiv.className = 'zenbot-message';
-      messageDiv.innerHTML = `<strong>Mumonbot:</strong><br><span class="message-content"></span>`;
-      const contentEl = messageDiv.querySelector('.message-content');
+    if (contentType.includes("text/event-stream")) {
+      const messageDiv = document.createElement("div");
+      messageDiv.className = "zenbot-message";
+      messageDiv.innerHTML = "<strong>Mumonbot:</strong><br><span class=\"message-content\"></span>";
+      const contentEl = messageDiv.querySelector(".message-content");
 
-      const chatResults = document.getElementById('chatResults');
+      const chatResults = document.getElementById("chatResults");
       if (chatResults) {
         chatResults.appendChild(messageDiv);
         chatResults.scrollTop = chatResults.scrollHeight;
       }
 
-      let buffer = '';
-      let fullText = '';
+      let buffer = "";
+      let fullText = "";
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
@@ -308,30 +324,37 @@ async function startChat(prompt) {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split('\n\n');
-        buffer = events.pop() || '';
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
 
         for (const evt of events) {
-          for (const line of evt.split('\n')) {
-            if (!line.startsWith('data:')) continue;
+          for (const line of evt.split("\n")) {
+            if (!line.startsWith("data:")) continue;
             const payload = line.slice(5).trim();
             if (!payload) continue;
 
             let data;
             try {
               data = JSON.parse(payload);
-            } catch (e) {
-              console.warn('Bad SSE JSON payload:', payload);
+            } catch (_e) {
               continue;
             }
 
             const chunk = data?.response;
-            if (chunk === '[DONE]') {
+            if (data?.event === "start") {
+              removeThinkingIndicator(thinkingNode);
+              thinkingNode = null;
+              continue;
+            }
+
+            if (chunk === "[DONE]") {
               if (contentEl) contentEl.innerHTML = renderMarkdownSafe(fullText);
               continue;
             }
 
-            if (typeof chunk === 'string') {
+            if (typeof chunk === "string") {
+              removeThinkingIndicator(thinkingNode);
+              thinkingNode = null;
               fullText += chunk;
               if (contentEl) contentEl.textContent = fullText;
               if (chatResults) chatResults.scrollTop = chatResults.scrollHeight;
@@ -340,153 +363,122 @@ async function startChat(prompt) {
         }
       }
     } else {
-      // Non-streaming JSON response
       const data = await response.json();
-      appendChatMessage('Mumonbot', data.response);
-    }
-
-    const inputEl = document.getElementById('chatInput');
-    if (inputEl) {
-      inputEl.focus();
-    }
-    /* Feature On hold
-    if (data.conversation_id) {
-      const prefaceEl = document.getElementById('chatPreface');
-      if (prefaceEl) {
-        prefaceEl.innerHTML = 'Session ID: ' + data.conversation_id;
+      removeThinkingIndicator(thinkingNode);
+      thinkingNode = null;
+      appendChatMessage("Mumonbot", data.response);
+      if (data.conversation_id) {
+        setSessionValue("conversation_id", data.conversation_id);
       }
     }
-    */
+
+    const convIdAfter = getCookie("conversation_id");
+    if (convIdAfter) {
+      setSessionValue("conversation_id", convIdAfter);
+    }
+
+    if (chatInput) {
+      chatInput.focus();
+    }
   } catch (error) {
-    appendChatMessage('System', `Error: ${error?.message || String(error)}`);
-    handleError(error, 'chatPreface', 'Error starting chat.');
+    removeThinkingIndicator(thinkingNode);
+    appendChatMessage("System", `Error: ${error?.message || String(error)}`);
+    handleError(error, "chatPreface", "Error starting chat.");
   } finally {
-    hideLoadingSpinner();
     if (chatButton) chatButton.disabled = false;
     if (chatInput) chatInput.focus();
-    if (saveChatButton) saveChatButton.disabled = !(getCookie('conversation_id'));
+    if (saveChatButton) saveChatButton.disabled = !getSessionValue("conversation_id");
   }
 }
 
-/* function formatMessage(message) {return message.replace(/\n/g, '<br>');} */
-
 function appendChatMessage(sender, message) {
-  const chatResults = document.getElementById('chatResults');
+  const chatResults = document.getElementById("chatResults");
   if (!chatResults) return;
 
-  const messageDiv = document.createElement('div');
-  messageDiv.className = (sender === 'Student') ? 'user-message' : 'zenbot-message';
+  const messageDiv = document.createElement("div");
+  messageDiv.className = sender === "Student" ? "user-message" : "zenbot-message";
 
   try {
-    const text = String(message ?? '');
+    const text = String(message ?? "");
     const htmlContent = renderMarkdownSafe(text);
     messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong><br>${htmlContent}`;
   } catch (error) {
-    // handleError(error, 'chatPreface', 'Formatting error in appendChatMessage script.');
     messageDiv.innerHTML = `<strong>${sender}</strong> caused error:<br>${error}`;
   } finally {
-    // Add to the bottom
     chatResults.appendChild(messageDiv);
     chatResults.scrollTop = chatResults.scrollHeight;
   }
 }
 
 function clearChat() {
-  let resetButton = document.getElementById('chatEnd');
+  const resetButton = document.getElementById("chatEnd");
   if (resetButton) {
     resetButton.disabled = true;
-    setTimeout(() => resetButton.disabled = false, 3000); // Re-enable after 3s
+    setTimeout(() => {
+      resetButton.disabled = false;
+    }, 3000);
   }
 
-  // To avoid accidental button clicks
   if (confirm("Are you sure you want to reset? This cannot be undone.")) {
-    // Remove cookies by setting an expiration in the past
-    document.cookie = 'conversation_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    document.cookie = 'case_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    // Clear chat display
-    const chatResults = document.getElementById('chatResults');
-    const chatInput = document.getElementById('chatInput');
-    const chatPreface = document.getElementById('chatPreface');
-    if (chatResults) chatResults.innerHTML = '';
-    if (chatInput) chatInput.value = '';
-    if (chatPreface) chatPreface.innerHTML = '';
-    // Reset URL to just /chatter
-    window.history.replaceState(null, '', '/chatter');
- }
+    clearSessionValue("conversation_id");
+    clearSessionValue("case_id");
+
+    const chatResults = document.getElementById("chatResults");
+    const chatInput = document.getElementById("chatInput");
+    const chatPreface = document.getElementById("chatPreface");
+    if (chatResults) chatResults.innerHTML = "";
+    if (chatInput) chatInput.value = "";
+    if (chatPreface) chatPreface.innerHTML = "";
+    window.history.replaceState(null, "", "/chatter");
+  }
 }
 
 async function saveChat() {
-  const conversationId = getCookie('conversation_id');
+  const conversationId = getSessionValue("conversation_id");
   if (!conversationId) {
     alert("There is no conversation to save!");
     return;
   }
+
   try {
     showLoadingSpinner();
-    console.log("saveChat() called");
-    console.log("conversationId:", conversationId);
-    const response = await fetch('/save_chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+    const response = await fetch(apiUrl("/save_chat"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        case_id: getSessionValue("case_id") || "",
+      }),
+      credentials: "include",
     });
-    console.log("saveChat(): response: ", response);
+
     const data = await response.json();
-    console.log("saveChat(): response.json(): ", data);
-    if (data.status === 'success') {
-      alert('Chat successfully saved.');
-      const conversationId = getCookie('conversation_id');
-      console.log("saveChat() success; conversationId should be blank: '", conversationId, "'");
-      document.getElementById('chatResults').innerHTML = '';
-      document.getElementById('chatInput').value = '';
-      document.getElementById('chatPreface').innerHTML = '';
+    if (response.ok && data.status === "success") {
+      alert("Chat successfully saved.");
+      clearSessionValue("conversation_id");
+      clearSessionValue("case_id");
+      const chatResults = document.getElementById("chatResults");
+      const chatInput = document.getElementById("chatInput");
+      const chatPreface = document.getElementById("chatPreface");
+      if (chatResults) chatResults.innerHTML = "";
+      if (chatInput) chatInput.value = "";
+      if (chatPreface) chatPreface.innerHTML = "";
     } else {
-      alert(`Error saving chat: ${data.error}`);
+      alert(`Error saving chat: ${data.error || response.statusText}`);
     }
   } catch (error) {
-    handleError(error, 'chatPreface', 'Error ending chat.');
+    handleError(error, "chatPreface", "Error saving chat.");
   } finally {
     hideLoadingSpinner();
   }
 }
 
-async function oldsaveChat() {
-  try {
-    showLoadingSpinner();
-    const response = await fetch('/save_chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const data = await response.json();
-    if (data.status === 'success') {
-      alert('Chat successfully saved.');
-      document.getElementById('chatResults').innerHTML = '';
-      document.getElementById('chatInput').value = '';
-      document.getElementById('chatPreface').innerHTML = '';
-    } else {
-      alert(`Error saving chat: ${data.error}`);
-    }
-  } catch (error) {
-    handleError(error, 'chatPreface', 'Error ending chat.');
-  } finally {
-    hideLoadingSpinner();
-  }
-}
-
-/* ======================================== *
-  * 6) DETECT WHICH PAGE & INIT ACCORDINGLY  *
-  * ======================================== */
-document.addEventListener('DOMContentLoaded', () => {
-  if (document.getElementById('caseList')) {
-    // gg.html
+document.addEventListener("DOMContentLoaded", () => {
+  if (document.getElementById("caseList")) {
     initGGList();
-  }
-  else if (document.getElementById('koan-container')) {
-    // ggcase.html
+  } else if (document.getElementById("koan-container")) {
     initGGCasePage();
-  }
-  else if (document.getElementById('chatResults')) {
-    // chatter.html
+  } else if (document.getElementById("chatResults")) {
     initChatterPage();
   }
-
 });

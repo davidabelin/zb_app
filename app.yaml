@@ -1,5 +1,5 @@
 runtime: python314
-entrypoint:  gunicorn --timeout 30 -b :$PORT main:app
+entrypoint: gunicorn --workers 2 --threads 4 --timeout 120 -b :$PORT main:app
 
 handlers:
   - url: /static
@@ -7,10 +7,13 @@ handlers:
 
 env_variables:
   GOOGLE_CLOUD_PROJECT: zenbot-434517
-  GOOGLE_API_KEY: AIzaSyBsZ98ixt3QBghGxxNrDoGsx9G5xFF3-DA
-  GOOGLE_APPLICATION_CREDENTIALS: config/google_zenbot_434517.json
-  OPENAI_API_KEY:  sk-svcacct-QKr7LzsvrTk1Ie3_7h_4mLhH6YBGaOf0P-oVAo85TIjxL_KIUdEg2eP0RKFeGX0ET3BlbkFJnsCqSGnchkPJiiaXHR5x8I2Q9D6NyO0katpPKBa3Lgxqb_0GHblTiMt01cpQYusA
-
-  FLASK_SECRET_KEY: 482937561034
+  CHAT_API_BASE_URL: https://zb-chat-api-txk2gvimpq-uc.a.run.app
+  OPENAI_API_KEY_SECRET_NAME: zb-openai-api-key
+  FLASK_SECRET_KEY_SECRET_NAME: zb-flask-secret-key
+  ACTION_API_TOKEN_SECRET_NAME: zb-action-api-token
+  WEB_APP_ORIGIN: https://zenbot-434517.uw.r.appspot.com
+  STREAMING_ENABLED: "true"
+  ZB_API_STRICT_AUTH: "true"
+  SESSION_COOKIE_SECURE: "true"
 
 service_account: zenbot-sa@zenbot-434517.iam.gserviceaccount.com

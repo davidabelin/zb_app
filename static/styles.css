@@ -7,12 +7,12 @@
     height: 40px;
     animation: spin 1s linear infinite;
   }
-  
+
   @keyframes spin {
     0%   { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
-  
+
   .spinner-overlay {
     position: fixed;
     top: 0; left: 0;
@@ -22,17 +22,17 @@
     display: flex; justify-content: center; align-items: center;
     z-index: 1000;
   }
-  
+
   /* ========== Global Styles ========== */
   html, body {
     margin: 0; padding: 0;
     box-sizing: border-box;
   }
-  
+
   *, *::before, *::after {
     box-sizing: inherit;
   }
-  
+
   body {
     font-family: Georgia, sans-serif;
     font-size: 16px;
@@ -41,13 +41,13 @@
     background-color: #fafff0;
     color: #000;
   }
-  
+
   .container {
     max-width: 90%;
     margin: 0 auto;
     padding: 8px;
   }
-  
+
   /* ========== Header and Footer ========== */
   header {
     background-color: #20663a;
@@ -56,17 +56,17 @@
     padding: 4px 4px;
     margin-bottom: 4px;
   }
-  
+
   header h1 {
     font-size: 1.5em;
     margin-bottom: 6px;
   }
-  
+
   header h2 {
     font-size: 1.25em;
     margin-bottom: 3px;
   }
-  
+
   header h3 {
     font-size: 1.125em;
     margin-bottom: 3px;
@@ -79,7 +79,7 @@
     margin-top: 12px;
     font-size: 0.8em;
   }
-  
+
   /* ========== Buttons ========== */
   button {
     font-family: inherit;
@@ -119,7 +119,7 @@
   a:hover {
     text-decoration: underline;
   }
-  
+
   /* ========== Lists ========== */
   ul {
     list-style: none;
@@ -130,7 +130,7 @@
     color:#000;
     margin: auto;
   }
-  
+
   /* ========== Koan Styling ========== */
   .koan-preface {
     border-top: 1px solid #ffd;
@@ -140,7 +140,7 @@
     color: #f0ffd0;
     text-align: left;
   }
-  
+
   .koan-title {
     font-weight: bold;
     margin-bottom: 1.1em;
@@ -220,7 +220,6 @@
 .chat-help {
   color: #333;
 }
-}
 
   /* ========== Chat Message Bubbles ========== */
   .user-message {
@@ -242,6 +241,15 @@
     line-height: 1.25;
   }
 
+  .zenbot-thinking {
+    margin: 0.25em 0;
+    padding: 0.25em 0.5em;
+    border-left: 3px solid #20663a;
+    background-color: #f3ffe9;
+    font-style: italic;
+    color: #2a422a;
+  }
+
   /* ========== Media Queries for Mobile ========== */
   @media (max-width: 600px) {
     body {
@@ -258,4 +266,3 @@
       padding: 4px 6px;
     }
   }
-  
