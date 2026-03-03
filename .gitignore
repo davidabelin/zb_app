@@ -119,6 +119,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+venv\Lib\site-packages\*
+venv\*
+
 
 # Contents of config folder
 config/
@@ -156,3 +159,4 @@ cython_debug/
 
 # YAML
 .yaml
+upload-list.txt
