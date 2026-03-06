@@ -85,7 +85,12 @@ function appendThinkingIndicator() {
 
   const div = document.createElement("div");
   div.className = "zenbot-thinking";
-  div.textContent = "Mumonbot is thinking...";
+  div.innerHTML = `
+    <div class="zenbot-thinking-label">Mumonbot is considering your words</div>
+    <div class="zenbot-thinking-breath" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+  `;
   chatResults.appendChild(div);
   chatResults.scrollTop = chatResults.scrollHeight;
   return div;
