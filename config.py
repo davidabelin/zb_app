@@ -28,6 +28,13 @@ def _strtobool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _sanitize_secret(value: str | None) -> str:
+    if value is None:
+        return ""
+    # Strip whitespace and a UTF-8 BOM if a secret version was uploaded with it.
+    return value.strip().lstrip("\ufeff")
+
+
 def _is_cloud_runtime() -> bool:
     """Detect managed cloud runtimes (App Engine/Cloud Run)."""
     if os.getenv("K_SERVICE"):
@@ -59,7 +66,7 @@ def _read_secret(project_id: str, secret_name: str) -> str:
         client = secretmanager.SecretManagerServiceClient()
         name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
         response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("utf-8").strip()
+        return _sanitize_secret(response.payload.data.decode("utf-8"))
     except Exception as e:
         logging.warning("Unable to read secret '%s': %s", secret_name, e)
         return ""
@@ -212,7 +219,7 @@ class Config:
 
     def _resolve_secret(self, secret_name: str, fallback: str) -> str:
         value = _read_secret(self.GOOGLE_CLOUD_PROJECT, secret_name)
-        return value or (fallback or "").strip()
+        return value or _sanitize_secret(fallback)
 
     def make_params(
         self, profile: str, model_name: str | None = None

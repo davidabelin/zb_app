@@ -11,6 +11,12 @@
     <p>List of Saved Session Transcripts</p>
 </header>
 <section>
+    {% if request.args.get("status") == "downloaded" %}
+      <p><b>Download complete.</b></p>
+    {% elif request.args.get("status") == "failed" %}
+      <p><b>Download failed.</b></p>
+    {% endif %}
+
     <ul>
       {% for conversation_id in conversation_ids %}
         <li>
@@ -21,6 +27,12 @@
       {% endfor %}
     </ul>
     <br>
-	<a href="{{ url_for('download_chats') }}"><b>Download all.</b></a>
+    <form method="post" action="{{ url_for('download_chats') }}">
+      <button type="submit"><b>Download all.</b></button>
+    </form>
+    <br>
+    <form method="post" action="{{ url_for('admin_logout') }}">
+      <button type="submit">Log out</button>
+    </form>
 </section>
 {% endblock %}

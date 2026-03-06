@@ -60,7 +60,8 @@ foreach ($name in $secrets) {
     }
     $tmp = New-TemporaryFile
     try {
-      [System.IO.File]::WriteAllText($tmp, $plain, [System.Text.Encoding]::UTF8)
+      $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+      [System.IO.File]::WriteAllText($tmp, $plain, $utf8NoBom)
       & gcloud secrets versions add $name --data-file=$tmp *> $null
       if ($LASTEXITCODE -ne 0) {
         throw "Failed to add secret version for $name"

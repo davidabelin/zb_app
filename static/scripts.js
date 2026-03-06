@@ -353,10 +353,7 @@ async function startChat(prompt) {
             if (data?.event === "error") {
               removeThinkingIndicator(thinkingNode);
               thinkingNode = null;
-              const detailRaw = typeof data?.details === "string" ? data.details : "";
-              const detail = detailRaw.length > 220 ? `${detailRaw.slice(0, 220)}...` : detailRaw;
-              const detailSuffix = detail ? ` (${detail})` : "";
-              appendChatMessage("System", `${data?.error || "Chat stream failed."}${detailSuffix}`);
+              appendChatMessage("System", data?.error || "Chat stream failed.");
               continue;
             }
 

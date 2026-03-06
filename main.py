@@ -22,11 +22,13 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     send_from_directory,
     stream_with_context,
     url_for,
 )
 from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import HTTPException
 
 import utilities as utipy
 from utilities import ModelAPIError
@@ -151,6 +153,17 @@ def _extract_bearer() -> str:
     return ""
 
 
+def _admin_session_active() -> bool:
+    return bool(session.get("admin_authenticated"))
+
+
+def _safe_next_path(candidate: str) -> str:
+    text = (candidate or "").strip()
+    if not text.startswith("/") or text.startswith("//"):
+        return url_for("admin_conversations")
+    return text
+
+
 def _require_api_auth() -> None:
     expected = utipy.config.ACTION_API_TOKEN.strip()
     if not expected:
@@ -169,8 +182,11 @@ def _require_admin_auth() -> None:
         abort(503, description="Admin token not configured")
 
     provided = _extract_bearer()
-    if not provided or not hmac.compare_digest(provided, expected):
-        abort(403, description="Forbidden")
+    if provided and hmac.compare_digest(provided, expected):
+        return
+    if _admin_session_active():
+        return
+    abort(403, description="Forbidden")
 
 
 @app.before_request
@@ -187,8 +203,17 @@ def _request_guards():
         if utipy.config.ZB_API_STRICT_AUTH:
             _require_api_auth()
 
+    if path in {"/admin/login", "/admin/logout"}:
+        return None
+
     if path.startswith("/admin") or path == "/download_chats":
-        _require_admin_auth()
+        try:
+            _require_admin_auth()
+        except HTTPException:
+            if request.method == "GET":
+                next_path = request.full_path[:-1] if request.full_path.endswith("?") else request.full_path
+                return redirect(url_for("admin_login", next=_safe_next_path(next_path)))
+            raise
 
 
 @app.after_request
@@ -224,6 +249,35 @@ def privacy():
     return render_template("privacy.html")
 
 
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    next_path = _safe_next_path(request.values.get("next", ""))
+    error = ""
+
+    if _admin_session_active():
+        return redirect(next_path)
+
+    if request.method == "POST":
+        expected = utipy.config.ACTION_API_TOKEN.strip()
+        token = request.form.get("token", "").strip()
+
+        if not expected:
+            abort(503, description="Admin token not configured")
+        if token and hmac.compare_digest(token, expected):
+            session["admin_authenticated"] = True
+            return redirect(next_path)
+
+        error = "Invalid admin token."
+
+    return render_template("admin_login.html", error=error, next_path=next_path)
+
+
+@app.route("/admin/logout", methods=["POST"])
+def admin_logout():
+    session.pop("admin_authenticated", None)
+    return redirect(url_for("admin_login"))
+
+
 @app.route("/chatter")
 def chatter():
     if utipy.config.STREAMING:
@@ -234,7 +288,15 @@ def chatter():
 @app.errorhandler(ModelAPIError)
 def handle_model_error(err):
     logging.error("ModelAPIError: %s", err)
-    return jsonify({"error": "model_error", "message": str(err)}), 502
+    return (
+        jsonify(
+            {
+                "error": "model_error",
+                "message": utipy.friendly_model_error_message(str(err)),
+            }
+        ),
+        502,
+    )
 
 
 # -------- Chat Routes --------
@@ -893,7 +955,11 @@ def admin_conversation_detail(conversation_id: str):
 @app.route("/download_chats", methods=["POST"])
 def download_chats():
     if utipy.download_all():
+        if "text/html" in (request.headers.get("Accept", "").lower()):
+            return redirect(url_for("admin_conversations", status="downloaded"))
         return jsonify({"status": "success"}), 200
+    if "text/html" in (request.headers.get("Accept", "").lower()):
+        return redirect(url_for("admin_conversations", status="failed"))
     return jsonify({"status": "failure"}), 500
 
 

@@ -371,7 +371,7 @@ def _sse(payload: dict[str, Any]) -> str:
     return "data: " + json.dumps(payload) + "\n\n"
 
 
-def _friendly_model_error(raw_error: str) -> str:
+def friendly_model_error_message(raw_error: str) -> str:
     text = (raw_error or "").lower()
     if "insufficient_quota" in text or "exceeded your current quota" in text:
         return "OpenAI quota exceeded for the configured API key."
@@ -438,12 +438,11 @@ def prompt_and_stream(
     if full_reply:
         messages.append({"role": "assistant", "content": full_reply})
     else:
-        user_error = _friendly_model_error(stream_error or "")
+        user_error = friendly_model_error_message(stream_error or "")
         yield _sse(
             {
                 "event": "error",
                 "error": user_error,
-                "details": stream_error or "",
             }
         )
 
