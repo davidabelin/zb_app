@@ -10,5 +10,5 @@ requests>=2.28.2
 python-dotenv
 openai==1.61.0
 pyyaml
-# Keep versions explicit to avoid deep dependency backtracking in Cloud Build.
+# Keep versions expl-+icit to avoid deep dependency backtracking in Cloud Build.
 pydantic==2.12.4

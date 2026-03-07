@@ -586,6 +586,220 @@ def _logbook_blob_candidates() -> list[str]:
     return unique
 
 
+def _stringify_logbook_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, (list, dict)):
+        try:
+            return json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            return str(value)
+    return str(value).strip()
+
+
+def _listify_logbook_strings(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        result: list[str] = []
+        for item in value:
+            text = _stringify_logbook_value(item)
+            if text:
+                result.append(text)
+        return result
+    text = _stringify_logbook_value(value)
+    return [text] if text else []
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            result.append(item)
+            seen.add(item)
+    return result
+
+
+def _merge_labeled_strings(label: str, value: Any) -> list[str]:
+    texts = _listify_logbook_strings(value)
+    if not texts:
+        return []
+    if len(texts) == 1:
+        return [f"{label}: {texts[0]}"]
+    return [f"{label}: {text}" for text in texts]
+
+
+def _normalize_session_evaluations(entry: dict[str, Any]) -> list[dict[str, str]]:
+    koans_used = _listify_logbook_strings(entry.get("koans_used"))
+    default_case = koans_used[0] if koans_used else _stringify_logbook_value(
+        entry.get("title")
+    ) or "unspecified"
+    session_ids = _listify_logbook_strings(entry.get("sessions"))
+    default_conversation_id = session_ids[0] if session_ids else ""
+
+    normalized: list[dict[str, str]] = []
+    raw_items = entry.get("session_evaluations")
+    if isinstance(raw_items, list):
+        for raw in raw_items:
+            if isinstance(raw, dict):
+                case = (
+                    _stringify_logbook_value(raw.get("case"))
+                    or _stringify_logbook_value(raw.get("koan"))
+                    or default_case
+                )
+                conversation_id = (
+                    _stringify_logbook_value(raw.get("conversation_id"))
+                    or _stringify_logbook_value(raw.get("session_id"))
+                    or default_conversation_id
+                )
+                evaluation = (
+                    _stringify_logbook_value(raw.get("evaluation"))
+                    or _stringify_logbook_value(raw.get("evaluation_outcome"))
+                    or "recorded"
+                )
+                notes = (
+                    _stringify_logbook_value(raw.get("notes"))
+                    or _stringify_logbook_value(raw.get("details"))
+                    or _stringify_logbook_value(raw)
+                    or "No additional notes preserved."
+                )
+            else:
+                case = default_case
+                conversation_id = default_conversation_id
+                evaluation = "recorded"
+                notes = _stringify_logbook_value(raw) or "No additional notes preserved."
+            normalized.append(
+                {
+                    "case": case,
+                    "conversation_id": conversation_id,
+                    "evaluation": evaluation,
+                    "notes": notes,
+                }
+            )
+
+    if normalized:
+        return normalized
+
+    derived_notes = _dedupe_preserve_order(
+        _merge_labeled_strings("session_details", entry.get("session_details"))
+        + _merge_labeled_strings("session_summary", entry.get("session_summary"))
+        + _merge_labeled_strings(
+            "botling_evaluation_summary", entry.get("botling_evaluation_summary")
+        )
+        + _merge_labeled_strings("developments", entry.get("developments"))
+        + _merge_labeled_strings("user_feedback", entry.get("user_feedback"))
+    )
+    derived_evaluation = (
+        _stringify_logbook_value(entry.get("evaluation_outcome"))
+        or _stringify_logbook_value(entry.get("evaluation"))
+        or _stringify_logbook_value(entry.get("final_outcome"))
+        or "recorded"
+    )
+    notes_text = (
+        " | ".join(derived_notes)
+        if derived_notes
+        else "Derived from legacy memory record."
+    )
+
+    if session_ids:
+        for session_id in session_ids:
+            normalized.append(
+                {
+                    "case": default_case,
+                    "conversation_id": session_id,
+                    "evaluation": derived_evaluation,
+                    "notes": notes_text,
+                }
+            )
+        return normalized
+
+    return [
+        {
+            "case": default_case,
+            "conversation_id": default_conversation_id,
+            "evaluation": derived_evaluation,
+            "notes": notes_text,
+        }
+    ]
+
+
+def normalize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(entry, dict):
+        entry = {}
+
+    key_insights = _dedupe_preserve_order(
+        _listify_logbook_strings(entry.get("key_insights"))
+        + _merge_labeled_strings("developments", entry.get("developments"))
+        + _merge_labeled_strings("session_summary", entry.get("session_summary"))
+    )
+    lessons_learned = _dedupe_preserve_order(
+        _listify_logbook_strings(entry.get("lessons_learned"))
+        + _merge_labeled_strings("failure_analysis", entry.get("failure_analysis"))
+        + _merge_labeled_strings("failures", entry.get("failures"))
+        + _merge_labeled_strings("schema_updates", entry.get("schema_updates"))
+        + _merge_labeled_strings(
+            "scoring_system_update", entry.get("scoring_system_update")
+        )
+        + _merge_labeled_strings(
+            "justification_for_future_use",
+            entry.get("justification_for_future_use"),
+        )
+    )
+    user_instructions = _dedupe_preserve_order(
+        _listify_logbook_strings(entry.get("user_instructions"))
+        + _merge_labeled_strings("user_goals", entry.get("user_goals"))
+    )
+
+    response_summary = (
+        _stringify_logbook_value(entry.get("response_summary"))
+        or _stringify_logbook_value(entry.get("zenbots_response"))
+        or _stringify_logbook_value(entry.get("botling_evaluation_summary"))
+        or _stringify_logbook_value(entry.get("session_summary"))
+    )
+    user_problem = (
+        _stringify_logbook_value(entry.get("user_problem_or_questions"))
+        or _stringify_logbook_value(entry.get("user_feedback"))
+        or _stringify_logbook_value(entry.get("user_goals"))
+        or "No explicit user problem preserved in the legacy record."
+    )
+    final_outcome = (
+        _stringify_logbook_value(entry.get("final_outcome"))
+        or _stringify_logbook_value(entry.get("evaluation_outcome"))
+        or _stringify_logbook_value(entry.get("evaluation"))
+        or "Recorded."
+    )
+
+    normalized = {
+        "date": _stringify_logbook_value(entry.get("date")) or "unknown",
+        "time": _stringify_logbook_value(entry.get("time")) or "unknown",
+        "serial_number": _stringify_logbook_value(entry.get("serial_number"))
+        or _stringify_logbook_value(entry.get("id"))
+        or str(uuid.uuid4())[:8],
+        "title": _stringify_logbook_value(entry.get("title"))
+        or "Untitled memory entry",
+        "koans_used": _dedupe_preserve_order(
+            _listify_logbook_strings(entry.get("koans_used"))
+        ),
+        "user_problem_or_questions": user_problem,
+        "response_summary": response_summary or "No response summary preserved.",
+        "session_evaluations": _normalize_session_evaluations(entry),
+        "key_insights": key_insights,
+        "lessons_learned": lessons_learned,
+        "final_outcome": final_outcome,
+        "user_instructions": user_instructions,
+    }
+    return normalized
+
+
+def normalize_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)]
+
+
 def load_memory_logbook() -> list[dict[str, Any]]:
     payload = None
 
@@ -601,6 +815,11 @@ def load_memory_logbook() -> list[dict[str, Any]]:
                     "Error loading memory logbook blob '%s': %s", blob_name, e
                 )
 
+    if payload is None and not config.LOCAL:
+        raise RuntimeError(
+            "Cloud memory logbook unavailable: GCS read failed and local fallback is disabled in cloud runtimes."
+        )
+
     if payload is None:
         try:
             if _LOCAL_LOGBOOK_PATH.exists():
@@ -608,16 +827,21 @@ def load_memory_logbook() -> list[dict[str, Any]]:
         except Exception as e:
             logging.warning("Error loading local memory logbook: %s", e)
 
-    return _parse_logbook_payload(payload or "")
+    return normalize_logbook_entries(_parse_logbook_payload(payload or ""))
 
 
 def save_logbook(logbook: list[dict[str, Any]]) -> None:
+    logbook = normalize_logbook_entries(logbook)
     lines = [json.dumps(item, ensure_ascii=False, default=str) for item in logbook]
     payload = "\n".join(lines)
 
     if BUCKET:
         blob = BUCKET.blob(MEMORY_LOGBOOK)
         blob.upload_from_string(payload, content_type="application/jsonl")
+    elif not config.LOCAL:
+        raise RuntimeError(
+            "Cloud memory logbook unavailable: GCS write failed and local fallback is disabled in cloud runtimes."
+        )
     else:
         _LOCAL_LOGBOOK_PATH.parent.mkdir(parents=True, exist_ok=True)
         _LOCAL_LOGBOOK_PATH.write_text(payload, encoding="utf-8")
@@ -625,7 +849,7 @@ def save_logbook(logbook: list[dict[str, Any]]) -> None:
 
 def update_logbook(new_entry: dict[str, Any]) -> list[dict[str, Any]]:
     logbook = load_memory_logbook()
-    logbook.append(new_entry)
+    logbook.append(normalize_memory_entry(new_entry))
     save_logbook(logbook)
     return logbook
 

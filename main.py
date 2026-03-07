@@ -146,11 +146,11 @@ def _cors_preflight_response() -> Response:
     return response
 
 
-def _extract_bearer() -> str:
+def _extract_auth_token() -> str:
     auth = request.headers.get("Authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    return ""
+    return auth.strip()
 
 
 def _admin_session_active() -> bool:
@@ -169,7 +169,7 @@ def _require_api_auth() -> None:
     if not expected:
         abort(503, description="ACTION_API_TOKEN not configured")
 
-    provided = _extract_bearer()
+    provided = _extract_auth_token()
     if not provided or not hmac.compare_digest(provided, expected):
         abort(401, description="Unauthorized")
 
@@ -181,7 +181,7 @@ def _require_admin_auth() -> None:
             return
         abort(503, description="Admin token not configured")
 
-    provided = _extract_bearer()
+    provided = _extract_auth_token()
     if provided and hmac.compare_digest(provided, expected):
         return
     if _admin_session_active():
@@ -236,6 +236,21 @@ def inject_runtime_config() -> dict[str, Any]:
         "chat_api_base_url": (utipy.config.CHAT_API_BASE_URL or "").rstrip("/"),
         "streaming_enabled": utipy.config.STREAMING,
     }
+
+
+def _memory_mutation_response(
+    status: str,
+    memories: list[dict[str, Any]],
+    entry: dict[str, Any] | None = None,
+) -> Response:
+    payload: dict[str, Any] = {
+        "status": status,
+        "count": len(memories),
+    }
+    if entry:
+        payload["serial_number"] = str(entry.get("serial_number", "")).strip()
+        payload["title"] = str(entry.get("title", "")).strip()
+    return make_response(jsonify(payload), 200)
 
 
 # -------- Static/Web Routes --------
@@ -656,9 +671,9 @@ def zb_api_update_memory_logbook():
             return jsonify({"error": "'entry' must be an object"}), 400
         try:
             updated = utipy.update_logbook(entry)
-            return (
-                jsonify({"memories": updated, "status": "entry appended via POST"}),
-                200,
+            saved_entry = updated[-1] if updated else utipy.normalize_memory_entry(entry)
+            return _memory_mutation_response(
+                "entry appended via POST", updated, entry=saved_entry
             )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -669,24 +684,17 @@ def zb_api_update_memory_logbook():
             return jsonify({"error": "'full_logbook' must be an array"}), 400
         try:
             utipy.save_logbook(full)
-            return (
-                jsonify({"memories": full, "status": "logbook replaced via POST"}),
-                200,
-            )
+            normalized = utipy.normalize_logbook_entries(full)
+            return _memory_mutation_response("logbook replaced via POST", normalized)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     if isinstance(data, dict):
         try:
             updated = utipy.update_logbook(data)
-            return (
-                jsonify(
-                    {
-                        "memories": updated,
-                        "status": "entry appended via POST (legacy body)",
-                    }
-                ),
-                200,
+            saved_entry = updated[-1] if updated else utipy.normalize_memory_entry(data)
+            return _memory_mutation_response(
+                "entry appended via POST (legacy body)", updated, entry=saved_entry
             )
         except Exception as e:
             return jsonify({"error": str(e)}), 500
@@ -704,11 +712,9 @@ def append_memory_logbook_entry_legacy():
         return jsonify({"error": "Invalid or missing JSON body"}), 400
     try:
         updated = utipy.update_logbook(data)
-        return (
-            jsonify(
-                {"memories": updated, "status": "entry appended (legacy endpoint)"}
-            ),
-            200,
+        saved_entry = updated[-1] if updated else utipy.normalize_memory_entry(data)
+        return _memory_mutation_response(
+            "entry appended (legacy endpoint)", updated, entry=saved_entry
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
