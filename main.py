@@ -724,43 +724,15 @@ def append_memory_logbook_entry_legacy():
 def zb_api_get_random_koan():
     case_id = utipy.get_random_koan_case_id()
     if not case_id:
-        return (
-            jsonify(
-                {
-                    "case_id": None,
-                    "case_text": "",
-                    "status": "Random number not generated.",
-                }
-            ),
-            404,
-        )
+        return (jsonify({"status": "Random number not generated."}), 404)
 
     koan = utipy.get_mmnk_case(case_id)
     if not koan:
-        return (
-            jsonify(
-                {
-                    "case_id": case_id,
-                    "case_text": "",
-                    "koan": None,
-                    "status": "koan not found",
-                }
-            ),
-            404,
-        )
+        return (jsonify({"status": "koan not found"}), 404)
 
-    case_text = koan.get("body", "")
-    return (
-        jsonify(
-            {
-                "case_id": str(koan.get("id", case_id)),
-                "case_text": case_text if isinstance(case_text, str) else "",
-                "koan": koan,
-                "status": "success",
-            }
-        ),
-        200,
-    )
+    payload = dict(koan)
+    payload["status"] = "success"
+    return (jsonify(payload), 200)
 
 
 # -------- Source Text Pages --------
