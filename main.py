@@ -253,6 +253,25 @@ def _memory_mutation_response(
     return make_response(jsonify(payload), 200)
 
 
+def _parse_bounded_int_arg(
+    name: str,
+    default: int,
+    minimum: int = 1,
+    maximum: int = 25,
+) -> int:
+    raw_value = request.args.get(name, str(default)).strip()
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"Query parameter '{name}' must be an integer.") from exc
+
+    if value < minimum or value > maximum:
+        raise ValueError(
+            f"Query parameter '{name}' must be between {minimum} and {maximum}."
+        )
+    return value
+
+
 # -------- Static/Web Routes --------
 @app.route("/")
 def home():
@@ -646,6 +665,56 @@ def zb_api_conversation(conversation_id: str):
 
 @app.route("/zb_api/load_memory_logbook", methods=["GET"])
 def zb_api_load_memory_logbook():
+    try:
+        limit = _parse_bounded_int_arg("limit", default=12, minimum=1, maximum=25)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    summaries, total_count = utipy.load_memory_logbook_summaries(limit=limit)
+    return (
+        jsonify(
+            {
+                "summaries": summaries,
+                "status": "success" if total_count else "empty",
+                "returned_count": len(summaries),
+                "total_count": total_count,
+                "limit": limit,
+                "has_more": total_count > len(summaries),
+            }
+        ),
+        200,
+    )
+
+
+@app.route("/zb_api/load_memory_entry/<serial_number>", methods=["GET"])
+def zb_api_load_memory_entry(serial_number: str):
+    memory = utipy.get_memory_logbook_entry(serial_number)
+    if not memory:
+        return (
+            jsonify(
+                {
+                    "status": "not_found",
+                    "serial_number": str(serial_number),
+                    "memory": None,
+                }
+            ),
+            404,
+        )
+
+    return (
+        jsonify(
+            {
+                "status": "success",
+                "serial_number": str(serial_number),
+                "memory": memory,
+            }
+        ),
+        200,
+    )
+
+
+@app.route("/zb_api/load_memory_logbook_full", methods=["GET"])
+def zb_api_load_memory_logbook_full():
     memories = utipy.load_memory_logbook()
     return (
         jsonify(

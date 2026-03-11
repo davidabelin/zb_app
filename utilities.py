@@ -800,6 +800,45 @@ def normalize_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, A
     return [normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)]
 
 
+def _compact_logbook_text(value: Any, limit: int) -> str:
+    text = " ".join(_stringify_logbook_value(value).split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 3)].rstrip()}..."
+
+
+def summarize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_memory_entry(entry)
+    koans_used = normalized.get("koans_used", [])
+    session_evaluations = normalized.get("session_evaluations", [])
+
+    primary_koan = ""
+    if koans_used:
+        primary_koan = _compact_logbook_text(koans_used[0], 80)
+    elif session_evaluations:
+        primary_koan = _compact_logbook_text(
+            session_evaluations[0].get("case", ""),
+            80,
+        )
+
+    return {
+        "serial_number": normalized.get("serial_number", ""),
+        "date": normalized.get("date", ""),
+        "time": normalized.get("time", ""),
+        "title": _compact_logbook_text(normalized.get("title", ""), 100),
+        "primary_koan": primary_koan,
+        "koan_count": len(koans_used),
+        "focus": _compact_logbook_text(
+            normalized.get("user_problem_or_questions", ""),
+            140,
+        ),
+        "final_outcome": _compact_logbook_text(
+            normalized.get("final_outcome", ""),
+            100,
+        ),
+    }
+
+
 def load_memory_logbook() -> list[dict[str, Any]]:
     payload = None
 
@@ -828,6 +867,25 @@ def load_memory_logbook() -> list[dict[str, Any]]:
             logging.warning("Error loading local memory logbook: %s", e)
 
     return normalize_logbook_entries(_parse_logbook_payload(payload or ""))
+
+
+def load_memory_logbook_summaries(limit: int = 12) -> tuple[list[dict[str, Any]], int]:
+    normalized = list(reversed(load_memory_logbook()))
+    total_count = len(normalized)
+    if limit < 0:
+        limit = 0
+    return [summarize_memory_entry(entry) for entry in normalized[:limit]], total_count
+
+
+def get_memory_logbook_entry(serial_number: str) -> dict[str, Any] | None:
+    target = str(serial_number).strip()
+    if not target:
+        return None
+
+    for entry in reversed(load_memory_logbook()):
+        if str(entry.get("serial_number", "")).strip() == target:
+            return entry
+    return None
 
 
 def save_logbook(logbook: list[dict[str, Any]]) -> None:
