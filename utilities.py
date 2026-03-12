@@ -802,9 +802,11 @@ def normalize_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, A
 
 def resequence_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
     resequenced: list[dict[str, Any]] = []
-    for index, entry in enumerate(normalize_logbook_entries(logbook), start=1):
+    normalized_entries = normalize_logbook_entries(logbook)
+    width = max(3, len(str(len(normalized_entries))))
+    for index, entry in enumerate(normalized_entries, start=1):
         normalized = dict(entry)
-        normalized["serial_number"] = str(index)
+        normalized["serial_number"] = f"{index:0{width}d}"
         resequenced.append(normalized)
     return resequenced
 

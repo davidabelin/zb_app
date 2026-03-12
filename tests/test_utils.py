@@ -43,4 +43,4 @@ def test_resequence_logbook_entries_assigns_plain_incrementing_serials():
 
     resequenced = resequence_logbook_entries(entries)
 
-    assert [entry["serial_number"] for entry in resequenced] == ["1", "2"]
+    assert [entry["serial_number"] for entry in resequenced] == ["001", "002"]
