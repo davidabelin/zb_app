@@ -800,6 +800,15 @@ def normalize_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, A
     return [normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)]
 
 
+def resequence_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    resequenced: list[dict[str, Any]] = []
+    for index, entry in enumerate(normalize_logbook_entries(logbook), start=1):
+        normalized = dict(entry)
+        normalized["serial_number"] = str(index)
+        resequenced.append(normalized)
+    return resequenced
+
+
 def _compact_logbook_text(value: Any, limit: int) -> str:
     text = " ".join(_stringify_logbook_value(value).split())
     if len(text) <= limit:
@@ -888,8 +897,8 @@ def get_memory_logbook_entry(serial_number: str) -> dict[str, Any] | None:
     return None
 
 
-def save_logbook(logbook: list[dict[str, Any]]) -> None:
-    logbook = normalize_logbook_entries(logbook)
+def save_logbook(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    logbook = resequence_logbook_entries(logbook)
     lines = [json.dumps(item, ensure_ascii=False, default=str) for item in logbook]
     payload = "\n".join(lines)
 
@@ -903,13 +912,13 @@ def save_logbook(logbook: list[dict[str, Any]]) -> None:
     else:
         _LOCAL_LOGBOOK_PATH.parent.mkdir(parents=True, exist_ok=True)
         _LOCAL_LOGBOOK_PATH.write_text(payload, encoding="utf-8")
+    return logbook
 
 
 def update_logbook(new_entry: dict[str, Any]) -> list[dict[str, Any]]:
     logbook = load_memory_logbook()
     logbook.append(normalize_memory_entry(new_entry))
-    save_logbook(logbook)
-    return logbook
+    return save_logbook(logbook)
 
 
 # -------- Request Helpers --------

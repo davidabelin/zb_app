@@ -752,8 +752,7 @@ def zb_api_update_memory_logbook():
         if not isinstance(full, list):
             return jsonify({"error": "'full_logbook' must be an array"}), 400
         try:
-            utipy.save_logbook(full)
-            normalized = utipy.normalize_logbook_entries(full)
+            normalized = utipy.save_logbook(full)
             return _memory_mutation_response("logbook replaced via POST", normalized)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
