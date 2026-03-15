@@ -1,3 +1,13 @@
+<#
+.SYNOPSIS
+Create or update the GCP secrets needed by `zb_app`.
+
+.DESCRIPTION
+Enables required APIs, ensures the expected Secret Manager secrets exist,
+optionally prompts for new secret values, and grants the runtime service
+account read access to those secrets.
+#>
+
 param(
   [string]$ProjectId = "zenbot-434517",
   [string]$ServiceAccount = "zenbot-sa@zenbot-434517.iam.gserviceaccount.com",

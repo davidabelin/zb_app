@@ -1,3 +1,11 @@
+"""Static model registries used by the Zenbot web application.
+
+This module is intentionally data-only. It keeps finetuned model identifiers
+and their associated training-loss metadata out of request-handling code so the
+runtime configuration layer can select and expose the currently supported model
+set without importing deployment or API logic.
+"""
+
 ZB_MODELS = {
     "mmnk_ble824": "ft:gpt-4o-mini-2024-07-18:chatbot-tuners:mmnk-ble824:A7q3grXA",
     "mmnk_ble5053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble5053:ATHGiQEV",
@@ -31,7 +39,7 @@ XC_MODELS = {
     "xcset01-bs3-lr1-ne3-s72": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs3-lr1-ne3:Ay3OQS40:ckpt-step-72",
 }
 
-# Training loss
+# Training loss values are used for metadata, selection context, and admin views.
 MODEL_LOSSES = {
     "gpt-4": 0.0,
     "xcset01-bs4-lr04-ne4": 0.3,

@@ -1,6 +1,15 @@
-/***************************************************************
- * scripts.js
- ***************************************************************/
+/**
+ * Browser entrypoint for the public Zenbot web shell.
+ *
+ * This file coordinates three UI surfaces:
+ * - koan listing and case pages backed by `/static/mmnk.json`
+ * - the main chatter UI backed by `/chat`, `/chat_case/<id>`, and `/save_chat`
+ * - browser session state mirrored between cookies and localStorage
+ *
+ * It expects `window.CHAT_API_BASE_URL` to be injected by `base.html` so the
+ * same bundle can talk to either same-origin routes or the Cloud Run chat/API
+ * service in the hybrid deployment.
+ */
 
 const CHAT_API_BASE = (window.CHAT_API_BASE_URL || "").replace(/\/$/, "");
 

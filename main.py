@@ -1,5 +1,19 @@
-# Web App: Zenbot Dokusan -- https://zenbot-434517.uw.r.appspot.com/
-# API schema lives in ../zenbot_knowledge/action_schemas.yaml
+"""Primary Flask application for the Zenbot web shell and authenticated API.
+
+This module is the orchestration layer for ``zb_app``. It wires together:
+
+- browser-facing routes rendered with Jinja templates
+- authenticated JSON API routes used by GPT Actions and external tools
+- streaming and non-streaming chat flows backed by ``utilities.py``
+- admin and review tooling for archives and training data curation
+- hybrid deployment behavior split between App Engine and Cloud Run
+
+The code here is intentionally thin where possible: storage, model access,
+memory logbook handling, and koan helpers live in ``utilities.py``; runtime
+configuration and secret resolution live in ``config.py``. Maintainers should
+read this module as the request/response contract and high-level control flow
+for the app.
+"""
 
 from __future__ import annotations
 
@@ -55,12 +69,18 @@ _ALLOWED_ORIGINS = {
 
 @dataclass
 class ChatTurnRequest:
+    """Validated request payload for one user chat turn.
+
+    Instances of this dataclass are created from browser or API JSON payloads
+    before the request is handed to the conversation/session layer.
+    """
     message: str
     conversation_id: str
     student: str
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ChatTurnRequest":
+        """Validate and normalize one inbound chat payload."""
         message = str(data.get("message", "")).strip()
         if not message:
             raise ValueError("No user input detected.")
@@ -75,12 +95,14 @@ class ChatTurnRequest:
 
 
 def _utc_now() -> str:
+    """Return a UTC timestamp string for API payloads and stored metadata."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _set_chat_cookies(
     response: Response, conversation_id: str, case_id: str = ""
 ) -> None:
+    """Persist conversation cookies for browser-based chat flows."""
     response.set_cookie(
         "conversation_id",
         conversation_id,
@@ -101,11 +123,13 @@ def _set_chat_cookies(
 
 
 def _clear_chat_cookies(response: Response) -> None:
+    """Clear browser cookies that track the active chat session."""
     response.set_cookie("conversation_id", "", expires=0, path="/")
     response.set_cookie("case_id", "", expires=0, path="/")
 
 
 def _maybe_rate_limit() -> Response | None:
+    """Apply a simple in-memory rate limit to public chat ingress."""
     if request.path not in {"/chat"} and not request.path.startswith("/chat_case/"):
         return None
 
@@ -131,10 +155,12 @@ def _maybe_rate_limit() -> Response | None:
 
 
 def _is_cors_chat_path(path: str) -> bool:
+    """Return whether a route participates in cross-origin chat requests."""
     return path in {"/chat", "/save_chat"} or path.startswith("/chat_case/")
 
 
 def _cors_preflight_response() -> Response:
+    """Build a CORS preflight response for chat endpoints."""
     response = make_response("", 204)
     origin = request.headers.get("Origin", "")
     if origin and origin.rstrip("/") in _ALLOWED_ORIGINS:
@@ -147,6 +173,11 @@ def _cors_preflight_response() -> Response:
 
 
 def _extract_auth_token() -> str:
+    """Extract an API/admin token from the Authorization header.
+
+    The server accepts either ``Bearer <token>`` or a raw token value to remain
+    compatible with GPT Actions auth modes.
+    """
     auth = request.headers.get("Authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
@@ -154,10 +185,12 @@ def _extract_auth_token() -> str:
 
 
 def _admin_session_active() -> bool:
+    """Return whether the browser has an authenticated admin session."""
     return bool(session.get("admin_authenticated"))
 
 
 def _safe_next_path(candidate: str) -> str:
+    """Normalize a post-login redirect target to an internal path."""
     text = (candidate or "").strip()
     if not text.startswith("/") or text.startswith("//"):
         return url_for("admin_conversations")
@@ -165,6 +198,7 @@ def _safe_next_path(candidate: str) -> str:
 
 
 def _require_api_auth() -> None:
+    """Enforce bearer or raw-token auth for protected API routes."""
     expected = utipy.config.ACTION_API_TOKEN.strip()
     if not expected:
         abort(503, description="ACTION_API_TOKEN not configured")
@@ -175,6 +209,7 @@ def _require_api_auth() -> None:
 
 
 def _require_admin_auth() -> None:
+    """Enforce admin access via token header or browser session."""
     expected = utipy.config.ACTION_API_TOKEN.strip()
     if not expected:
         if utipy.config.LOCAL:
@@ -191,6 +226,14 @@ def _require_admin_auth() -> None:
 
 @app.before_request
 def _request_guards():
+    """Apply shared request guards before route handlers execute.
+
+    This hook centralizes:
+    - chat preflight/CORS handling
+    - basic rate limiting for public chat routes
+    - API auth for ``/zb_api/*`` and the legacy append route
+    - admin auth and login redirects for browser-only admin pages
+    """
     if request.method == "OPTIONS" and _is_cors_chat_path(request.path):
         return _cors_preflight_response()
 
@@ -218,6 +261,7 @@ def _request_guards():
 
 @app.after_request
 def _apply_cors_headers(response: Response):
+    """Attach CORS headers to chat responses when the origin is allowed."""
     if not _is_cors_chat_path(request.path):
         return response
     origin = request.headers.get("Origin", "")
@@ -232,6 +276,7 @@ def _apply_cors_headers(response: Response):
 
 @app.context_processor
 def inject_runtime_config() -> dict[str, Any]:
+    """Expose chat runtime settings to Jinja templates."""
     return {
         "chat_api_base_url": (utipy.config.CHAT_API_BASE_URL or "").rstrip("/"),
         "streaming_enabled": utipy.config.STREAMING,
@@ -243,6 +288,7 @@ def _memory_mutation_response(
     memories: list[dict[str, Any]],
     entry: dict[str, Any] | None = None,
 ) -> Response:
+    """Return a compact success payload for memory write operations."""
     payload: dict[str, Any] = {
         "status": status,
         "count": len(memories),
@@ -259,6 +305,7 @@ def _parse_bounded_int_arg(
     minimum: int = 1,
     maximum: int = 25,
 ) -> int:
+    """Parse and range-check a numeric query parameter."""
     raw_value = request.args.get(name, str(default)).strip()
     try:
         value = int(raw_value)
@@ -275,16 +322,19 @@ def _parse_bounded_int_arg(
 # -------- Static/Web Routes --------
 @app.route("/")
 def home():
+    """Render the public landing page."""
     return render_template("index.html")
 
 
 @app.route("/privacy")
 def privacy():
+    """Render the privacy-policy page."""
     return render_template("privacy.html")
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
+    """Render and process the browser-based admin login form."""
     next_path = _safe_next_path(request.values.get("next", ""))
     error = ""
 
@@ -308,12 +358,14 @@ def admin_login():
 
 @app.route("/admin/logout", methods=["POST"])
 def admin_logout():
+    """End the browser admin session and redirect to the login page."""
     session.pop("admin_authenticated", None)
     return redirect(url_for("admin_login"))
 
 
 @app.route("/chatter")
 def chatter():
+    """Render the main chat UI with the appropriate streaming template."""
     if utipy.config.STREAMING:
         return render_template("chatter_stream.html")
     return render_template("chatter.html")
@@ -321,6 +373,7 @@ def chatter():
 
 @app.errorhandler(ModelAPIError)
 def handle_model_error(err):
+    """Translate model/provider exceptions into user-facing JSON errors."""
     logging.error("ModelAPIError: %s", err)
     return (
         jsonify(
@@ -336,6 +389,12 @@ def handle_model_error(err):
 # -------- Chat Routes --------
 @app.route("/chat", methods=["POST"])
 def chat():
+    """Handle one browser chat turn and optionally stream the response.
+
+    Inputs come from the browser's JSON body plus cookie-backed conversation
+    state. Outputs are either JSON or Server-Sent Events, and the handler
+    persists conversation state via ``utilities.py`` after each assistant turn.
+    """
     conversation_id = ""
     try:
         data = utipy.get_request_data()
@@ -410,6 +469,7 @@ def chat():
 
 @app.route("/chat_case/<case_id>", methods=["POST"])
 def chat_case(case_id: str):
+    """Create a browser chat session anchored to a specific koan case."""
     try:
         if not case_id:
             return jsonify({"error": "No case_id provided."}), 400
@@ -440,6 +500,7 @@ def chat_case(case_id: str):
 
 @app.route("/save_chat", methods=["POST"])
 def save_chat():
+    """Archive the active browser chat and clear its live working state."""
     try:
         data = utipy.get_request_data()
         conversation_id = str(
@@ -484,6 +545,7 @@ def save_chat():
 # -------- External API Routes --------
 @app.route("/zb_api/chat", methods=["POST"])
 def zb_api_chat():
+    """Process one authenticated API chat turn without browser cookies."""
     conversation_id = ""
     try:
         data = utipy.get_request_data()
@@ -541,6 +603,7 @@ def zb_api_chat():
 
 @app.route("/zb_api/chat_case/<case_id>", methods=["POST"])
 def zb_api_chat_case(case_id: str):
+    """Start an authenticated API conversation anchored to one koan case."""
     conversation_id = ""
     try:
         data = utipy.get_request_data()
@@ -577,6 +640,7 @@ def zb_api_chat_case(case_id: str):
 
 @app.route("/zb_api/save_chat", methods=["POST"])
 def zb_api_save_chat():
+    """Archive an authenticated API conversation by conversation ID."""
     try:
         data = utipy.get_request_data()
         conversation_id = str(data.get("conversation_id", "")).strip()
@@ -621,6 +685,7 @@ def zb_api_save_chat():
 
 @app.route("/zb_api/conversations/list", methods=["GET"])
 def zb_api_conversations_list():
+    """List archived conversation identifiers stored in Cloud Storage."""
     files = utipy.list_conversation_files_in_gcs()
     conversation_ids = [f.split("/")[-1].replace(".jsonl", "") for f in files]
     return jsonify({"status": "success", "conversation_ids": conversation_ids}), 200
@@ -628,6 +693,7 @@ def zb_api_conversations_list():
 
 @app.route("/zb_api/conversations/<conversation_id>", methods=["GET"])
 def zb_api_conversation(conversation_id: str):
+    """Fetch one archived conversation transcript from Cloud Storage."""
     if not conversation_id:
         return (
             jsonify(
@@ -665,6 +731,7 @@ def zb_api_conversation(conversation_id: str):
 
 @app.route("/zb_api/load_memory_logbook", methods=["GET"])
 def zb_api_load_memory_logbook():
+    """Return a compact newest-first memory index for GPT-side selection."""
     try:
         limit = _parse_bounded_int_arg("limit", default=12, minimum=1, maximum=25)
     except ValueError as exc:
@@ -688,6 +755,7 @@ def zb_api_load_memory_logbook():
 
 @app.route("/zb_api/load_memory_entry/<serial_number>", methods=["GET"])
 def zb_api_load_memory_entry(serial_number: str):
+    """Fetch one canonical memory-logbook entry by serial number."""
     memory = utipy.get_memory_logbook_entry(serial_number)
     if not memory:
         return (
@@ -715,6 +783,7 @@ def zb_api_load_memory_entry(serial_number: str):
 
 @app.route("/zb_api/load_memory_logbook_full", methods=["GET"])
 def zb_api_load_memory_logbook_full():
+    """Return the full canonical memory logbook for internal/admin use."""
     memories = utipy.load_memory_logbook()
     return (
         jsonify(
@@ -730,9 +799,23 @@ def zb_api_load_memory_logbook_full():
 
 @app.route("/zb_api/update_memory_logbook", methods=["POST"])
 def zb_api_update_memory_logbook():
+    """Append one entry or replace the full memory logbook via the new API."""
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    if "entry" in data and "full_logbook" in data:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "JSON body must contain either 'entry' or 'full_logbook', "
+                        "not both"
+                    )
+                }
+            ),
+            400,
+        )
 
     if "entry" in data:
         entry = data["entry"]
@@ -775,6 +858,7 @@ def zb_api_update_memory_logbook():
 
 @app.route("/appendMemoryLogbookEntry", methods=["POST"])
 def append_memory_logbook_entry_legacy():
+    """Append one memory entry via the legacy compatibility endpoint."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Invalid or missing JSON body"}), 400
@@ -790,6 +874,7 @@ def append_memory_logbook_entry_legacy():
 
 @app.route("/zb_api/get_random_koan", methods=["GET"])
 def zb_api_get_random_koan():
+    """Return one random koan case as a flattened JSON payload."""
     case_id = utipy.get_random_koan_case_id()
     if not case_id:
         return (jsonify({"status": "Random number not generated."}), 404)
@@ -806,35 +891,42 @@ def zb_api_get_random_koan():
 # -------- Source Text Pages --------
 @app.route("/gg")
 def gg():
+    """Render the Gateless Gate table-of-contents page."""
     return render_template("gg.html")
 
 
 @app.route("/gg/<id>")
 def ggcase(id):
+    """Render one Gateless Gate case page by case ID."""
     return render_template("ggcase.html", caseId=str(id))
 
 
 @app.route("/bcr")
 def display_pdf():
+    """Render the Blue Cliff Record PDF viewer page."""
     return render_template("bcr.html")
 
 
 @app.route("/pdf/<filename>")
 def serve_pdf(filename):
+    """Serve a static PDF file from the local static directory."""
     pdf_directory = os.path.join(os.getcwd(), "static")
     return send_from_directory(pdf_directory, filename)
 
 
 # -------- Data Administration --------
 def _repo_root() -> Path:
+    """Return the Zenbot repository root above ``zb_app``."""
     return Path(__file__).resolve().parents[1]
 
 
 def _trainset04_review_csv_path() -> Path:
+    """Return the CSV path that drives the admin review workflow."""
     return _repo_root() / "training" / "trainset04" / "review.csv"
 
 
 def _load_review_rows() -> tuple[list[dict[str, str]], list[str]]:
+    """Load training-review rows and headers from ``review.csv``."""
     review_path = _trainset04_review_csv_path()
     if not review_path.exists():
         abort(500, description=f"Missing review.csv at {review_path}")
@@ -846,6 +938,7 @@ def _load_review_rows() -> tuple[list[dict[str, str]], list[str]]:
 
 
 def _write_review_rows(headers: list[str], rows: list[dict[str, str]]) -> None:
+    """Rewrite the review CSV after an admin decision update."""
     review_path = _trainset04_review_csv_path()
     with review_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
@@ -854,6 +947,7 @@ def _write_review_rows(headers: list[str], rows: list[dict[str, str]]) -> None:
 
 
 def _update_review_keep(decisions: dict[str, str]) -> None:
+    """Apply admin keep/discard decisions back to the review CSV."""
     rows, headers = _load_review_rows()
     if "id" not in headers or "keep" not in headers:
         abort(500, description="review.csv must include 'id' and 'keep' columns")
@@ -870,6 +964,7 @@ def _update_review_keep(decisions: dict[str, str]) -> None:
 
 
 def _session_path_from_review_row(row: dict[str, str]) -> Path:
+    """Resolve and validate a session path referenced from ``review.csv``."""
     rel = (row.get("source_path") or "").strip()
     if not rel:
         abort(500, description="review.csv row missing source_path")
@@ -886,6 +981,7 @@ def _session_path_from_review_row(row: dict[str, str]) -> Path:
 
 
 def _is_message_obj(obj: object) -> bool:
+    """Return whether a JSON object looks like a stored chat message record."""
     if not isinstance(obj, dict):
         return False
     role = obj.get("role")
@@ -894,6 +990,7 @@ def _is_message_obj(obj: object) -> bool:
 
 
 def _parse_session_jsonl(path: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """Parse one reviewed session file into metadata and chat messages."""
     metadata: dict[str, Any] = {}
     messages: list[dict[str, str]] = []
 
@@ -915,6 +1012,7 @@ def _parse_session_jsonl(path: Path) -> tuple[dict[str, Any], list[dict[str, str
 
 @app.route("/admin/review", methods=["GET", "POST"])
 def admin_review():
+    """Render the admin training-review queue and accept keep/discard updates."""
     rows, _headers = _load_review_rows()
 
     if request.method == "POST":
@@ -955,6 +1053,7 @@ def admin_review():
 
 @app.route("/admin/review/view/<record_id>")
 def admin_review_view(record_id):
+    """Render one reviewed training session with parsed transcript detail."""
     rows, _headers = _load_review_rows()
     row = next((r for r in rows if (r.get("id") or "") == record_id), None)
     if not row:
@@ -974,6 +1073,7 @@ def admin_review_view(record_id):
 
 @app.route("/admin/conversations")
 def admin_conversations():
+    """Render the admin list of archived conversation transcripts."""
     conversation_files = utipy.list_conversation_files_in_gcs()
     conversation_ids = [
         file_name.split("/")[-1].replace(".jsonl", "")
@@ -986,6 +1086,7 @@ def admin_conversations():
 
 @app.route("/admin/conversations/<conversation_id>")
 def admin_conversation_detail(conversation_id: str):
+    """Render one archived conversation transcript in the admin UI."""
     if not conversation_id:
         abort(400)
     messages = utipy.get_conversation_from_gcs(conversation_id)
@@ -1000,6 +1101,7 @@ def admin_conversation_detail(conversation_id: str):
 
 @app.route("/download_chats", methods=["POST"])
 def download_chats():
+    """Download archived chat transcripts into the local development tree."""
     if utipy.download_all():
         if "text/html" in (request.headers.get("Accept", "").lower()):
             return redirect(url_for("admin_conversations", status="downloaded"))

@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Zenbot Dokusan{% endblock %}
 {% block content %}
+<!--
+  Streaming chat entrypoint. This template shares the same DOM contract as the
+  non-streaming chatter page, but the browser expects `/chat` to return
+  Server-Sent Events and progressively renders the assistant reply.
+-->
 <div class="chat-container">
   <header class="chat-header">
       <h2>Chat with ZM Mumonbot</h2>

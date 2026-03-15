@@ -1,3 +1,14 @@
+<#
+.SYNOPSIS
+Deploy the authenticated chat/API service to Cloud Run.
+
+.DESCRIPTION
+Builds the current `zb_app` source with Cloud Build, deploys it as the
+`zb-chat-api` Cloud Run service, and prints the resolved service URL. This is
+the runtime that serves `/chat`, `/save_chat`, and `/zb_api/*` for the hybrid
+App Engine + Cloud Run topology.
+#>
+
 param(
   [string]$ProjectId = "zenbot-434517",
   [string]$Region = "us-central1",

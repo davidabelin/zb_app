@@ -1,4 +1,21 @@
-# utilities.py
+"""Utility layer for conversation state, model calls, storage, and memory data.
+
+This module sits under ``main.py`` and carries most of the app's operational
+logic. It owns:
+
+- conversation lifecycle and Firestore persistence
+- koan/case loading from ``static/mmnk.json``
+- randomized model/profile selection
+- OpenAI chat completion and streaming adapters
+- chat transcript archiving in local files or Google Cloud Storage
+- memory-logbook normalization, indexing, and persistence
+
+The code is written to run in both local development and managed cloud
+deployments. Where cloud clients are unavailable, it uses in-process or local
+filesystem fallbacks for development, except in places explicitly disabled to
+avoid silent cloud/local split-brain behavior.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -70,10 +87,12 @@ _LOCAL_LOGBOOK_PATH = Path(__file__).resolve().parent / "config" / MEMORY_LOGBOO
 
 
 def _utc_now() -> str:
+    """Return an ISO-8601 UTC timestamp for stored metadata."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _choose_session_profile() -> dict[str, Any]:
+    """Select a random model/profile pair for a new conversation."""
     model_key = rnd.choice(list(config.MODELS.keys()))
     profile = rnd.choice(list(config.MODEL_ARGS.keys()))
     params = config.make_params(profile, model_name=model_key)
@@ -90,6 +109,7 @@ def _build_metadata(
     case_id: str | None = None,
     session_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build conversation metadata stored alongside live session state."""
     profile = session_profile or _choose_session_profile()
     return {
         "student": student,
@@ -107,6 +127,7 @@ def _build_metadata(
 
 
 def get_cid(student: str | None = None) -> str:
+    """Generate a conversation identifier for browser and API sessions."""
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = uuid.uuid4().hex[:8]
     if student:
@@ -123,6 +144,7 @@ def save_messages_to_firestore(
     messages: list[dict[str, str]],
     metadata: dict[str, Any] | None = None,
 ) -> None:
+    """Persist live conversation state to Firestore or the local fallback cache."""
     payload = {
         "conversation_id": conversation_id,
         "messages": messages,
@@ -151,6 +173,7 @@ def save_messages_to_firestore(
 def get_conversation_state(
     conversation_id: str,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    """Load live conversation messages and metadata for one conversation ID."""
     if not conversation_id:
         return config.START_CHATS["smiles"].copy(), {}
 
@@ -174,16 +197,19 @@ def get_conversation_state(
 
 
 def get_messages_from_firestore(conversation_id: str) -> list[dict[str, str]]:
+    """Return only the message list for a stored conversation."""
     messages, _meta = get_conversation_state(conversation_id)
     return messages
 
 
 def get_conversation_metadata(conversation_id: str) -> dict[str, Any]:
+    """Return only the metadata dict for a stored conversation."""
     _messages, metadata = get_conversation_state(conversation_id)
     return metadata
 
 
 def delete_messages_from_firestore(conversation_id: str) -> None:
+    """Delete one live conversation record from Firestore or local cache."""
     if not conversation_id:
         return
 
@@ -200,6 +226,7 @@ def delete_messages_from_firestore(conversation_id: str) -> None:
 def reset_test(
     case_id: str | None = None, student: str | None = None
 ) -> dict[str, Any]:
+    """Return fresh conversation metadata for backward-compatible callers."""
     # Retained for backward compatibility; state is now conversation-scoped.
     return _build_metadata(student=student or "unk", case_id=case_id)
 
@@ -208,6 +235,7 @@ def reset_test(
 
 
 def _load_mmnk_cases() -> list[dict[str, Any]]:
+    """Load the canonical Mumonkan case list from the bundled static JSON file."""
     with open("static/mmnk.json", "r", encoding="utf-8") as f:
         payload = json.load(f)
     cases = payload.get("cases", [])
@@ -215,6 +243,7 @@ def _load_mmnk_cases() -> list[dict[str, Any]]:
 
 
 def get_mmnk_case(case_id: str) -> Optional[dict[str, Any]]:
+    """Return one koan case object by case ID string."""
     try:
         cases = _load_mmnk_cases()
         return next((k for k in cases if str(k.get("id")) == str(case_id)), None)
@@ -224,6 +253,7 @@ def get_mmnk_case(case_id: str) -> Optional[dict[str, Any]]:
 
 
 def get_random_koan_case_id() -> str:
+    """Return a random koan case ID, falling back to a numeric range if needed."""
     try:
         cases = _load_mmnk_cases()
         if cases:
@@ -234,6 +264,7 @@ def get_random_koan_case_id() -> str:
 
 
 def get_mmnk_text(case_id: str) -> str:
+    """Return only the body text for one koan case."""
     koan = get_mmnk_case(case_id)
     if not koan:
         return ""
@@ -242,6 +273,7 @@ def get_mmnk_text(case_id: str) -> str:
 
 
 def koan_startup(koan: dict[str, Any]) -> list[dict[str, str]]:
+    """Build the seeded startup prompt sequence for a koan-anchored session."""
     return [
         {
             "role": "system",
@@ -262,6 +294,7 @@ def koan_startup(koan: dict[str, Any]) -> list[dict[str, str]]:
 def create_conversation(
     student: str, case_id: str | None = None
 ) -> tuple[str, list[dict[str, str]], dict[str, Any]]:
+    """Create and persist a new live conversation, optionally koan-anchored."""
     startup = config.START_CHATS["smiles"].copy()
 
     if case_id:
@@ -277,6 +310,7 @@ def create_conversation(
 
 
 def create_koan_conversation(case_id: str, student: str) -> str:
+    """Compatibility wrapper that returns only the new koan conversation ID."""
     conversation_id, _messages, _meta = create_conversation(
         student=student, case_id=case_id
     )
@@ -284,6 +318,7 @@ def create_koan_conversation(case_id: str, student: str) -> str:
 
 
 def get_or_init_params(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Return stored model parameters or create a fresh fallback profile."""
     params = metadata.get("params") if isinstance(metadata, dict) else None
     if isinstance(params, dict) and params.get("model"):
         return params
@@ -295,6 +330,7 @@ def get_or_init_params(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 def _get_openai_client():
+    """Return the lazily initialized OpenAI client or raise a model error."""
     if BOTLING is None or openai is None:
         raise ModelAPIError(
             "OpenAI client unavailable. Install `openai` and set OPENAI_API_KEY."
@@ -306,6 +342,7 @@ def get_model_stream(
     messages: list[dict[str, str]],
     params: dict[str, Any],
 ) -> Generator[str, None, None]:
+    """Yield a streamed assistant reply from OpenAI with a small retry budget."""
     client = _get_openai_client()
     max_attempts = 2
     for attempt in range(1, max_attempts + 1):
@@ -336,12 +373,16 @@ def get_model_stream(
 
 
 def get_model_reply(messages: list[dict[str, str]], params: dict[str, Any]) -> str:
+    """Return a full assistant reply from OpenAI with retry-once behavior."""
     client = _get_openai_client()
     max_attempts = 2
     for attempt in range(1, max_attempts + 1):
         try:
             completion = client.chat.completions.create(messages=messages, **params)
-            return completion.choices[0].message.content
+            content = completion.choices[0].message.content
+            if content:
+                return content
+            raise ModelAPIError("No model response received.")
         except Exception as e:
             if attempt < max_attempts:
                 logging.warning(
@@ -354,6 +395,7 @@ def get_model_reply(messages: list[dict[str, str]], params: dict[str, Any]) -> s
                 continue
             logging.error("OpenAI error: %s", e)
             raise ModelAPIError(str(e))
+    raise ModelAPIError("Model reply attempts exhausted without a response.")
 
 
 def prompt_and_reply(
@@ -361,6 +403,7 @@ def prompt_and_reply(
     prompt: str,
     params: dict[str, Any],
 ) -> list[dict[str, str]]:
+    """Append a user prompt, fetch a reply, and mutate the message list in place."""
     messages.append({"role": "user", "content": prompt})
     reply = get_model_reply(messages, params)
     messages.append({"role": "assistant", "content": reply})
@@ -368,10 +411,12 @@ def prompt_and_reply(
 
 
 def _sse(payload: dict[str, Any]) -> str:
+    """Serialize one Server-Sent Events payload for the chat stream."""
     return "data: " + json.dumps(payload) + "\n\n"
 
 
 def friendly_model_error_message(raw_error: str) -> str:
+    """Map raw provider errors to user-facing chat or API messages."""
     text = (raw_error or "").lower()
     if "insufficient_quota" in text or "exceeded your current quota" in text:
         return "OpenAI quota exceeded for the configured API key."
@@ -388,6 +433,7 @@ def prompt_and_stream(
     params: dict[str, Any],
     conversation_id: str,
 ) -> Generator[str, None, None]:
+    """Stream one assistant turn as SSE events with fallback-to-full-reply logic."""
     if not isinstance(prompt, str) or len(prompt) > 2048:
         raise ModelAPIError("Invalid input prompt")
 
@@ -460,6 +506,7 @@ def prompt_and_stream(
 
 
 def to_jsonl(params: dict[str, Any], messages: list[dict[str, Any]]) -> str:
+    """Serialize archived chat metadata and messages into JSONL text."""
     lines = [json.dumps(params)] + [json.dumps(m) for m in messages]
     return "\n".join(lines)
 
@@ -467,6 +514,7 @@ def to_jsonl(params: dict[str, Any], messages: list[dict[str, Any]]) -> str:
 def save_chat_to_file(
     data: list[dict[str, Any]], params: dict[str, Any], file_path: str
 ) -> None:
+    """Write one archived chat transcript to a local JSONL file."""
     content = to_jsonl(params, data)
     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as f:
@@ -474,6 +522,7 @@ def save_chat_to_file(
 
 
 def get_chat_from_local_file(file_path: str) -> list[dict[str, Any]]:
+    """Load one locally archived JSONL chat transcript."""
     data: list[dict[str, Any]] = []
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -484,6 +533,7 @@ def get_chat_from_local_file(file_path: str) -> list[dict[str, Any]]:
 def save_chat_to_bucket(
     data: list[dict[str, Any]], params: dict[str, Any], blob_name: str
 ) -> None:
+    """Write one archived chat transcript into the configured GCS bucket."""
     if not BUCKET:
         raise RuntimeError("GCS bucket client unavailable; cannot save chat to bucket.")
     blob = BUCKET.blob(blob_name)
@@ -491,6 +541,7 @@ def save_chat_to_bucket(
 
 
 def get_all_conversations_from_gcs() -> dict[str, list[dict[str, Any]]]:
+    """Load every archived conversation currently stored in GCS."""
     if not BUCKET:
         return {}
     blobs = BUCKET.list_blobs(prefix="zbchats/")
@@ -504,6 +555,7 @@ def get_all_conversations_from_gcs() -> dict[str, list[dict[str, Any]]]:
 
 
 def download_all() -> bool:
+    """Download all archived GCS chats into the local development tree."""
     try:
         if not config.LOCAL:
             logging.warning("download_all skipped outside local environment")
@@ -523,6 +575,7 @@ def download_all() -> bool:
 
 
 def list_conversation_files_in_gcs() -> list[str]:
+    """List GCS object names for archived JSONL conversations."""
     if not BUCKET:
         return []
     return [
@@ -533,6 +586,7 @@ def list_conversation_files_in_gcs() -> list[str]:
 
 
 def get_conversation_from_gcs(conversation_id: str) -> list[dict[str, Any]] | None:
+    """Return one archived conversation transcript from GCS by ID."""
     if not BUCKET:
         return None
     blob = BUCKET.blob(f"zbchats/{conversation_id}.jsonl")
@@ -545,6 +599,7 @@ def get_conversation_from_gcs(conversation_id: str) -> list[dict[str, Any]] | No
 
 # -------- Memory Logbook --------
 def _parse_logbook_payload(payload: str) -> list[dict[str, Any]]:
+    """Parse either JSON-array or JSONL memory-logbook payloads."""
     text = (payload or "").strip()
     if not text:
         return []
@@ -571,6 +626,7 @@ def _parse_logbook_payload(payload: str) -> list[dict[str, Any]]:
 
 
 def _logbook_blob_candidates() -> list[str]:
+    """Return candidate GCS object names for the canonical memory logbook."""
     candidates: list[str] = [MEMORY_LOGBOOK]
     if MEMORY_LOGBOOK.endswith(".json"):
         candidates.append(MEMORY_LOGBOOK[:-5] + ".jsonl")
@@ -587,6 +643,7 @@ def _logbook_blob_candidates() -> list[str]:
 
 
 def _stringify_logbook_value(value: Any) -> str:
+    """Normalize heterogeneous legacy logbook values into strings."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -602,6 +659,7 @@ def _stringify_logbook_value(value: Any) -> str:
 
 
 def _listify_logbook_strings(value: Any) -> list[str]:
+    """Normalize a scalar-or-list legacy field into a list of strings."""
     if value is None:
         return []
     if isinstance(value, list):
@@ -616,6 +674,7 @@ def _listify_logbook_strings(value: Any) -> list[str]:
 
 
 def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    """Remove duplicates from a string list while preserving input order."""
     seen: set[str] = set()
     result: list[str] = []
     for item in items:
@@ -626,6 +685,7 @@ def _dedupe_preserve_order(items: list[str]) -> list[str]:
 
 
 def _merge_labeled_strings(label: str, value: Any) -> list[str]:
+    """Prefix normalized values with a source label for legacy provenance."""
     texts = _listify_logbook_strings(value)
     if not texts:
         return []
@@ -635,6 +695,7 @@ def _merge_labeled_strings(label: str, value: Any) -> list[str]:
 
 
 def _normalize_session_evaluations(entry: dict[str, Any]) -> list[dict[str, str]]:
+    """Canonicalize legacy evaluation/session fields into one stable schema."""
     koans_used = _listify_logbook_strings(entry.get("koans_used"))
     default_case = koans_used[0] if koans_used else _stringify_logbook_value(
         entry.get("title")
@@ -729,6 +790,12 @@ def _normalize_session_evaluations(entry: dict[str, Any]) -> list[dict[str, str]
 
 
 def normalize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Convert one raw memory record into the canonical memory-entry shape.
+
+    This function is intentionally tolerant because the historical logbook data
+    spans several schema generations. It fills missing fields conservatively and
+    carries forward useful legacy detail into structured lists and notes.
+    """
     if not isinstance(entry, dict):
         entry = {}
 
@@ -797,10 +864,12 @@ def normalize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize a full logbook payload into canonical memory-entry objects."""
     return [normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)]
 
 
 def resequence_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Assign zero-padded sequential serial numbers to a normalized logbook."""
     resequenced: list[dict[str, Any]] = []
     normalized_entries = normalize_logbook_entries(logbook)
     width = max(3, len(str(len(normalized_entries))))
@@ -812,6 +881,7 @@ def resequence_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, 
 
 
 def _compact_logbook_text(value: Any, limit: int) -> str:
+    """Produce a single-line truncated summary string for index payloads."""
     text = " ".join(_stringify_logbook_value(value).split())
     if len(text) <= limit:
         return text
@@ -819,6 +889,7 @@ def _compact_logbook_text(value: Any, limit: int) -> str:
 
 
 def summarize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Build the compact summary object returned by the memory index API."""
     normalized = normalize_memory_entry(entry)
     koans_used = normalized.get("koans_used", [])
     session_evaluations = normalized.get("session_evaluations", [])
@@ -851,6 +922,11 @@ def summarize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_memory_logbook() -> list[dict[str, Any]]:
+    """Load the canonical memory logbook from GCS or local development storage.
+
+    In cloud runtimes, this function raises if the GCS-backed logbook cannot be
+    loaded so the app does not silently drift into a local-only fallback.
+    """
     payload = None
 
     if BUCKET:
@@ -881,6 +957,7 @@ def load_memory_logbook() -> list[dict[str, Any]]:
 
 
 def load_memory_logbook_summaries(limit: int = 12) -> tuple[list[dict[str, Any]], int]:
+    """Return newest-first summary rows for GPT-side memory selection."""
     normalized = list(reversed(load_memory_logbook()))
     total_count = len(normalized)
     if limit < 0:
@@ -889,6 +966,7 @@ def load_memory_logbook_summaries(limit: int = 12) -> tuple[list[dict[str, Any]]
 
 
 def get_memory_logbook_entry(serial_number: str) -> dict[str, Any] | None:
+    """Return one memory entry by serial number using newest-first lookup."""
     target = str(serial_number).strip()
     if not target:
         return None
@@ -900,6 +978,12 @@ def get_memory_logbook_entry(serial_number: str) -> dict[str, Any] | None:
 
 
 def save_logbook(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Persist the canonical memory logbook and return the saved entries.
+
+    Side effects:
+    - normalizes and resequences the supplied records
+    - writes JSONL to the configured GCS object or local fallback path
+    """
     logbook = resequence_logbook_entries(logbook)
     lines = [json.dumps(item, ensure_ascii=False, default=str) for item in logbook]
     payload = "\n".join(lines)
@@ -918,6 +1002,7 @@ def save_logbook(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def update_logbook(new_entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Append one new memory entry and persist the resequenced logbook."""
     logbook = load_memory_logbook()
     logbook.append(normalize_memory_entry(new_entry))
     return save_logbook(logbook)
@@ -925,12 +1010,19 @@ def update_logbook(new_entry: dict[str, Any]) -> list[dict[str, Any]]:
 
 # -------- Request Helpers --------
 def get_request_data() -> dict[str, Any]:
+    """Return request input as a dict for both JSON POSTs and query GETs."""
     if request.method == "POST":
         return request.get_json(silent=True) or {}
     return request.args.to_dict()
 
 
 def process_chat(conversation_id: str, user_input: str) -> list[dict[str, str]]:
+    """Replay one chat turn against an existing conversation ID.
+
+    This helper is retained for direct utility-layer use outside the Flask route
+    handlers. It loads state, sends one prompt to the model layer, and persists
+    the updated transcript back to the live conversation store.
+    """
     messages, metadata = get_conversation_state(conversation_id)
     params = get_or_init_params(metadata)
     updated = prompt_and_reply(messages, user_input, params=params)

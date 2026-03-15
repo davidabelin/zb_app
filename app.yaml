@@ -1,3 +1,5 @@
+# App Engine serves the browser shell and shared web routes. Chat/API traffic
+# is forwarded from the front end to the Cloud Run base URL below.
 runtime: python314
 entrypoint: gunicorn --workers 2 --threads 4 --timeout 120 -b :$PORT main:app
 
@@ -6,14 +8,19 @@ handlers:
     static_dir: static
 
 env_variables:
+  # Project and cross-service routing.
   GOOGLE_CLOUD_PROJECT: zenbot-434517
   CHAT_API_BASE_URL: https://zb-chat-api-txk2gvimpq-uc.a.run.app
+  # Secret indirection names; values are resolved at runtime from Secret Manager.
   OPENAI_API_KEY_SECRET_NAME: zb-openai-api-key
   FLASK_SECRET_KEY_SECRET_NAME: zb-flask-secret-key
   ACTION_API_TOKEN_SECRET_NAME: zb-action-api-token
+  # Browser-facing and policy flags.
   WEB_APP_ORIGIN: https://zenbot-434517.uw.r.appspot.com
   STREAMING_ENABLED: "true"
   ZB_API_STRICT_AUTH: "true"
   SESSION_COOKIE_SECURE: "true"
 
+# Attached service account is used instead of shipping credentials in the
+# deployable source tree.
 service_account: zenbot-sa@zenbot-434517.iam.gserviceaccount.com

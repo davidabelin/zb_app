@@ -1,4 +1,18 @@
-# config.py
+"""Runtime configuration for the Zenbot web application.
+
+This module is the single source of truth for configuration precedence inside
+``zb_app``. It resolves local dotenv files for development, reads secrets from
+Google Secret Manager in managed runtimes, and exposes a dataclass that the
+rest of the app uses for runtime behavior, model selection defaults, storage
+names, and security-sensitive settings.
+
+Key precedence rules:
+1. In local development, read `.env` and `config/.env` if python-dotenv exists.
+2. In Cloud Run or App Engine, do not load dotenv files.
+3. For secrets, prefer Secret Manager and fall back to plain environment values.
+4. Treat the app/repo release version separately from OpenAPI/schema versions.
+"""
+
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable, Dict, Optional
@@ -17,18 +31,29 @@ except Exception:
 
 
 def load_dotenv(*args: Any, **kwargs: Any) -> bool:
+    """Proxy to python-dotenv when installed.
+
+    Returns ``False`` when the optional dependency is unavailable so callers can
+    treat dotenv loading as best-effort rather than mandatory.
+    """
     if _load_dotenv is None:
         return False
     return bool(_load_dotenv(*args, **kwargs))
 
 
 def _strtobool(value: str | None, default: bool = False) -> bool:
+    """Parse permissive truthy environment values.
+
+    The app uses this helper for flags that come from local env files, App
+    Engine ``env_variables``, or Cloud Run environment configuration.
+    """
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _sanitize_secret(value: str | None) -> str:
+    """Normalize secret payloads before they are exposed to the app."""
     if value is None:
         return ""
     # Strip whitespace and a UTF-8 BOM if a secret version was uploaded with it.
@@ -36,14 +61,14 @@ def _sanitize_secret(value: str | None) -> str:
 
 
 def _is_cloud_runtime() -> bool:
-    """Detect managed cloud runtimes (App Engine/Cloud Run)."""
+    """Detect whether the current process is running in a managed GCP runtime."""
     if os.getenv("K_SERVICE"):
         return True
     return os.getenv("GAE_ENV", "").startswith("standard")
 
 
 def _load_local_env() -> None:
-    """Load local dotenv files only for local/dev usage."""
+    """Load local dotenv files only when not running under App Engine or Cloud Run."""
     if _is_cloud_runtime():
         return
     load_dotenv()
@@ -55,6 +80,11 @@ _load_local_env()
 
 @lru_cache(maxsize=64)
 def _read_secret(project_id: str, secret_name: str) -> str:
+    """Read and cache the latest version of a named Secret Manager secret.
+
+    Returns an empty string when the secret client is unavailable, the project
+    or secret name is blank, or the lookup fails.
+    """
     if not project_id or not secret_name:
         return ""
     try:
@@ -74,6 +104,14 @@ def _read_secret(project_id: str, secret_name: str) -> str:
 
 @dataclass
 class Config:
+    """Resolved application configuration shared across the Flask app.
+
+    The object is instantiated once in ``utilities.py`` and then referenced by
+    request handlers, storage helpers, and model-selection code. It combines
+    cloud/runtime detection, secret resolution, model registries, and default
+    prompt parameters in one place so maintainers can trace app behavior
+    without searching through multiple modules.
+    """
     # Project and runtime
     GOOGLE_CLOUD_PROJECT: str = field(
         default_factory=lambda: os.getenv("GOOGLE_CLOUD_PROJECT", "zenbot-434517")
@@ -201,6 +239,13 @@ class Config:
     }
 
     def __post_init__(self):
+        """Finalize derived config after dataclass field initialization.
+
+        Side effects:
+        - narrows the exported model registry to the latest Zenbot finetunes
+        - injects the fallback base model
+        - resolves secrets from Secret Manager and environment fallback sources
+        """
         # Last 10 finetunes + fallback model.
         last_zb = list(self.ZB_MODELS.items())[-10:]
         self.MODELS = dict(last_zb)
@@ -218,12 +263,14 @@ class Config:
         )
 
     def _resolve_secret(self, secret_name: str, fallback: str) -> str:
+        """Resolve one secret with Secret Manager first and env fallback second."""
         value = _read_secret(self.GOOGLE_CLOUD_PROJECT, secret_name)
         return value or _sanitize_secret(fallback)
 
     def make_params(
         self, profile: str, model_name: str | None = None
     ) -> Dict[str, Any]:
+        """Build a chat-completions parameter dict for a named profile."""
         params = self._PARAM_BASE.copy()
         params.update(self.MODEL_ARGS.get(profile, {}))
         selected_name = model_name or self.MODEL_NAME

@@ -1,3 +1,13 @@
+<#
+.SYNOPSIS
+Deploy the browser-facing web shell to App Engine.
+
+.DESCRIPTION
+Resolves or accepts the Cloud Run chat/API base URL, patches `app.yaml` for the
+deploy, and then deploys the App Engine service that renders templates, static
+assets, and the browser-facing shell around the chat/API backend.
+#>
+
 param(
   [string]$ProjectId = "zenbot-434517",
   [string]$ChatApiBaseUrl,

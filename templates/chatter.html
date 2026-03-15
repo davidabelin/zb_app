@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Zenbot Dokusan{% endblock %}
 {% block content %}
+<!--
+  Non-streaming chat entrypoint. `static/scripts.js` binds this page to `/chat`
+  and `/save_chat`, reads/writes `conversation_id` and `case_id`, and injects
+  koan preface text when the browser session is case-anchored.
+-->
 <div class="chat-container">
   <!-- Header at top -->
   <header class="chat-header">

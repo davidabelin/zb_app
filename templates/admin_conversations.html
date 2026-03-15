@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Zenbot Dokusan{% endblock %}
 {% block content %}
+<!--
+  Admin archive index for Cloud Storage-backed saved conversations.
+  The page assumes browser admin auth is already established and links to
+  transcript detail plus the local-only `download_chats` maintenance action.
+-->
 <section>
     <i>(For Administrative Use Only.)</i>
     <br>

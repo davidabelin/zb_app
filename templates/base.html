@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!--
+      Shared base template for the browser-facing web shell.
+      It injects the Cloud Run chat/API base URL into the front-end bundle and
+      loads the common stylesheet/script assets used by chatter, koan pages,
+      and admin views.
+    -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
