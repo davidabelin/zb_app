@@ -17,6 +17,7 @@ ZB_MODELS = {
     "bs8lr08e4-set00-02": "ft:gpt-4o-2024-08-06:dca:bs8lr08e4-set00-02:BIzpjOBE",
     "set00-02mix-bs10lr05e2": "ft:gpt-4o-2024-08-06:dca:bd1eyc2n-set00-02mix-bs10lr05e2:BJ02Ragt",
     "set00-02mix-bs6lr06e3": "ft:gpt-4o-2024-08-06:dca:b9khhy0v-set00-02mix-bs6lr06e3:BJ09MKSB",
+    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT"
 }
 
 XC_MODELS = {
@@ -59,4 +60,5 @@ MODEL_LOSSES = {
     "bs8lr08e4-set00-02": 0.555,
     "set00-02mix-bs10lr05e2": 0.3922,
     "set00-02mix-bs6lr06e3": 0.5753,
+    "set03-bs2lr05e7": 0.858,
 }
