@@ -14,6 +14,8 @@ from typing import Any
 ROLE_SET = {"system", "user", "assistant"}
 SOURCE_SUBDIRS = ("local", "web", "use")
 SOURCE_PRIORITY = {"local": 3, "web": 2, "use": 1}
+LEGACY_REVIEW_VERSION = 1
+DUAL_REVIEW_VERSION = 2
 REVIEW_FIELDNAMES = [
     "id",
     "keep",
@@ -244,6 +246,45 @@ def _normalize_evaluation(value: Any) -> str:
     return ""
 
 
+def _derive_final_evaluation(review_zb: Any, review_cm: Any) -> str:
+    zb = _normalize_evaluation(review_zb)
+    cm = _normalize_evaluation(review_cm)
+
+    if zb == "Use" and cm == "Use":
+        return "Use"
+    if zb == "Reject" and cm == "Reject":
+        return "Reject"
+    if "Alter" in {zb, cm}:
+        return "Alter"
+    if zb and cm and zb != cm:
+        return "Alter"
+    return ""
+
+
+def _normalize_review_state(row: dict[str, Any]) -> dict[str, Any]:
+    review_zb = _normalize_evaluation(row.get("review_zb", ""))
+    review_cm = _normalize_evaluation(row.get("review_cm", ""))
+    legacy_evaluation = _normalize_evaluation(row.get("evaluation", ""))
+
+    if review_zb or review_cm:
+        review_version = DUAL_REVIEW_VERSION
+        evaluation = _derive_final_evaluation(review_zb, review_cm)
+    elif legacy_evaluation:
+        review_version = LEGACY_REVIEW_VERSION
+        review_cm = legacy_evaluation
+        evaluation = legacy_evaluation
+    else:
+        review_version = DUAL_REVIEW_VERSION
+        evaluation = ""
+
+    return {
+        "review_version": review_version,
+        "review_zb": review_zb,
+        "review_cm": review_cm,
+        "evaluation": evaluation,
+    }
+
+
 def _write_jsonl_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile(
@@ -259,10 +300,12 @@ def _write_jsonl_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
     temp_path.replace(path)
 
 
-def _load_existing_evaluations_by_hash(reviewed_jsonl_path: Path) -> dict[str, str]:
-    evaluations: dict[str, str] = {}
+def _load_existing_review_state_by_hash(
+    reviewed_jsonl_path: Path,
+) -> dict[str, dict[str, Any]]:
+    review_states: dict[str, dict[str, Any]] = {}
     if not reviewed_jsonl_path.exists():
-        return evaluations
+        return review_states
 
     for raw_line in reviewed_jsonl_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -289,14 +332,18 @@ def _load_existing_evaluations_by_hash(reviewed_jsonl_path: Path) -> dict[str, s
         if not cleaned_messages:
             continue
 
-        evaluation = _normalize_evaluation(row.get("evaluation"))
-        if not evaluation:
+        review_state = _normalize_review_state(row)
+        if not (
+            review_state["evaluation"]
+            or review_state["review_zb"]
+            or review_state["review_cm"]
+        ):
             continue
         transcript_hash = _transcript_hash(cleaned_messages)
-        if transcript_hash not in evaluations:
-            evaluations[transcript_hash] = evaluation
+        if transcript_hash not in review_states:
+            review_states[transcript_hash] = review_state
 
-    return evaluations
+    return review_states
 
 
 def _sync_generated_review_files(
@@ -308,7 +355,7 @@ def _sync_generated_review_files(
     reviewed_path = generated_dir / "collected_sessions_with_evaluations.jsonl"
     train_path = generated_dir / "sessions_to_train.jsonl"
 
-    evaluations_by_hash = _load_existing_evaluations_by_hash(reviewed_path)
+    review_state_by_hash = _load_existing_review_state_by_hash(reviewed_path)
 
     messages_rows: list[dict[str, Any]] = []
     metadata_rows: list[dict[str, Any]] = []
@@ -329,19 +376,30 @@ def _sync_generated_review_files(
 
         messages_row = {"messages": record.messages}
         metadata_row = {"messages": record.messages, "metadata": metadata}
-        evaluation = evaluations_by_hash.get(record.transcript_hash, "")
+        review_state = review_state_by_hash.get(
+            record.transcript_hash,
+            {
+                "review_version": DUAL_REVIEW_VERSION,
+                "review_zb": "",
+                "review_cm": "",
+                "evaluation": "",
+            },
+        )
         reviewed_row = {
             "messages": record.messages,
             "metadata": metadata,
-            "evaluation": evaluation,
+            "review_version": review_state["review_version"],
+            "review_zb": review_state["review_zb"],
+            "review_cm": review_state["review_cm"],
+            "evaluation": review_state["evaluation"],
         }
 
         messages_rows.append(messages_row)
         metadata_rows.append(metadata_row)
         reviewed_rows.append(reviewed_row)
-        if evaluation:
+        if review_state["evaluation"]:
             evaluations_preserved += 1
-        if evaluation == "Use":
+        if review_state["evaluation"] == "Use":
             train_rows.append({"messages": record.messages})
 
     _write_jsonl_atomic(messages_path, messages_rows)

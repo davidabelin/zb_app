@@ -136,4 +136,7 @@ def test_sync_review_queue_quarantines_duplicates_and_preserves_keep(tmp_path):
     assert keep_reviewed["metadata"]["source_path"] == (
         "collected_sessions/local/zbchat-keep.jsonl"
     )
+    assert keep_reviewed["review_version"] == 1
+    assert keep_reviewed["review_zb"] == ""
+    assert keep_reviewed["review_cm"] == "Use"
     assert keep_reviewed["evaluation"] == "Use"
