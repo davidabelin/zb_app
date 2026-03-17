@@ -234,7 +234,7 @@ class Config:
                 "content": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a customized LLM/GPT chatbot, fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in his 13thC CE compilation, the 'Gateless Gate'. Now, centuries later, here you are holding a Dokusan session with the students; focused on the koan each is working on, and on what barriers to it each is focused. The student will now enter.",
             },
             {"role": "user", "content": "(student enters, bows, sits)"},
-            {"role": "assistant", "content": "(smiles)"},
+            {"role": "assistant", "content": "What brings you here?"}, # was "(smiles)"
         ]
     }
 
@@ -242,14 +242,13 @@ class Config:
         """Finalize derived config after dataclass field initialization.
 
         Side effects:
-        - narrows the exported model registry to the latest Zenbot finetunes
-        - injects the fallback base model
+        - narrows the exported model registry to the currently active finetunes
+        - preserves a base-model fallback only when no finetunes are configured
         - resolves secrets from Secret Manager and environment fallback sources
         """
-        # Last 10 finetunes + fallback model.
-        last_zb = list(self.MODELS_IN_USE.items())[-10:]
-        self.MODELS = dict(last_zb)
-        self.MODELS.update({"gpt-4": "gpt-4"})
+        self.MODELS = dict(self.MODELS_IN_USE)
+        if not self.MODELS:
+            self.MODELS = {"gpt-4": "gpt-4"}
 
         # Resolve secrets from Secret Manager first, then env fallback.
         self.OPENAI_API_KEY = self._resolve_secret(

@@ -114,6 +114,63 @@ def _choose_session_profile() -> dict[str, Any]:
     }
 
 
+def _normalize_conversation_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Remap stored session metadata onto the currently supported model pool."""
+    if not isinstance(metadata, dict) or not metadata:
+        return metadata if isinstance(metadata, dict) else {}
+
+    normalized = dict(metadata)
+    model_name = str(normalized.get("model_name", "")).strip()
+    profile_name = str(normalized.get("profile", "")).strip()
+
+    if model_name not in config.MODELS:
+        refreshed = _choose_session_profile()
+        logging.info(
+            "Conversation metadata referenced retired model '%s'; reassigned to '%s'.",
+            model_name or "<blank>",
+            refreshed["model_name"],
+        )
+        normalized.update(
+            {
+                "model_name": refreshed["model_name"],
+                "profile": refreshed["profile"],
+                "training_loss": refreshed["training_loss"],
+                "params": refreshed["params"],
+                "updated_at": _utc_now(),
+            }
+        )
+        return normalized
+
+    if profile_name not in config.MODEL_ARGS:
+        refreshed = _choose_session_profile()
+        normalized.update(
+            {
+                "model_name": model_name,
+                "profile": refreshed["profile"],
+                "training_loss": MODEL_LOSSES.get(model_name, 0.0),
+                "params": config.make_params(
+                    refreshed["profile"], model_name=model_name
+                ),
+                "updated_at": _utc_now(),
+            }
+        )
+        return normalized
+
+    expected_params = config.make_params(profile_name, model_name=model_name)
+    expected_loss = MODEL_LOSSES.get(model_name, 0.0)
+    if normalized.get("params") != expected_params or normalized.get(
+        "training_loss"
+    ) != expected_loss:
+        normalized.update(
+            {
+                "training_loss": expected_loss,
+                "params": expected_params,
+                "updated_at": _utc_now(),
+            }
+        )
+    return normalized
+
+
 def _build_metadata(
     student: str,
     case_id: str | None = None,
@@ -191,7 +248,9 @@ def get_conversation_state(
         payload = _LOCAL_CONVERSATIONS.get(conversation_id)
         if not payload:
             return config.START_CHATS["smiles"].copy(), {}
-        return payload.get("messages", []), payload.get("metadata", {})
+        return payload.get("messages", []), _normalize_conversation_metadata(
+            payload.get("metadata", {})
+        )
 
     try:
         doc = DB.collection("conversations").document(conversation_id).get()
@@ -203,7 +262,9 @@ def get_conversation_state(
         return config.START_CHATS["smiles"].copy(), {}
 
     payload = doc.to_dict() or {}
-    return payload.get("messages", []), payload.get("metadata", {})
+    return payload.get("messages", []), _normalize_conversation_metadata(
+        payload.get("metadata", {})
+    )
 
 
 def get_messages_from_firestore(conversation_id: str) -> list[dict[str, str]]:
@@ -329,7 +390,8 @@ def create_koan_conversation(case_id: str, student: str) -> str:
 
 def get_or_init_params(metadata: dict[str, Any]) -> dict[str, Any]:
     """Return stored model parameters or create a fresh fallback profile."""
-    params = metadata.get("params") if isinstance(metadata, dict) else None
+    normalized = _normalize_conversation_metadata(metadata)
+    params = normalized.get("params") if isinstance(normalized, dict) else None
     if isinstance(params, dict) and params.get("model"):
         return params
     fallback = _choose_session_profile()

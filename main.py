@@ -284,6 +284,7 @@ def inject_runtime_config() -> dict[str, Any]:
     return {
         "chat_api_base_url": (utipy.config.CHAT_API_BASE_URL or "").rstrip("/"),
         "streaming_enabled": utipy.config.STREAMING,
+        "is_local": utipy.config.LOCAL,
     }
 
 

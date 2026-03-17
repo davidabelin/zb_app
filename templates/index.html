@@ -51,6 +51,9 @@
                 Archive of saved dokusan session transcripts:
                <ul>
                     <li><a href="{{ url_for('admin_conversations') }}">List of cloud-stored sessions.</a></li>
+                    {% if is_local %}
+                    <li><a href="{{ url_for('admin_review') }}">Local review tools.</a></li>
+                    {% endif %}
                     <li><a href="https://x-checker-1721430104958.wm.r.appspot.com/"><s>Call XCbot -- ask to <i>factcheck a dog's buddha-nature!</i> ;)</s> Feature is clunky or not available.</a></li>
                </ul>
             </section>

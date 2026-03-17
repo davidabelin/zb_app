@@ -1,5 +1,6 @@
 # tests/test_utils.py
 import re
+import utilities
 from utilities import get_cid, resequence_logbook_entries
 
 
@@ -44,3 +45,45 @@ def test_resequence_logbook_entries_assigns_plain_incrementing_serials():
     resequenced = resequence_logbook_entries(entries)
 
     assert [entry["serial_number"] for entry in resequenced] == ["001", "002"]
+
+
+def test_get_conversation_state_reassigns_retired_model_metadata(monkeypatch):
+    monkeypatch.setattr(utilities, "DB", None)
+    monkeypatch.setattr(
+        utilities,
+        "_LOCAL_CONVERSATIONS",
+        {
+            "cid-1": {
+                "messages": [{"role": "user", "content": "hello"}],
+                "metadata": {
+                    "model_name": "mmnk_ble824",
+                    "profile": "mid",
+                    "training_loss": 1.32,
+                    "params": {"model": "ft:retired-model"},
+                },
+            }
+        },
+    )
+    monkeypatch.setattr(
+        utilities.config, "MODELS", {"set03a-bs5lr05e5": "ft:active-model"}
+    )
+    monkeypatch.setattr(
+        utilities.config,
+        "MODEL_ARGS",
+        {
+            "mid": {
+                "temperature": 1.0,
+                "max_tokens": 1024,
+                "top_p": 0.5,
+                "frequency_penalty": 1.0,
+                "presence_penalty": 0.5,
+            }
+        },
+    )
+
+    messages, metadata = utilities.get_conversation_state("cid-1")
+
+    assert messages == [{"role": "user", "content": "hello"}]
+    assert metadata["model_name"] == "set03a-bs5lr05e5"
+    assert metadata["profile"] == "mid"
+    assert metadata["params"]["model"] == "ft:active-model"
