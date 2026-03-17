@@ -18,3 +18,18 @@ Documentation-complete release for `zb_app`.
 This release does not intentionally redesign the runtime API surface. It is a
 documentation and maintainability release over the stabilized hybrid deployment,
 memory-index workflow, and authenticated API surface already in place.
+
+## Pre-v2 Preparation
+
+Add archive download+delete admin flow and deduped review sync
+
+- add bulk admin archive actions for download, delete, and download+delete
+- support hosted downloads as zip output instead of local-only file writes
+- add GCS archive helper functions for fetch, write, and delete operations
+- add local review sync logic to dedupe collected sessions by transcript hash
+- quarantine duplicate session files under collected_sessions/_duplicates
+- rebuild training/trainset04/review.csv from the deduped session set
+- preserve existing generated review evaluations across dedupe/sync
+- regenerate generated review datasets and sessions_to_train from canonical sessions
+- update admin conversations UI to expose maintenance actions and sync status
+- add tests covering archive maintenance and review-sync preservation
