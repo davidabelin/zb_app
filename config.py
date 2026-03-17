@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, Optional
 import logging
 import os
 
-from models import ZB_MODELS
+from models import MODELS_IN_USE
 
 _load_dotenv: Optional[Callable[..., bool]]
 try:
@@ -179,7 +179,7 @@ class Config:
     LOG_LEVEL: int = logging.INFO
 
     # Model registries
-    ZB_MODELS: Dict[str, str] = field(default_factory=lambda: ZB_MODELS)
+    MODELS_IN_USE: Dict[str, str] = field(default_factory=lambda: MODELS_IN_USE)
     MODELS: Dict[str, str] = field(init=False)
 
     # Parameter defaults
@@ -231,7 +231,7 @@ class Config:
         "smiles": [
             {
                 "role": "system",
-                "content": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a customized LLM/GPT chatbot, fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in his 13thC CE compilation, the 'Gatelss Gate'. Now, centuries later, here you are holding a Dokusan session with the students; focused on the koan each is working on, and on what barriers to it each is focused. The student will now enter.",
+                "content": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a customized LLM/GPT chatbot, fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in his 13thC CE compilation, the 'Gateless Gate'. Now, centuries later, here you are holding a Dokusan session with the students; focused on the koan each is working on, and on what barriers to it each is focused. The student will now enter.",
             },
             {"role": "user", "content": "(student enters, bows, sits)"},
             {"role": "assistant", "content": "(smiles)"},
@@ -247,7 +247,7 @@ class Config:
         - resolves secrets from Secret Manager and environment fallback sources
         """
         # Last 10 finetunes + fallback model.
-        last_zb = list(self.ZB_MODELS.items())[-10:]
+        last_zb = list(self.MODELS_IN_USE.items())[-10:]
         self.MODELS = dict(last_zb)
         self.MODELS.update({"gpt-4": "gpt-4"})
 

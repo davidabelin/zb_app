@@ -6,6 +6,11 @@ runtime configuration layer can select and expose the currently supported model
 set without importing deployment or API logic.
 """
 
+MODELS_IN_USE = {
+    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
+    "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
+    }
+
 ZB_MODELS = {
     "mmnk_ble824": "ft:gpt-4o-mini-2024-07-18:chatbot-tuners:mmnk-ble824:A7q3grXA",
     "mmnk_ble5053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble5053:ATHGiQEV",
