@@ -4,7 +4,7 @@
 <!--
   Admin archive index for Cloud Storage-backed saved conversations.
   The page assumes browser admin auth is already established and links to
-  transcript detail plus the local-only `download_chats` maintenance action.
+  transcript detail plus bulk maintenance actions for download/delete/sync.
 -->
 <section>
     <i>(For Administrative Use Only.)</i>
@@ -16,10 +16,25 @@
     <p>List of Saved Session Transcripts</p>
 </header>
 <section>
-    {% if request.args.get("status") == "downloaded" %}
-      <p><b>Download complete.</b></p>
-    {% elif request.args.get("status") == "failed" %}
-      <p><b>Download failed.</b></p>
+    {% set status = request.args.get("status", "") %}
+    {% if status == "downloaded" %}
+      <p><b>Imported {{ request.args.get("downloaded", "0") }} conversation(s) into collected_sessions/web. Review queue synced to {{ request.args.get("synced", "0") }} rows; {{ request.args.get("deduped", "0") }} duplicate file(s) were moved aside while preserving {{ request.args.get("preserved", "0") }} prior keep decision(s) and {{ request.args.get("reviewed", "0") }} generated review evaluation(s).</b></p>
+    {% elif status == "download_delete" %}
+      <p><b>Imported {{ request.args.get("downloaded", "0") }} conversation(s), deleted {{ request.args.get("deleted", "0") }} object(s) from Cloud Storage, and resynced the review queue to {{ request.args.get("synced", "0") }} rows with {{ request.args.get("deduped", "0") }} duplicate file(s) quarantined. Preserved keep decisions: {{ request.args.get("preserved", "0") }}. Preserved generated review evaluations: {{ request.args.get("reviewed", "0") }}.</b></p>
+    {% elif status == "deleted" %}
+      <p><b>Deleted {{ request.args.get("deleted", "0") }} archived conversation(s) from Cloud Storage.</b></p>
+    {% elif status == "synced" %}
+      <p><b>Review queue synced to {{ request.args.get("synced", "0") }} rows; {{ request.args.get("deduped", "0") }} duplicate file(s) were moved aside. Preserved keep decisions: {{ request.args.get("preserved", "0") }}. Preserved generated review evaluations: {{ request.args.get("reviewed", "0") }}.</b></p>
+    {% elif status == "sync_unavailable" %}
+      <p><b>Review sync is only available from the local Flask app.</b></p>
+    {% elif status == "empty" %}
+      <p><b>No archived conversations were found in Cloud Storage.</b></p>
+    {% endif %}
+
+    {% if is_local %}
+      <p><small>Local mode: downloads are imported into <code>collected_sessions/web</code>, duplicate session files are moved to <code>collected_sessions/_duplicates</code>, and <code>training/trainset04/review.csv</code> is rebuilt.</small></p>
+    {% else %}
+      <p><small>Online mode: download actions return a zip file to the browser. <b>Download + delete all</b> removes the corresponding objects from Cloud Storage after the zip is prepared.</small></p>
     {% endif %}
 
     <ul>
@@ -33,8 +48,16 @@
     </ul>
     <br>
     <form method="post" action="{{ url_for('download_chats') }}">
-      <button type="submit"><b>Download all.</b></button>
+      <button type="submit" name="action" value="download"><b>Download all.</b></button>
+      <button type="submit" name="action" value="download_delete"><b>Download + delete all.</b></button>
+      <button type="submit" name="action" value="delete">Delete all from cloud.</button>
     </form>
+    {% if is_local %}
+    <br>
+    <form method="post" action="{{ url_for('download_chats') }}">
+      <button type="submit" name="action" value="sync_review">Sync local review queue.</button>
+    </form>
+    {% endif %}
     <br>
     <form method="post" action="{{ url_for('admin_logout') }}">
       <button type="submit">Log out</button>

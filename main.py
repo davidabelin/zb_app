@@ -19,10 +19,12 @@ from __future__ import annotations
 
 import csv
 import hmac
+import io
 import json
 import logging
 import os
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,12 +40,14 @@ from flask import (
     request,
     session,
     send_from_directory,
+    send_file,
     stream_with_context,
     url_for,
 )
 from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
+from review_sync import sync_review_queue
 import utilities as utipy
 from utilities import ModelAPIError
 
@@ -925,6 +929,36 @@ def _trainset04_review_csv_path() -> Path:
     return _repo_root() / "training" / "trainset04" / "review.csv"
 
 
+def _collected_sessions_web_root() -> Path:
+    """Return the local import directory for downloaded archived sessions."""
+    return _repo_root() / "collected_sessions" / "web"
+
+
+def _request_prefers_html() -> bool:
+    """Return whether the caller looks like the browser admin UI."""
+    return "text/html" in (request.headers.get("Accept", "").lower())
+
+
+def _admin_conversations_response(status: str, **payload: Any):
+    """Return a redirect for the admin UI or JSON for scripted callers."""
+    body = {"status": status, **payload}
+    if _request_prefers_html():
+        return redirect(url_for("admin_conversations", **body))
+    return jsonify(body), 200
+
+
+def _archived_conversations_zip(
+    archives: list[utipy.ArchivedConversation],
+) -> io.BytesIO:
+    """Package archived conversation JSONL blobs into a single zip file."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive_zip:
+        for archive in archives:
+            archive_zip.writestr(archive.filename, archive.content)
+    buffer.seek(0)
+    return buffer
+
+
 def _load_review_rows() -> tuple[list[dict[str, str]], list[str]]:
     """Load training-review rows and headers from ``review.csv``."""
     review_path = _trainset04_review_csv_path()
@@ -1080,7 +1114,9 @@ def admin_conversations():
         for file_name in conversation_files
     ]
     return render_template(
-        "admin_conversations.html", conversation_ids=conversation_ids
+        "admin_conversations.html",
+        conversation_ids=conversation_ids,
+        is_local=utipy.config.LOCAL,
     )
 
 
@@ -1099,16 +1135,68 @@ def admin_conversation_detail(conversation_id: str):
     )
 
 
+@app.route("/admin/conversations/maintenance", methods=["POST"])
 @app.route("/download_chats", methods=["POST"])
 def download_chats():
-    """Download archived chat transcripts into the local development tree."""
-    if utipy.download_all():
-        if "text/html" in (request.headers.get("Accept", "").lower()):
-            return redirect(url_for("admin_conversations", status="downloaded"))
-        return jsonify({"status": "success"}), 200
-    if "text/html" in (request.headers.get("Accept", "").lower()):
-        return redirect(url_for("admin_conversations", status="failed"))
-    return jsonify({"status": "failure"}), 500
+    """Run bulk archive maintenance from the admin conversations page."""
+    action = str(request.form.get("action", "download")).strip() or "download"
+    allowed_actions = {"download", "download_delete", "delete", "sync_review"}
+    if action not in allowed_actions:
+        abort(400, description="Unsupported archive maintenance action")
+
+    if action == "sync_review":
+        if not utipy.config.LOCAL:
+            return _admin_conversations_response("sync_unavailable")
+        sync_summary = sync_review_queue(_repo_root())
+        return _admin_conversations_response(
+            "synced",
+            synced=sync_summary["records_kept"],
+            deduped=sync_summary["duplicates_moved"],
+            preserved=sync_summary["decisions_preserved"],
+            reviewed=sync_summary["evaluations_preserved"],
+        )
+
+    archives = utipy.download_archived_conversations()
+    if not archives:
+        return _admin_conversations_response("empty")
+
+    if action == "delete":
+        deleted = utipy.delete_archived_conversations(
+            archive.blob_name for archive in archives
+        )
+        return _admin_conversations_response("deleted", deleted=deleted)
+
+    if utipy.config.LOCAL:
+        written_paths = utipy.write_archived_conversations_to_directory(
+            archives, _collected_sessions_web_root()
+        )
+        deleted = 0
+        if action == "download_delete":
+            deleted = utipy.delete_archived_conversations(
+                archive.blob_name for archive in archives
+            )
+        sync_summary = sync_review_queue(_repo_root())
+        return _admin_conversations_response(
+            "download_delete" if action == "download_delete" else "downloaded",
+            downloaded=len(written_paths),
+            deleted=deleted,
+            synced=sync_summary["records_kept"],
+            deduped=sync_summary["duplicates_moved"],
+            preserved=sync_summary["decisions_preserved"],
+            reviewed=sync_summary["evaluations_preserved"],
+        )
+
+    bundle = _archived_conversations_zip(archives)
+    if action == "download_delete":
+        utipy.delete_archived_conversations(archive.blob_name for archive in archives)
+
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    return send_file(
+        bundle,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"zbchats-{stamp}.zip",
+    )
 
 
 if __name__ == "__main__":

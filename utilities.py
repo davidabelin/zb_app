@@ -18,6 +18,7 @@ avoid silent cloud/local split-brain behavior.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import logging
@@ -26,7 +27,7 @@ import random as rnd
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any, Generator, Iterable, Optional
 
 from flask import request
 
@@ -84,6 +85,15 @@ _LOCAL_CONVERSATIONS: dict[str, dict[str, Any]] = {}
 
 MEMORY_LOGBOOK = config.MEMORY_LOGBOOK
 _LOCAL_LOGBOOK_PATH = Path(__file__).resolve().parent / "config" / MEMORY_LOGBOOK
+
+
+@dataclass(frozen=True)
+class ArchivedConversation:
+    """One archived conversation object fetched from Cloud Storage."""
+
+    blob_name: str
+    filename: str
+    content: bytes
 
 
 def _utc_now() -> str:
@@ -554,6 +564,58 @@ def get_all_conversations_from_gcs() -> dict[str, list[dict[str, Any]]]:
     return conversations
 
 
+def download_archived_conversations() -> list[ArchivedConversation]:
+    """Fetch archived JSONL conversation objects from GCS."""
+    if not BUCKET:
+        return []
+
+    archives: list[ArchivedConversation] = []
+    for blob in BUCKET.list_blobs(prefix="zbchats/"):
+        if not blob.name.endswith(".jsonl"):
+            continue
+        archives.append(
+            ArchivedConversation(
+                blob_name=blob.name,
+                filename=Path(blob.name).name,
+                content=blob.download_as_bytes(),
+            )
+        )
+    archives.sort(key=lambda archive: archive.filename)
+    return archives
+
+
+def write_archived_conversations_to_directory(
+    archives: Iterable[ArchivedConversation], target_dir: str | Path
+) -> list[Path]:
+    """Write downloaded archived conversations into a local directory."""
+    output_dir = Path(target_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    written_paths: list[Path] = []
+    for archive in archives:
+        destination = output_dir / archive.filename
+        destination.write_bytes(archive.content)
+        written_paths.append(destination)
+    return written_paths
+
+
+def delete_archived_conversations(blob_names: Iterable[str]) -> int:
+    """Delete archived JSONL conversation objects from GCS."""
+    if not BUCKET:
+        return 0
+
+    deleted = 0
+    for blob_name in blob_names:
+        if not blob_name:
+            continue
+        blob = BUCKET.blob(blob_name)
+        if hasattr(blob, "exists") and not blob.exists():
+            continue
+        blob.delete()
+        deleted += 1
+    return deleted
+
+
 def download_all() -> bool:
     """Download all archived GCS chats into the local development tree."""
     try:
@@ -561,13 +623,8 @@ def download_all() -> bool:
             logging.warning("download_all skipped outside local environment")
             return False
 
-        full_bucket = get_all_conversations_from_gcs()
-        for c_id, c_text in full_bucket.items():
-            filename = c_id.replace('"', "") + ".jsonl"
-            filepath = os.path.join("config", "zbchats", filename)
-            lines = [json.dumps(item) for item in c_text]
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
+        archives = download_archived_conversations()
+        write_archived_conversations_to_directory(archives, Path("config") / "zbchats")
         return True
     except Exception as e:
         logging.error("download_all failed: %s", e)
