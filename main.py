@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import csv
 import hmac
+import importlib.util
 import io
 import json
 import logging
@@ -26,6 +27,7 @@ import os
 import time
 import zipfile
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,7 @@ from flask import (
     stream_with_context,
     url_for,
 )
+from jinja2 import ChoiceLoader, FileSystemLoader
 from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
@@ -53,13 +56,31 @@ from utilities import ModelAPIError
 
 logging.basicConfig(level=utipy.config.LOG_LEVEL)
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_TRAINING_TEMPLATES_DIR = _REPO_ROOT / "training" / "templates"
+
 app = Flask(__name__, static_url_path="/static")
+app.jinja_loader = ChoiceLoader(
+    [
+        app.jinja_loader,
+        FileSystemLoader(str(_TRAINING_TEMPLATES_DIR.resolve())),
+    ]
+)
 app.secret_key = utipy.config.FLASK_SECRET_KEY
 
 # Secure cookie defaults.
 app.config["SESSION_COOKIE_SECURE"] = utipy.config.SESSION_COOKIE_SECURE
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SOURCE_JSONL"] = str(
+    (_REPO_ROOT / "training" / "generated" / "collected_sessions_with_metadata.jsonl").resolve()
+)
+app.config["REVIEWED_JSONL"] = str(
+    (_REPO_ROOT / "training" / "generated" / "collected_sessions_with_evaluations.jsonl").resolve()
+)
+app.config["TRAIN_JSONL"] = str(
+    (_REPO_ROOT / "training" / "generated" / "sessions_to_train.jsonl").resolve()
+)
 
 _RATE_BUCKETS: dict[str, tuple[float, int]] = {}
 _RATE_WINDOW_SECONDS = 60
@@ -922,7 +943,22 @@ def serve_pdf(filename):
 # -------- Data Administration --------
 def _repo_root() -> Path:
     """Return the Zenbot repository root above ``zb_app``."""
-    return Path(__file__).resolve().parents[1]
+    return _REPO_ROOT
+
+
+@lru_cache(maxsize=1)
+def _session_review_module():
+    """Load the standalone local session-review module for reuse in ``zb_app``."""
+    module_path = _repo_root() / "training" / "session_review_app.py"
+    spec = importlib.util.spec_from_file_location(
+        "zenbot_session_review_app", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load session review module: {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _trainset04_review_csv_path() -> Path:
@@ -1045,9 +1081,204 @@ def _parse_session_jsonl(path: Path) -> tuple[dict[str, Any], list[dict[str, str
     return metadata, messages
 
 
-@app.route("/admin/review", methods=["GET", "POST"])
+@app.route("/admin/review")
 def admin_review():
-    """Render the admin training-review queue and accept keep/discard updates."""
+    """Sync review inputs and open the dual-review session evaluation UI."""
+    sync_review_queue(_repo_root())
+    return redirect(url_for("review_page"))
+
+
+@app.route("/review")
+def review_page():
+    """Render the local dual-review session evaluation browser UI."""
+    _require_admin_auth()
+    session_review = _session_review_module()
+    try:
+        rows = session_review.load_review_state(app)
+    except ValueError as exc:
+        abort(500, description=str(exc))
+
+    requested_index = request.args.get("index", "").strip()
+    if requested_index:
+        try:
+            index = int(requested_index)
+        except ValueError:
+            abort(400, description="Query parameter 'index' must be an integer")
+    else:
+        first_unreviewed = session_review.first_unreviewed_index(rows)
+        index = first_unreviewed if first_unreviewed is not None else 0
+
+    if index < 0 or index >= len(rows):
+        abort(404, description="Record index out of range")
+
+    record = session_review.serialize_record(rows, index)
+    return render_template(
+        "session_review.html",
+        record=record,
+        reviewed_path=app.config["REVIEWED_JSONL"],
+        source_path=app.config["SOURCE_JSONL"],
+        train_path=app.config["TRAIN_JSONL"],
+    )
+
+
+@app.post("/review/record/<int:index>/decision")
+def set_decision(index: int):
+    """Apply one browser-originated review decision and move to the next record."""
+    _require_admin_auth()
+    session_review = _session_review_module()
+    try:
+        rows = session_review.load_review_state(app)
+    except ValueError as exc:
+        abort(500, description=str(exc))
+
+    if index < 0 or index >= len(rows):
+        abort(404, description="Record index out of range")
+
+    try:
+        evaluation = session_review.normalize_evaluation(request.form.get("evaluation", ""))
+    except ValueError as exc:
+        abort(400, description=str(exc))
+    if evaluation not in session_review.REVIEW_CHOICES:
+        abort(400, description="evaluation must be Use, Alter, or Reject")
+    try:
+        reviewer = session_review.normalize_reviewer(
+            request.form.get("reviewer", session_review.FORM_REVIEWER_DEFAULT)
+        )
+    except ValueError as exc:
+        abort(400, description=str(exc))
+
+    rows[index] = session_review.apply_reviewer_decision(rows[index], reviewer, evaluation)
+    session_review.save_review_state(app, rows)
+
+    redirect_index = session_review.next_unreviewed_after(rows, index)
+    if redirect_index is None:
+        redirect_index = session_review.next_index(rows, index)
+    return redirect(url_for("review_page", index=redirect_index))
+
+
+@app.get("/api/session-evaluations/summary")
+@app.get("/zb_api/session-evaluations/summary")
+def api_session_evaluations_summary():
+    """Return review counts plus the active generated JSONL file paths."""
+    _require_admin_auth()
+    session_review = _session_review_module()
+    try:
+        rows = session_review.load_review_state(app)
+    except ValueError as exc:
+        abort(500, description=str(exc))
+
+    return jsonify(
+        {
+            "status": "success",
+            "summary": session_review.build_summary(rows),
+            "paths": {
+                "source_jsonl": app.config["SOURCE_JSONL"],
+                "reviewed_jsonl": app.config["REVIEWED_JSONL"],
+                "sessions_to_train_jsonl": app.config["TRAIN_JSONL"],
+            },
+        }
+    )
+
+
+@app.get("/api/session-evaluations/record/<int:index>")
+@app.get("/zb_api/session-evaluations/record/<int:index>")
+def api_session_evaluations_record(index: int):
+    """Fetch one review record from the generated evaluation dataset."""
+    _require_admin_auth()
+    session_review = _session_review_module()
+    try:
+        rows = session_review.load_review_state(app)
+    except ValueError as exc:
+        abort(500, description=str(exc))
+
+    if index < 0 or index >= len(rows):
+        abort(404, description="Record index out of range")
+    return jsonify(
+        {"status": "success", "record": session_review.serialize_record(rows, index)}
+    )
+
+
+@app.post("/api/session-evaluations/record/<int:index>/decision")
+@app.post("/zb_api/session-evaluations/record/<int:index>/decision")
+def api_session_evaluations_decision(index: int):
+    """Apply a JSON review decision for the requested reviewer and record."""
+    _require_admin_auth()
+    session_review = _session_review_module()
+    try:
+        rows = session_review.load_review_state(app)
+    except ValueError as exc:
+        abort(500, description=str(exc))
+
+    if index < 0 or index >= len(rows):
+        abort(404, description="Record index out of range")
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        abort(400, description="JSON body is required")
+
+    try:
+        evaluation = session_review.normalize_evaluation(data.get("evaluation", ""))
+    except ValueError as exc:
+        abort(400, description=str(exc))
+    if evaluation not in session_review.REVIEW_CHOICES:
+        abort(400, description="evaluation must be Use, Alter, or Reject")
+    try:
+        reviewer = session_review.normalize_reviewer(data.get("reviewer", "ZB"))
+    except ValueError as exc:
+        abort(400, description=str(exc))
+
+    rows[index] = session_review.apply_reviewer_decision(rows[index], reviewer, evaluation)
+    session_review.save_review_state(app, rows)
+    return jsonify(
+        {
+            "status": "success",
+            "record": session_review.serialize_record(rows, index),
+            "next_unreviewed_index": session_review.next_unreviewed_after(rows, index),
+        }
+    )
+
+
+@app.get("/api/session-evaluations/next")
+@app.get("/zb_api/session-evaluations/next")
+def api_session_evaluations_next():
+    """Find the next record matching a requested review state."""
+    _require_admin_auth()
+    session_review = _session_review_module()
+    try:
+        rows = session_review.load_review_state(app)
+    except ValueError as exc:
+        abort(500, description=str(exc))
+
+    desired = request.args.get("evaluation", "unreviewed").strip() or "unreviewed"
+    if desired not in {"all", "unreviewed", "Use", "Alter", "Reject"}:
+        abort(
+            400,
+            description="evaluation must be all, unreviewed, Use, Alter, or Reject",
+        )
+    after = request.args.get("after", "-1").strip()
+    try:
+        after_index = int(after)
+    except ValueError:
+        abort(400, description="Query parameter 'after' must be an integer")
+
+    next_index = session_review.find_next_matching_index(rows, after_index, desired)
+    return jsonify(
+        {
+            "status": "success",
+            "evaluation_filter": desired,
+            "next_index": next_index,
+            "record": (
+                session_review.serialize_record(rows, next_index)
+                if next_index is not None
+                else None
+            ),
+        }
+    )
+
+
+@app.route("/admin/review/legacy", methods=["GET", "POST"])
+def admin_review_legacy():
+    """Render the older CSV-backed keep/discard review queue."""
     rows, _headers = _load_review_rows()
 
     if request.method == "POST":
@@ -1061,7 +1292,7 @@ def admin_review():
         if decisions:
             _update_review_keep(decisions)
 
-        return redirect(url_for("admin_review"))
+        return redirect(url_for("admin_review_legacy"))
 
     pending = [r for r in rows if not (r.get("keep") or "").strip()]
 
@@ -1086,9 +1317,9 @@ def admin_review():
     )
 
 
-@app.route("/admin/review/view/<record_id>")
+@app.route("/admin/review/legacy/view/<record_id>")
 def admin_review_view(record_id):
-    """Render one reviewed training session with parsed transcript detail."""
+    """Render one reviewed training session from the legacy CSV queue."""
     rows, _headers = _load_review_rows()
     row = next((r for r in rows if (r.get("id") or "") == record_id), None)
     if not row:
@@ -1133,6 +1364,7 @@ def admin_conversation_detail(conversation_id: str):
         "admin_conversation_detail.html",
         conversation_id=conversation_id,
         messages=messages,
+        is_local=utipy.config.LOCAL,
     )
 
 

@@ -101,7 +101,8 @@ Key non-secret env vars:
   state -> `/zb_api/save_chat`
 - Memory selection: `/zb_api/load_memory_logbook` -> `/zb_api/load_memory_entry/<serial_number>`
 - Admin archive browsing: `/admin/conversations`
-- Training review: `/admin/review` backed by `../training/trainset04/review.csv`
+- Session evaluation review: `/admin/review` -> `/review` backed by `../training/generated/*.jsonl`
+- Legacy keep/discard queue: `/admin/review/legacy` backed by `../training/trainset04/review.csv`
 
 ## Documentation Map
 

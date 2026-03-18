@@ -6,11 +6,11 @@
 </section>
 <header>
   <h1>Zenbot Dokusan</h1>
-  <h2>Local Session Detail</h2>
+  <h2>Legacy Local Session Detail</h2>
   <h3>{{ row.conversation_id }}</h3>
 </header>
 <section>
-  <div class="nav"><a href="{{ url_for('admin_review') }}">Back to Review List</a></div>
+  <div class="nav"><a href="{{ url_for('admin_review_legacy') }}">Back to Review List</a></div>
   <p><b>Source:</b> {{ row.source_path }}</p>
   <p><b>File:</b> <code>{{ session_path }}</code></p>
 

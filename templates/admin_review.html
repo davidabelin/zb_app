@@ -11,14 +11,16 @@
 </section>
 <header>
   <h1>Zenbot Dokusan</h1>
-  <h2>Local Session Review</h2>
+  <h2>Legacy Local Session Review</h2>
   <p>Pending: {{ pending_total }}</p>
 </header>
 <section>
   <div class="nav">
     <a href="{{ url_for('admin_conversations') }}">GCS Admin</a>
     &nbsp;|&nbsp;
-    <a href="{{ url_for('admin_review') }}">Refresh</a>
+    <a href="{{ url_for('review_page') }}">Dual-Review UI</a>
+    &nbsp;|&nbsp;
+    <a href="{{ url_for('admin_review_legacy') }}">Refresh</a>
   </div>
 
   {% set prev_offset = offset - limit %}
@@ -30,10 +32,10 @@
     (page size {{ limit }})
   </p>
   <p>
-    <a href="{{ url_for('admin_review', offset=prev_offset, limit=limit) }}">Prev</a>
+    <a href="{{ url_for('admin_review_legacy', offset=prev_offset, limit=limit) }}">Prev</a>
     |
     {% if next_offset < pending_total %}
-      <a href="{{ url_for('admin_review', offset=next_offset, limit=limit) }}">Next</a>
+      <a href="{{ url_for('admin_review_legacy', offset=next_offset, limit=limit) }}">Next</a>
     {% else %}
       Next
     {% endif %}

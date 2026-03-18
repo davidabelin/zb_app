@@ -74,4 +74,5 @@ MODEL_LOSSES = {
     "set00-02mix-bs10lr05e2": 0.3922,
     "set00-02mix-bs6lr06e3": 0.5753,
     "set03-bs2lr05e7": 0.858,
+    "set03a-bs5lr05e5": 1.874,
 }

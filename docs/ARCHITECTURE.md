@@ -123,11 +123,15 @@ behavior.
 4. `/download_chats` downloads all GCS archives into the local dev tree.
 
 ### Admin Review Flow
-1. `/admin/review` reads `../training/trainset04/review.csv`.
-2. Browser submits keep/discard decisions.
-3. `main.py` rewrites the CSV in place.
-4. `/admin/review/view/<record_id>` reads the referenced session JSONL and
-   displays parsed metadata plus messages.
+1. `/admin/review` first syncs local session files into the generated
+   review datasets, then redirects into `/review`.
+2. `/review` renders the dual-review browser UI backed by
+   `../training/generated/collected_sessions_with_evaluations.jsonl`.
+3. Browser and helper-GPT callers can both use the shared
+   `/api/session-evaluations/*` or `/zb_api/session-evaluations/*` endpoints.
+4. The older CSV-backed keep/discard queue remains available at
+   `/admin/review/legacy`, and `/admin/review/legacy/view/<record_id>` reads the
+   referenced session JSONL to display parsed metadata plus messages.
 
 ## Notable Operational Constraints
 
