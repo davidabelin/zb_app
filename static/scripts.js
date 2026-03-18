@@ -105,6 +105,12 @@ function appendThinkingIndicator() {
   return div;
 }
 
+function setPrefacePanelVisibility(visible) {
+  const prefacePanel = document.getElementById("chatPrefacePanel");
+  if (!prefacePanel) return;
+  prefacePanel.hidden = !visible;
+}
+
 function removeThinkingIndicator(node) {
   if (node && node.parentNode) {
     node.parentNode.removeChild(node);
@@ -245,6 +251,7 @@ function initChatterPage() {
             koanDiv.appendChild(titleDiv);
             koanDiv.appendChild(bodyDiv);
             preface.appendChild(koanDiv);
+            setPrefacePanelVisibility(true);
           }
         }
       })
@@ -453,6 +460,7 @@ function clearChat() {
     if (chatResults) chatResults.innerHTML = "";
     if (chatInput) chatInput.value = "";
     if (chatPreface) chatPreface.innerHTML = "";
+    setPrefacePanelVisibility(false);
     window.history.replaceState(null, "", "/chatter");
   }
 }
@@ -487,6 +495,7 @@ async function saveChat() {
       if (chatResults) chatResults.innerHTML = "";
       if (chatInput) chatInput.value = "";
       if (chatPreface) chatPreface.innerHTML = "";
+      setPrefacePanelVisibility(false);
     } else {
       alert(`Error saving chat: ${data.error || response.statusText}`);
     }

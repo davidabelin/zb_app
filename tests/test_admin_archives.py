@@ -97,3 +97,17 @@ def test_admin_conversations_download_delete_remote_returns_zip(monkeypatch):
     with zipfile.ZipFile(io.BytesIO(response.data), "r") as archive_zip:
         assert archive_zip.namelist() == ["alpha.jsonl"]
         assert archive_zip.read("alpha.jsonl") == b'{"conversation_id":"alpha"}\n'
+
+
+def test_admin_conversations_local_shows_review_button(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
+    monkeypatch.setattr(main.utipy, "list_conversation_files_in_gcs", lambda: [])
+
+    client = main.app.test_client()
+    response = client.get("/admin/conversations")
+
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert 'href="/admin/review"' in body
+    assert "Open Local Review Tools" in body

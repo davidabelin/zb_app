@@ -136,7 +136,7 @@
     border-top: 1px solid #ffd;
     white-space: pre-line; /* or pre-wrap; */
     font-size: 0.9em;
-    margin-bottom: 1em;
+    margin-bottom: 0;
     color: #f0ffd0;
     text-align: left;
   }
@@ -173,10 +173,26 @@
 
 /* TO DO Header area does not scroll; it’s “fixed” in the flex flow. */
 .chat-header {
-  flex: 0 0 auto;     /* Don’t let it grow or shrink */
-  overflow-y: auto;  /* Make sure it's scrollable */
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
   padding: 0.5em;
   border-bottom: 2px solid #ccc;
+}
+
+.chat-preface-panel {
+  max-height: min(28vh, 18rem);
+  overflow-y: auto;
+  padding: 0.45em 0.65em;
+  border: 1px solid #5d8d6a;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #29543a 0%, #1d3f2b 100%);
+  box-shadow: inset 0 0 0 1px #173220;
+}
+
+.chat-preface-panel[hidden] {
+  display: none;
 }
 
 /* Main messages area, flexible in height, with scroll. */
@@ -219,6 +235,24 @@
 
 .chat-help {
   color: #333;
+}
+
+.admin-actions {
+  margin: 0.75em 0 1em;
+}
+
+.button-link {
+  display: inline-block;
+  padding: 0.4em 0.8em;
+  border-radius: 6px;
+  background-color: #286638;
+  color: #fff;
+}
+
+.button-link:hover {
+  background-color: #206830;
+  color: #fefea0;
+  text-decoration: none;
 }
 
   /* ========== Chat Message Bubbles ========== */
@@ -307,5 +341,11 @@
     button {
       font-size: 1em;
       padding: 4px 6px;
+    }
+    .chat-container {
+      height: 85vh;
+    }
+    .chat-preface-panel {
+      max-height: min(24vh, 14rem);
     }
   }

@@ -13,7 +13,7 @@
     <a href="{{ url_for('admin_conversations') }}">Back to List of Sessions</a>
     {% if is_local %}
       &nbsp;|&nbsp;
-      <a href="{{ url_for('admin_review') }}">Local Review Queue</a>
+      <a class="button-link" href="{{ url_for('admin_review') }}">Open Local Review Queue</a>
     {% endif %}
   </div>
   <br>
