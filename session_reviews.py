@@ -339,6 +339,8 @@ def build_progress_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
     progress = {
         "cm_reviewed": 0,
         "zb_reviewed": 0,
+        "needs_cm_review": 0,
+        "needs_zb_review": 0,
         "awaiting_other_review": 0,
         "not_started": 0,
     }
@@ -348,8 +350,12 @@ def build_progress_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
         has_cm = bool(normalized.get("review_cm"))
         if has_zb:
             progress["zb_reviewed"] += 1
+        else:
+            progress["needs_zb_review"] += 1
         if has_cm:
             progress["cm_reviewed"] += 1
+        else:
+            progress["needs_cm_review"] += 1
         if normalized.get("evaluation"):
             continue
         if has_zb or has_cm:
@@ -539,6 +545,8 @@ def list_dashboard_rows(rows: list[dict[str, Any]], evaluation_filter: str) -> l
         evaluation = normalized["evaluation"]
         if evaluation_filter == "all":
             matches = True
+        elif evaluation_filter == "needs_cm_review":
+            matches = not normalized["review_cm"]
         elif evaluation_filter == "unreviewed":
             matches = evaluation == ""
         else:

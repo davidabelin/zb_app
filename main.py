@@ -952,11 +952,11 @@ def _load_review_state_or_abort() -> list[dict[str, Any]]:
 
 def _normalize_review_filter(value: str) -> str:
     """Validate the requested admin/API review filter."""
-    desired = str(value or "unreviewed").strip() or "unreviewed"
-    if desired not in {"all", "unreviewed", "Use", "Alter", "Reject"}:
+    desired = str(value or "needs_cm_review").strip() or "needs_cm_review"
+    if desired not in {"all", "needs_cm_review", "unreviewed", "Use", "Alter", "Reject"}:
         abort(
             400,
-            description="evaluation must be all, unreviewed, Use, Alter, or Reject",
+            description="evaluation must be all, needs_cm_review, unreviewed, Use, Alter, or Reject",
         )
     return desired
 
@@ -1049,7 +1049,7 @@ def _parse_session_jsonl(path: Path) -> tuple[dict[str, Any], list[dict[str, str
 @app.route("/admin/review")
 def admin_review():
     """Redirect the older admin review entrypoint into the cloud dashboard."""
-    return redirect(url_for("admin_conversations", evaluation="unreviewed"))
+    return redirect(url_for("admin_conversations", evaluation="needs_cm_review"))
 
 
 @app.route("/review")
@@ -1067,13 +1067,21 @@ def review_page():
         except ValueError:
             abort(400, description="Query parameter 'index' must be an integer")
     else:
-        first_unreviewed = session_reviews.first_unreviewed_index(rows)
-        index = first_unreviewed if first_unreviewed is not None else 0
+        first_cm_review = session_reviews.first_index_needing_reviewer(
+            rows, session_reviews.FORM_REVIEWER_DEFAULT
+        )
+        if first_cm_review is not None:
+            index = first_cm_review
+        else:
+            first_unreviewed = session_reviews.first_unreviewed_index(rows)
+            index = first_unreviewed if first_unreviewed is not None else 0
 
     if index < 0 or index >= len(rows):
         abort(404, description="Record index out of range")
 
-    dashboard_filter = _normalize_review_filter(request.args.get("evaluation", "unreviewed"))
+    dashboard_filter = _normalize_review_filter(
+        request.args.get("evaluation", "needs_cm_review")
+    )
     record = session_reviews.serialize_record(rows, index)
     return render_template(
         "session_review.html",
@@ -1112,16 +1120,18 @@ def set_decision(index: int):
     )
     session_reviews.save_review_state(rows)
 
+    dashboard_filter = _normalize_review_filter(
+        request.form.get("dashboard_filter", "needs_cm_review")
+    )
     redirect_index = session_reviews.next_index_needing_reviewer_after(
         rows, index, reviewer
     )
+    if redirect_index is None and dashboard_filter == "needs_cm_review":
+        return redirect(url_for("admin_conversations", evaluation=dashboard_filter))
     if redirect_index is None:
         redirect_index = session_reviews.next_unreviewed_after(rows, index)
     if redirect_index is None:
         redirect_index = session_reviews.next_index(rows, index)
-    dashboard_filter = _normalize_review_filter(
-        request.form.get("dashboard_filter", "unreviewed")
-    )
     return redirect(
         url_for("review_page", index=redirect_index, evaluation=dashboard_filter)
     )
@@ -1285,7 +1295,9 @@ def admin_review_view(record_id):
 def admin_conversations():
     """Render the cloud-backed review dashboard."""
     rows = _load_review_state_or_abort()
-    evaluation = _normalize_review_filter(request.args.get("evaluation", "unreviewed"))
+    evaluation = _normalize_review_filter(
+        request.args.get("evaluation", "needs_cm_review")
+    )
     review_rows = session_reviews.list_dashboard_rows(rows, evaluation)
     return render_template(
         "admin_conversations.html",

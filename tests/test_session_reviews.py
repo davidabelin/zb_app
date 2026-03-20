@@ -69,6 +69,8 @@ def test_build_progress_summary_counts_partial_reviews():
     assert progress == {
         "cm_reviewed": 1,
         "zb_reviewed": 2,
+        "needs_cm_review": 2,
+        "needs_zb_review": 1,
         "awaiting_other_review": 1,
         "not_started": 1,
     }

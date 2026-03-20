@@ -306,7 +306,8 @@
       {% endif %}
 
       <div class="filter-row">
-        <a class="filter-pill{% if evaluation == 'unreviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='unreviewed') }}">Unreviewed</a>
+        <a class="filter-pill{% if evaluation == 'needs_cm_review' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='needs_cm_review') }}">Need CM Review</a>
+        <a class="filter-pill{% if evaluation == 'unreviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='unreviewed') }}">Awaiting Final</a>
         <a class="filter-pill{% if evaluation == 'Use' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Use') }}">Use</a>
         <a class="filter-pill{% if evaluation == 'Alter' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Alter') }}">Alter</a>
         <a class="filter-pill{% if evaluation == 'Reject' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Reject') }}">Reject</a>
@@ -315,7 +316,7 @@
 
       <div class="action-row">
         {% if next_cm_review_index is not none %}
-          <a class="action-link primary" href="{{ url_for('review_page', index=next_cm_review_index, evaluation='unreviewed') }}">Open Next CM Review</a>
+          <a class="action-link primary" href="{{ url_for('review_page', index=next_cm_review_index, evaluation='needs_cm_review') }}">Open Next CM Review</a>
         {% endif %}
         {% if review_rows %}
           <a class="action-link" href="{{ url_for('review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
@@ -326,7 +327,9 @@
       </div>
 
       <div class="storage">
-        Final tallies move only after both reviewers have acted. A single saved decision appears under <code>Awaiting Other Review</code>.
+        Your working queue is <code>Need CM Review</code>, so once you rate a session it drops out of that list immediately.
+        <br>
+        Final tallies move only after both reviewers have acted. A single saved decision appears under <code>Awaiting Other Review</code> and under <code>Awaiting Final</code>.
         <br>
         New sessions add themselves automatically, so routine backfill is not needed after the initial import.
         <br>
@@ -339,8 +342,10 @@
     <section class="panel">
       <div class="queue-header">
         <div>
-          {% if evaluation == "unreviewed" %}
-            <h2>Unreviewed Sessions</h2>
+          {% if evaluation == "needs_cm_review" %}
+            <h2>Sessions Needing CM Review</h2>
+          {% elif evaluation == "unreviewed" %}
+            <h2>Sessions Awaiting Final Review</h2>
           {% elif evaluation == "all" %}
             <h2>All Sessions</h2>
           {% else %}

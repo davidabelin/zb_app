@@ -38,7 +38,7 @@ def test_admin_review_redirects_to_cloud_review_dashboard(monkeypatch):
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith(
-        "/admin/conversations?evaluation=unreviewed"
+        "/admin/conversations?evaluation=needs_cm_review"
     )
 
 
@@ -98,6 +98,41 @@ def test_review_page_and_api_use_cloud_review_manifest(monkeypatch, fake_bucket)
         if line
     ]
     assert train_rows == [{"messages": messages}]
+
+
+def test_browser_decision_leaves_cm_queue_after_save(monkeypatch, fake_bucket):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    _archive_review_record(fake_bucket, conversation_id="browser-cm-001")
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+
+    response = client.post(
+        "/review/record/0/decision",
+        headers=headers,
+        data={
+            "dashboard_filter": "needs_cm_review",
+            "reviewer": "CM",
+            "evaluation": "Use",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(
+        "/admin/conversations?evaluation=needs_cm_review"
+    )
+
+    queue_response = client.get(
+        "/admin/conversations?evaluation=needs_cm_review", headers=headers
+    )
+    queue_body = queue_response.get_data(as_text=True)
+    assert queue_response.status_code == 200
+    assert "browser-cm-001" not in queue_body
+
+    rows = session_reviews.load_review_state()
+    assert rows[0]["review_cm"] == "Use"
 
 
 def test_save_chat_upserts_manifest_without_duplicate_rows(monkeypatch, fake_bucket):
