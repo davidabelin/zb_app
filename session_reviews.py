@@ -334,6 +334,31 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
     return summary
 
 
+def build_progress_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Count reviewer progress separately from final dual-review outcomes."""
+    progress = {
+        "cm_reviewed": 0,
+        "zb_reviewed": 0,
+        "awaiting_other_review": 0,
+        "not_started": 0,
+    }
+    for row in rows:
+        normalized = _normalize_review_row(row)
+        has_zb = bool(normalized.get("review_zb"))
+        has_cm = bool(normalized.get("review_cm"))
+        if has_zb:
+            progress["zb_reviewed"] += 1
+        if has_cm:
+            progress["cm_reviewed"] += 1
+        if normalized.get("evaluation"):
+            continue
+        if has_zb or has_cm:
+            progress["awaiting_other_review"] += 1
+        else:
+            progress["not_started"] += 1
+    return progress
+
+
 def load_review_state() -> list[dict[str, Any]]:
     """Load and normalize the cloud-backed review manifest."""
     rows = [_normalize_review_row(row) for row in _read_jsonl_blob(REVIEW_INDEX_BLOB)]
@@ -399,6 +424,53 @@ def next_unreviewed_after(rows: list[dict[str, Any]], current: int) -> int | Non
     return first_unreviewed_index(rows)
 
 
+def needs_reviewer(row: dict[str, Any], reviewer: str) -> bool:
+    """Return whether the requested reviewer still needs to act on this row."""
+    normalized = _normalize_review_row(row)
+    return not normalized.get(review_field_name(reviewer))
+
+
+def first_index_needing_reviewer(rows: list[dict[str, Any]], reviewer: str) -> int | None:
+    """Return the first row that does not yet have one reviewer's decision."""
+    for index, row in enumerate(rows):
+        if needs_reviewer(row, reviewer):
+            return index
+    return None
+
+
+def next_index_needing_reviewer_after(
+    rows: list[dict[str, Any]], current: int, reviewer: str
+) -> int | None:
+    """Return the next row after ``current`` that still needs the reviewer."""
+    reviewer_code = normalize_reviewer(reviewer)
+    field_name = review_field_name(reviewer_code)
+    for index in range(current + 1, len(rows)):
+        normalized = _normalize_review_row(rows[index])
+        if not normalized.get(field_name):
+            return index
+    return first_index_needing_reviewer(rows, reviewer_code)
+
+
+def status_label(row: dict[str, Any]) -> str:
+    """Return the browser-friendly status label for one review row."""
+    normalized = _normalize_review_row(row)
+    if normalized["evaluation"]:
+        return normalized["evaluation"]
+    if normalized["review_zb"] or normalized["review_cm"]:
+        return "Awaiting Other Review"
+    return "Unreviewed"
+
+
+def status_class(row: dict[str, Any]) -> str:
+    """Return the CSS-friendly status token for one review row."""
+    normalized = _normalize_review_row(row)
+    if normalized["evaluation"]:
+        return normalized["evaluation"]
+    if normalized["review_zb"] or normalized["review_cm"]:
+        return "Pending"
+    return "Unreviewed"
+
+
 def find_next_matching_index(
     rows: list[dict[str, Any]], after: int, desired: str
 ) -> int | None:
@@ -441,6 +513,8 @@ def serialize_record(rows: list[dict[str, Any]], index: int) -> dict[str, Any]:
         "index": index,
         "display_number": index + 1,
         "evaluation": row["evaluation"],
+        "status_label": status_label(row),
+        "status_class": status_class(row),
         "review_version": row["review_version"],
         "review_zb": row["review_zb"] or None,
         "review_cm": row["review_cm"] or None,
@@ -480,6 +554,8 @@ def list_dashboard_rows(rows: list[dict[str, Any]], evaluation_filter: str) -> l
                 "review_zb": normalized["review_zb"] or None,
                 "review_cm": normalized["review_cm"] or None,
                 "evaluation": evaluation or "Unreviewed",
+                "status_label": status_label(normalized),
+                "status_class": status_class(normalized),
                 "saved_at": normalized["saved_at"],
             }
         )

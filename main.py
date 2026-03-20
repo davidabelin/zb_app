@@ -1112,7 +1112,11 @@ def set_decision(index: int):
     )
     session_reviews.save_review_state(rows)
 
-    redirect_index = session_reviews.next_unreviewed_after(rows, index)
+    redirect_index = session_reviews.next_index_needing_reviewer_after(
+        rows, index, reviewer
+    )
+    if redirect_index is None:
+        redirect_index = session_reviews.next_unreviewed_after(rows, index)
     if redirect_index is None:
         redirect_index = session_reviews.next_index(rows, index)
     dashboard_filter = _normalize_review_filter(
@@ -1286,9 +1290,12 @@ def admin_conversations():
     return render_template(
         "admin_conversations.html",
         summary=session_reviews.build_summary(rows),
+        progress_summary=session_reviews.build_progress_summary(rows),
         evaluation=evaluation,
         review_rows=review_rows,
-        next_unreviewed_index=session_reviews.first_unreviewed_index(rows),
+        next_cm_review_index=session_reviews.first_index_needing_reviewer(
+            rows, session_reviews.FORM_REVIEWER_DEFAULT
+        ),
         storage=session_reviews.storage_metadata(),
     )
 

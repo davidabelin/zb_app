@@ -209,8 +209,8 @@
           <div class="subtle">Record {{ record.display_number }} of {{ record.summary.total }}</div>
         </div>
         <div class="subtle">
-          Final tag:
-          <strong>{{ record.evaluation or "Unreviewed" }}</strong>
+          Status:
+          <strong>{{ record.status_label }}</strong>
         </div>
       </div>
 
@@ -233,6 +233,12 @@
         <div class="pill">Reject <strong>{{ record.summary.Reject }}</strong></div>
         <div class="pill">Unreviewed <strong>{{ record.summary.unreviewed }}</strong></div>
       </div>
+
+      {% if not record.evaluation and (record.review_zb or record.review_cm) %}
+        <p class="subtle" style="margin-top: 14px;">
+          One review has been saved. This session now awaits the other reviewer, so the final tallies will not change until both decisions are present.
+        </p>
+      {% endif %}
 
       <div class="nav">
         <a href="{{ url_for('admin_conversations', evaluation=dashboard_filter) }}">Back to Review Queue</a>

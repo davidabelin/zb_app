@@ -16,6 +16,7 @@
       --alter: #b7791f;
       --reject: #9b2c2c;
       --unreviewed: #6d665b;
+      --pending: #7a5c2f;
       --shadow: rgba(65, 52, 32, 0.08);
     }
 
@@ -200,6 +201,7 @@
     .badge.Alter { background: var(--alter); }
     .badge.Reject { background: var(--reject); }
     .badge.Unreviewed { background: var(--unreviewed); }
+    .badge.Pending { background: var(--pending); }
 
     .preview {
       margin-top: 14px;
@@ -278,11 +280,14 @@
           <p class="subtle">Cloud-backed archived conversations live here, with review decisions shared across browser admins and Zenbot.</p>
         </div>
         <div class="summary">
-          <div class="pill">Total <strong>{{ summary.total }}</strong></div>
-          <div class="pill">Unreviewed <strong>{{ summary.unreviewed }}</strong></div>
-          <div class="pill">Use <strong>{{ summary.Use }}</strong></div>
-          <div class="pill">Alter <strong>{{ summary.Alter }}</strong></div>
-          <div class="pill">Reject <strong>{{ summary.Reject }}</strong></div>
+          <div class="pill">Final Use <strong>{{ summary.Use }}</strong></div>
+          <div class="pill">Final Alter <strong>{{ summary.Alter }}</strong></div>
+          <div class="pill">Final Reject <strong>{{ summary.Reject }}</strong></div>
+          <div class="pill">Awaiting Final <strong>{{ summary.unreviewed }}</strong></div>
+          <div class="pill">CM Reviewed <strong>{{ progress_summary.cm_reviewed }}</strong></div>
+          <div class="pill">ZB Reviewed <strong>{{ progress_summary.zb_reviewed }}</strong></div>
+          <div class="pill">Awaiting Other Review <strong>{{ progress_summary.awaiting_other_review }}</strong></div>
+          <div class="pill">Not Yet Touched <strong>{{ progress_summary.not_started }}</strong></div>
         </div>
       </div>
 
@@ -309,21 +314,22 @@
       </div>
 
       <div class="action-row">
-        {% if next_unreviewed_index is not none %}
-          <a class="action-link primary" href="{{ url_for('review_page', index=next_unreviewed_index, evaluation='unreviewed') }}">Open Next Unreviewed</a>
+        {% if next_cm_review_index is not none %}
+          <a class="action-link primary" href="{{ url_for('review_page', index=next_cm_review_index, evaluation='unreviewed') }}">Open Next CM Review</a>
         {% endif %}
         {% if review_rows %}
           <a class="action-link" href="{{ url_for('review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
         {% endif %}
-        <form class="inline" method="post" action="{{ url_for('download_chats') }}">
-          <button class="action-button" type="submit" name="action" value="backfill_review">Backfill Review Manifest</button>
-        </form>
         <form class="inline" method="post" action="{{ url_for('admin_logout') }}">
           <button class="action-button" type="submit">Log out</button>
         </form>
       </div>
 
       <div class="storage">
+        Final tallies move only after both reviewers have acted. A single saved decision appears under <code>Awaiting Other Review</code>.
+        <br>
+        New sessions add themselves automatically, so routine backfill is not needed after the initial import.
+        <br>
         Bucket <code>{{ storage.bucket }}</code> stores transcripts under <code>{{ storage.transcripts_prefix }}</code>.
         Review index: <code>{{ storage.review_index_blob }}</code>.
         Sessions-to-train export: <code>{{ storage.sessions_to_train_blob }}</code>.
@@ -354,7 +360,7 @@
                     <h3>{{ row.conversation_id }}</h3>
                     <div class="subtle">{{ row.saved_at or "Saved time unavailable" }}</div>
                   </div>
-                  <span class="badge {{ row.evaluation }}">{{ row.evaluation }}</span>
+                  <span class="badge {{ row.status_class }}">{{ row.status_label }}</span>
                 </div>
 
                 <div class="preview"><strong>U:</strong> {{ row.preview_user or "No user preview available." }}</div>

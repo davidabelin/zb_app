@@ -24,6 +24,56 @@ def test_apply_reviewer_decision_recomputes_final_from_dual_reviews():
     assert updated["evaluation"] == "Use"
 
 
+def test_build_progress_summary_counts_partial_reviews():
+    rows = [
+        {
+            "conversation_id": "row-1",
+            "transcript_blob_name": "zbchats/row-1.jsonl",
+            "transcript_hash": "abc123",
+            "message_count": 3,
+            "preview_user": "hello",
+            "preview_assistant": "world",
+            "review_version": 2,
+            "review_zb": "",
+            "review_cm": "",
+            "evaluation": "",
+        },
+        {
+            "conversation_id": "row-2",
+            "transcript_blob_name": "zbchats/row-2.jsonl",
+            "transcript_hash": "def456",
+            "message_count": 3,
+            "preview_user": "hello",
+            "preview_assistant": "world",
+            "review_version": 2,
+            "review_zb": "Use",
+            "review_cm": "",
+            "evaluation": "",
+        },
+        {
+            "conversation_id": "row-3",
+            "transcript_blob_name": "zbchats/row-3.jsonl",
+            "transcript_hash": "ghi789",
+            "message_count": 3,
+            "preview_user": "hello",
+            "preview_assistant": "world",
+            "review_version": 2,
+            "review_zb": "Reject",
+            "review_cm": "Reject",
+            "evaluation": "Reject",
+        },
+    ]
+
+    progress = session_reviews.build_progress_summary(rows)
+
+    assert progress == {
+        "cm_reviewed": 1,
+        "zb_reviewed": 2,
+        "awaiting_other_review": 1,
+        "not_started": 1,
+    }
+
+
 def test_backfill_review_state_preserves_legacy_review_by_transcript_hash(
     monkeypatch, fake_bucket, tmp_path
 ):

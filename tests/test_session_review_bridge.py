@@ -70,6 +70,7 @@ def test_review_page_and_api_use_cloud_review_manifest(monkeypatch, fake_bucket)
     zb_payload = zb_response.get_json()
     assert zb_payload["record"]["review_zb"] == "Use"
     assert zb_payload["record"]["evaluation"] == ""
+    assert zb_payload["record"]["status_label"] == "Awaiting Other Review"
 
     cm_response = client.post(
         "/zb_api/session-evaluations/record/0/decision",
