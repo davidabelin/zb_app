@@ -62,6 +62,8 @@ Then test the live routes that matter most:
 - `/zb_api/chat`
 - `/zb_api/load_memory_logbook`
 - `/zb_api/load_memory_entry/<serial_number>`
+- `/zb_api/session-evaluations/summary`
+- `/zb_api/session-evaluations/next?after=-1&evaluation=unreviewed`
 - `/admin/login` -> `/admin/conversations`
 
 ## 6) Auth Contract Reminder

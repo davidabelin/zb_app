@@ -26,7 +26,6 @@ areas:
 
 - `../zenbot_knowledge/action_schemas.yaml`: GPT Actions/OpenAPI contract
 - `../zenbot_knowledge/*`: knowledge and reference material maintainers consult
-- `../training/trainset04/review.csv`: local admin review queue
 - `static/mmnk.json`: bundled koan source used at runtime
 
 It also depends on external services:
@@ -96,13 +95,13 @@ Key non-secret env vars:
 ## Key Workflows
 
 - Browser chat: `/chatter` -> `/chat` -> Firestore live state -> `/save_chat` ->
-  GCS archive
+  GCS archive + review manifest upsert
 - API chat: `/zb_api/chat` and `/zb_api/chat_case/<case_id>` -> Firestore live
-  state -> `/zb_api/save_chat`
+  state -> `/zb_api/save_chat` -> review manifest upsert
 - Memory selection: `/zb_api/load_memory_logbook` -> `/zb_api/load_memory_entry/<serial_number>`
-- Admin archive browsing: `/admin/conversations`
-- Session evaluation review: `/admin/review` -> `/review` backed by `../training/generated/*.jsonl`
-- Legacy keep/discard queue: `/admin/review/legacy` backed by `../training/trainset04/review.csv`
+- Cloud review dashboard: `/admin/conversations` filtered by review status
+- Session evaluation review: `/admin/review` -> `/admin/conversations` -> `/review`
+- Legacy keep/discard queue: `/admin/review/legacy` remains available only for historical local inspection
 
 ## Documentation Map
 

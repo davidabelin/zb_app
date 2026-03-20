@@ -1,71 +1,85 @@
 {% extends "base.html" %}
-{% block title %}Zenbot Dokusan{% endblock %}
+{% block title %}Zenbot Review Dashboard{% endblock %}
 {% block content %}
-<!--
-  Admin archive index for Cloud Storage-backed saved conversations.
-  The page assumes browser admin auth is already established and links to
-  transcript detail plus bulk maintenance actions for download/delete/sync.
--->
 <section>
-    <i>(For Administrative Use Only.)</i>
-    <br>
+  <i>(For Administrative Use Only.)</i>
 </section>
 <header>
-    <h1>Zenbot Dokusan</h1>
-    <h2>GCS Bucket Storage</h2>
-    <p>List of Saved Session Transcripts</p>
+  <h1>Zenbot Dokusan</h1>
+  <h2>Cloud Review Dashboard</h2>
+  <p>Archived sessions and their review status live in one shared GCS-backed queue.</p>
 </header>
 <section>
-    {% set status = request.args.get("status", "") %}
-    {% if status == "downloaded" %}
-      <p><b>Imported {{ request.args.get("downloaded", "0") }} conversation(s) into collected_sessions/web. Review queue synced to {{ request.args.get("synced", "0") }} rows; {{ request.args.get("deduped", "0") }} duplicate file(s) were moved aside while preserving {{ request.args.get("preserved", "0") }} prior keep decision(s) and {{ request.args.get("reviewed", "0") }} generated review evaluation(s).</b></p>
-    {% elif status == "download_delete" %}
-      <p><b>Imported {{ request.args.get("downloaded", "0") }} conversation(s), deleted {{ request.args.get("deleted", "0") }} object(s) from Cloud Storage, and resynced the review queue to {{ request.args.get("synced", "0") }} rows with {{ request.args.get("deduped", "0") }} duplicate file(s) quarantined. Preserved keep decisions: {{ request.args.get("preserved", "0") }}. Preserved generated review evaluations: {{ request.args.get("reviewed", "0") }}.</b></p>
-    {% elif status == "deleted" %}
-      <p><b>Deleted {{ request.args.get("deleted", "0") }} archived conversation(s) from Cloud Storage.</b></p>
-    {% elif status == "synced" %}
-      <p><b>Review queue synced to {{ request.args.get("synced", "0") }} rows; {{ request.args.get("deduped", "0") }} duplicate file(s) were moved aside. Preserved keep decisions: {{ request.args.get("preserved", "0") }}. Preserved generated review evaluations: {{ request.args.get("reviewed", "0") }}.</b></p>
-    {% elif status == "sync_unavailable" %}
-      <p><b>Review sync is only available from the local Flask app.</b></p>
-    {% elif status == "empty" %}
-      <p><b>No archived conversations were found in Cloud Storage.</b></p>
-    {% endif %}
+  {% set status = request.args.get("status", "") %}
+  {% if status == "backfilled" %}
+    <p><b>Review manifest backfilled from {{ request.args.get("scanned", "0") }} archived transcript(s). Current rows: {{ request.args.get("rows", "0") }}. Preserved existing cloud reviews: {{ request.args.get("preserved_existing", "0") }}. Preserved legacy local reviews: {{ request.args.get("preserved_legacy", "0") }}. Sessions-to-train rows: {{ request.args.get("train_rows", "0") }}.</b></p>
+  {% elif status == "empty" %}
+    <p><b>No review rows are available yet. Save a session or run the review-manifest backfill.</b></p>
+  {% endif %}
 
-    {% if is_local %}
-      <p><small>Local mode: downloads are imported into <code>collected_sessions/web</code>, duplicate session files are moved to <code>collected_sessions/_duplicates</code>, the generated session-evaluation datasets are refreshed, and <code>training/trainset04/review.csv</code> is preserved as a legacy queue.</small></p>
-      <div class="admin-actions">
-        <a class="button-link" href="{{ url_for('admin_review') }}">Open Local Review Tools</a>
-        <a class="button-link" href="{{ url_for('admin_review_legacy') }}">Open Legacy Review Queue</a>
-      </div>
-    {% else %}
-      <p><small>Online mode: download actions return a zip file to the browser. <b>Download + delete all</b> removes the corresponding objects from Cloud Storage after the zip is prepared.</small></p>
-      <p><small>The review queue UI is available from the local Flask app only.</small></p>
-    {% endif %}
+  <p>
+    <small>
+      Storage: bucket <code>{{ storage.bucket }}</code>,
+      transcripts under <code>{{ storage.transcripts_prefix }}</code>,
+      review index <code>{{ storage.review_index_blob }}</code>,
+      training export <code>{{ storage.sessions_to_train_blob }}</code>.
+    </small>
+  </p>
 
-    <ul>
-      {% for conversation_id in conversation_ids %}
-        <li>
-          <a href="{{ url_for('admin_conversation_detail', conversation_id=conversation_id) }}">
-            {{ conversation_id }}
-          </a>
-        </li>
-      {% endfor %}
-    </ul>
-    <br>
-    <form method="post" action="{{ url_for('download_chats') }}">
-      <button type="submit" name="action" value="download"><b>Download all.</b></button>
-      <button type="submit" name="action" value="download_delete"><b>Download + delete all.</b></button>
-      <button type="submit" name="action" value="delete">Delete all from cloud.</button>
-    </form>
-    {% if is_local %}
-    <br>
-    <form method="post" action="{{ url_for('download_chats') }}">
-      <button type="submit" name="action" value="sync_review">Sync local review queue.</button>
-    </form>
-    {% endif %}
-    <br>
-    <form method="post" action="{{ url_for('admin_logout') }}">
-      <button type="submit">Log out</button>
-    </form>
+  <div class="nav">
+    <a href="{{ url_for('admin_conversations', evaluation='unreviewed') }}">Unreviewed ({{ summary.unreviewed }})</a>
+    <a href="{{ url_for('admin_conversations', evaluation='Use') }}">Use ({{ summary.Use }})</a>
+    <a href="{{ url_for('admin_conversations', evaluation='Alter') }}">Alter ({{ summary.Alter }})</a>
+    <a href="{{ url_for('admin_conversations', evaluation='Reject') }}">Reject ({{ summary.Reject }})</a>
+    <a href="{{ url_for('admin_conversations', evaluation='all') }}">All ({{ summary.total }})</a>
+  </div>
+
+  <br>
+  <p><b>Viewing:</b> {{ evaluation }}</p>
+
+  {% if review_rows %}
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left;">Session</th>
+          <th style="text-align:left;">Preview</th>
+          <th style="text-align:left;">ZB</th>
+          <th style="text-align:left;">CM</th>
+          <th style="text-align:left;">Final</th>
+          <th style="text-align:left;">Saved</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in review_rows %}
+          <tr>
+            <td>
+              <a href="{{ url_for('review_page', index=row.index, evaluation=evaluation) }}">
+                {{ row.conversation_id }}
+              </a>
+            </td>
+            <td>
+              <div><b>U:</b> {{ row.preview_user or "n/a" }}</div>
+              <div><b>A:</b> {{ row.preview_assistant or "n/a" }}</div>
+            </td>
+            <td>{{ row.review_zb or "Unreviewed" }}</td>
+            <td>{{ row.review_cm or "Unreviewed" }}</td>
+            <td>{{ row.evaluation }}</td>
+            <td>{{ row.saved_at or "n/a" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p><b>No sessions match this filter.</b></p>
+  {% endif %}
+
+  <br>
+  <form method="post" action="{{ url_for('download_chats') }}">
+    <button type="submit" name="action" value="backfill_review">Backfill Review Manifest</button>
+  </form>
+  <br>
+  <form method="post" action="{{ url_for('admin_logout') }}">
+    <button type="submit">Log out</button>
+  </form>
 </section>
 {% endblock %}

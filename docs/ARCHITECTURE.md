@@ -7,7 +7,7 @@
 - browser pages for public chat and reference browsing
 - authenticated API routes for GPT Actions and other clients
 - admin/archive tooling
-- local training-review tooling
+- cloud-backed session review tooling
 
 The app is intentionally split into a thin orchestration layer (`main.py`) and
 an operational utility layer (`utilities.py`).
@@ -64,6 +64,8 @@ an operational utility layer (`utilities.py`).
 
 ### Cloud Storage
 - stores archived chat transcripts under `zbchats/*.jsonl`
+- stores the canonical session review manifest under `session_reviews/index.jsonl`
+- stores the derived sessions-to-train export under `session_reviews/sessions_to_train.jsonl`
 - stores the canonical memory logbook object
 
 ### Secret Manager
@@ -82,8 +84,6 @@ an operational utility layer (`utilities.py`).
 
 - `../zenbot_knowledge/action_schemas.yaml`
   - GPT Actions/OpenAPI contract
-- `../training/trainset04/review.csv`
-  - source of truth for admin review decisions
 - `static/mmnk.json`
   - runtime koan dataset bundled with the app
 
@@ -101,7 +101,7 @@ behavior.
 5. `utilities.py` loads or creates the conversation state.
 6. OpenAI is called in streaming or non-streaming mode.
 7. Firestore is updated with live transcript state.
-8. `/save_chat` archives the session to GCS and removes live Firestore state.
+8. `/save_chat` archives the session to GCS, upserts the review manifest, and removes live Firestore state.
 
 ### Authenticated API Chat
 1. Client sends `Authorization` header.
@@ -118,20 +118,17 @@ behavior.
 
 ### Admin Archive Flow
 1. Browser signs in via `/admin/login`.
-2. `/admin/conversations` lists archived transcripts from GCS.
-3. `/admin/conversations/<conversation_id>` loads one archived conversation.
-4. `/download_chats` downloads all GCS archives into the local dev tree.
+2. `/admin/conversations` loads the GCS-backed review manifest and renders one filtered review queue.
+3. `/review` renders one full transcript plus decision controls for a selected manifest row.
+4. `/admin/conversations/maintenance` can backfill the manifest from existing archived transcripts without deleting any data.
 
 ### Admin Review Flow
-1. `/admin/review` first syncs local session files into the generated
-   review datasets, then redirects into `/review`.
-2. `/review` renders the dual-review browser UI backed by
-   `../training/generated/collected_sessions_with_evaluations.jsonl`.
-3. Browser and helper-GPT callers can both use the shared
-   `/api/session-evaluations/*` or `/zb_api/session-evaluations/*` endpoints.
-4. The older CSV-backed keep/discard queue remains available at
-   `/admin/review/legacy`, and `/admin/review/legacy/view/<record_id>` reads the
-   referenced session JSONL to display parsed metadata plus messages.
+1. `/admin/review` redirects into `/admin/conversations?evaluation=unreviewed`.
+2. `/admin/conversations` shows filtered `unreviewed`, `Use`, `Alter`, `Reject`, and `all` views over the same manifest.
+3. `/review` shows the selected transcript and applies ZB or CM review decisions.
+4. Helper-GPT callers use `/zb_api/session-evaluations/*` only.
+5. The older CSV-backed keep/discard queue remains available at
+   `/admin/review/legacy`, but it is no longer the live review source of truth.
 
 ## Notable Operational Constraints
 

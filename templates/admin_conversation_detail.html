@@ -1,35 +1,34 @@
 {% extends "base.html" %}
+{% block title %}Review {{ conversation_id }}{% endblock %}
 {% block content %}
 <section>
-    <i>(For Administrative Use Only.)</i>
+  <i>(For Administrative Use Only.)</i>
 </section>
 <header>
-    <h1>Zenbot Dokusan</h1>
-    <h2>GCS Bucket Storage</h2>
-    <h2>Conversation ID: {{ conversation_id }}</h2>
+  <h1>Zenbot Dokusan</h1>
+  <h2>Archived Transcript</h2>
+  <h3>Conversation ID: {{ conversation_id }}</h3>
 </header>
 <section>
   <div class="nav">
-    <a href="{{ url_for('admin_conversations') }}">Back to List of Sessions</a>
-    {% if is_local %}
+    <a href="{{ url_for('admin_conversations') }}">Back to Review Dashboard</a>
+    {% if review_index is not none %}
       &nbsp;|&nbsp;
-      <a class="button-link" href="{{ url_for('admin_review') }}">Open Local Review Tools</a>
+      <a href="{{ url_for('review_page', index=review_index) }}">Open Review Detail</a>
     {% endif %}
   </div>
   <br>
-  <section>
-      <ul>
-        {% for message in messages %}
-          {% if message.role %}
-            <li><strong>{{ message.role }}:</strong> {{ message.content }}</li>
-          {% else %}
-            <u>Params</u>:
-            {% for param, value in message.items() %}
-              <li><b>{{ param }}</b>: {{ value }}</li>
-            {% endfor %}
-          {% endif %}
+  <ul>
+    {% for message in messages %}
+      {% if message.role %}
+        <li><strong>{{ message.role }}:</strong> {{ message.content }}</li>
+      {% else %}
+        <u>Params</u>:
+        {% for param, value in message.items() %}
+          <li><b>{{ param }}</b>: {{ value }}</li>
         {% endfor %}
-      </ul>
-  </section>
+      {% endif %}
+    {% endfor %}
+  </ul>
 </section>
 {% endblock %}

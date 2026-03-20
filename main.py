@@ -19,15 +19,10 @@ from __future__ import annotations
 
 import csv
 import hmac
-import importlib.util
-import io
 import json
 import logging
-import os
 import time
-import zipfile
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +37,6 @@ from flask import (
     request,
     session,
     send_from_directory,
-    send_file,
     stream_with_context,
     url_for,
 )
@@ -50,7 +44,7 @@ from jinja2 import ChoiceLoader, FileSystemLoader
 from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
-from review_sync import sync_review_queue
+import session_reviews
 import utilities as utipy
 from utilities import ModelAPIError
 
@@ -72,15 +66,6 @@ app.secret_key = utipy.config.FLASK_SECRET_KEY
 app.config["SESSION_COOKIE_SECURE"] = utipy.config.SESSION_COOKIE_SECURE
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SOURCE_JSONL"] = str(
-    (_REPO_ROOT / "training" / "generated" / "collected_sessions_with_metadata.jsonl").resolve()
-)
-app.config["REVIEWED_JSONL"] = str(
-    (_REPO_ROOT / "training" / "generated" / "collected_sessions_with_evaluations.jsonl").resolve()
-)
-app.config["TRAIN_JSONL"] = str(
-    (_REPO_ROOT / "training" / "generated" / "sessions_to_train.jsonl").resolve()
-)
 
 _RATE_BUCKETS: dict[str, tuple[float, int]] = {}
 _RATE_WINDOW_SECONDS = 60
@@ -549,15 +534,14 @@ def save_chat():
             "saved_at": _utc_now(),
         }
 
-        filename = f"{conversation_id}.jsonl"
-        if utipy.config.LOCAL:
-            filepath = os.path.join("config", "zbchats", filename)
-            utipy.save_chat_to_file(messages, params, filepath)
-            logging.info("Chat saved locally to %s", filepath)
-        else:
-            blob_name = f"zbchats/{filename}"
-            utipy.save_chat_to_bucket(messages, params, blob_name)
-            logging.info("Chat saved to GCS as %s", blob_name)
+        blob_name = f"{session_reviews.TRANSCRIPTS_PREFIX}{conversation_id}.jsonl"
+        utipy.save_chat_to_bucket(messages, params, blob_name)
+        session_reviews.upsert_review_record_from_session(
+            conversation_id,
+            messages,
+            params,
+        )
+        logging.info("Chat saved to GCS as %s and upserted into review queue", blob_name)
 
         utipy.delete_messages_from_firestore(conversation_id)
         response = make_response(jsonify({"status": "success"}), 200)
@@ -699,8 +683,13 @@ def zb_api_save_chat():
             "saved_at": _utc_now(),
         }
 
-        blob_name = f"zbchats/{conversation_id}.jsonl"
+        blob_name = f"{session_reviews.TRANSCRIPTS_PREFIX}{conversation_id}.jsonl"
         utipy.save_chat_to_bucket(messages, params, blob_name)
+        session_reviews.upsert_review_record_from_session(
+            conversation_id,
+            messages,
+            params,
+        )
         utipy.delete_messages_from_firestore(conversation_id)
 
         return jsonify({"status": "success", "error": "None"}), 200
@@ -946,29 +935,9 @@ def _repo_root() -> Path:
     return _REPO_ROOT
 
 
-@lru_cache(maxsize=1)
-def _session_review_module():
-    """Load the standalone local session-review module for reuse in ``zb_app``."""
-    module_path = _repo_root() / "training" / "session_review_app.py"
-    spec = importlib.util.spec_from_file_location(
-        "zenbot_session_review_app", module_path
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load session review module: {module_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _trainset04_review_csv_path() -> Path:
     """Return the CSV path that drives the admin review workflow."""
     return _repo_root() / "training" / "trainset04" / "review.csv"
-
-
-def _collected_sessions_web_root() -> Path:
-    """Return the local import directory for downloaded archived sessions."""
-    return _repo_root() / "collected_sessions" / "web"
 
 
 def _request_prefers_html() -> bool:
@@ -984,16 +953,23 @@ def _admin_conversations_response(status: str, **payload: Any):
     return jsonify(body), 200
 
 
-def _archived_conversations_zip(
-    archives: list[utipy.ArchivedConversation],
-) -> io.BytesIO:
-    """Package archived conversation JSONL blobs into a single zip file."""
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive_zip:
-        for archive in archives:
-            archive_zip.writestr(archive.filename, archive.content)
-    buffer.seek(0)
-    return buffer
+def _load_review_state_or_abort() -> list[dict[str, Any]]:
+    """Load the cloud-backed review manifest or abort with a server error."""
+    try:
+        return session_reviews.load_review_state()
+    except Exception as exc:
+        abort(500, description=str(exc))
+
+
+def _normalize_review_filter(value: str) -> str:
+    """Validate the requested admin/API review filter."""
+    desired = str(value or "unreviewed").strip() or "unreviewed"
+    if desired not in {"all", "unreviewed", "Use", "Alter", "Reject"}:
+        abort(
+            400,
+            description="evaluation must be all, unreviewed, Use, Alter, or Reject",
+        )
+    return desired
 
 
 def _load_review_rows() -> tuple[list[dict[str, str]], list[str]]:
@@ -1083,20 +1059,17 @@ def _parse_session_jsonl(path: Path) -> tuple[dict[str, Any], list[dict[str, str
 
 @app.route("/admin/review")
 def admin_review():
-    """Sync review inputs and open the dual-review session evaluation UI."""
-    sync_review_queue(_repo_root())
-    return redirect(url_for("review_page"))
+    """Redirect the older admin review entrypoint into the cloud dashboard."""
+    return redirect(url_for("admin_conversations", evaluation="unreviewed"))
 
 
 @app.route("/review")
 def review_page():
-    """Render the local dual-review session evaluation browser UI."""
+    """Render one cloud-backed review record in the browser admin UI."""
     _require_admin_auth()
-    session_review = _session_review_module()
-    try:
-        rows = session_review.load_review_state(app)
-    except ValueError as exc:
-        abort(500, description=str(exc))
+    rows = _load_review_state_or_abort()
+    if not rows:
+        return redirect(url_for("admin_conversations", status="empty"))
 
     requested_index = request.args.get("index", "").strip()
     if requested_index:
@@ -1105,19 +1078,19 @@ def review_page():
         except ValueError:
             abort(400, description="Query parameter 'index' must be an integer")
     else:
-        first_unreviewed = session_review.first_unreviewed_index(rows)
+        first_unreviewed = session_reviews.first_unreviewed_index(rows)
         index = first_unreviewed if first_unreviewed is not None else 0
 
     if index < 0 or index >= len(rows):
         abort(404, description="Record index out of range")
 
-    record = session_review.serialize_record(rows, index)
+    dashboard_filter = _normalize_review_filter(request.args.get("evaluation", "unreviewed"))
+    record = session_reviews.serialize_record(rows, index)
     return render_template(
         "session_review.html",
         record=record,
-        reviewed_path=app.config["REVIEWED_JSONL"],
-        source_path=app.config["SOURCE_JSONL"],
-        train_path=app.config["TRAIN_JSONL"],
+        dashboard_filter=dashboard_filter,
+        storage=session_reviews.storage_metadata(),
     )
 
 
@@ -1125,89 +1098,75 @@ def review_page():
 def set_decision(index: int):
     """Apply one browser-originated review decision and move to the next record."""
     _require_admin_auth()
-    session_review = _session_review_module()
-    try:
-        rows = session_review.load_review_state(app)
-    except ValueError as exc:
-        abort(500, description=str(exc))
+    rows = _load_review_state_or_abort()
 
     if index < 0 or index >= len(rows):
         abort(404, description="Record index out of range")
 
     try:
-        evaluation = session_review.normalize_evaluation(request.form.get("evaluation", ""))
+        evaluation = session_reviews.normalize_evaluation(
+            request.form.get("evaluation", "")
+        )
     except ValueError as exc:
         abort(400, description=str(exc))
-    if evaluation not in session_review.REVIEW_CHOICES:
+    if evaluation not in session_reviews.REVIEW_CHOICES:
         abort(400, description="evaluation must be Use, Alter, or Reject")
     try:
-        reviewer = session_review.normalize_reviewer(
-            request.form.get("reviewer", session_review.FORM_REVIEWER_DEFAULT)
+        reviewer = session_reviews.normalize_reviewer(
+            request.form.get("reviewer", session_reviews.FORM_REVIEWER_DEFAULT)
         )
     except ValueError as exc:
         abort(400, description=str(exc))
 
-    rows[index] = session_review.apply_reviewer_decision(rows[index], reviewer, evaluation)
-    session_review.save_review_state(app, rows)
+    rows[index] = session_reviews.apply_reviewer_decision(
+        rows[index], reviewer, evaluation
+    )
+    session_reviews.save_review_state(rows)
 
-    redirect_index = session_review.next_unreviewed_after(rows, index)
+    redirect_index = session_reviews.next_unreviewed_after(rows, index)
     if redirect_index is None:
-        redirect_index = session_review.next_index(rows, index)
-    return redirect(url_for("review_page", index=redirect_index))
+        redirect_index = session_reviews.next_index(rows, index)
+    dashboard_filter = _normalize_review_filter(
+        request.form.get("dashboard_filter", "unreviewed")
+    )
+    return redirect(
+        url_for("review_page", index=redirect_index, evaluation=dashboard_filter)
+    )
 
 
-@app.get("/api/session-evaluations/summary")
 @app.get("/zb_api/session-evaluations/summary")
 def api_session_evaluations_summary():
-    """Return review counts plus the active generated JSONL file paths."""
+    """Return review counts plus the active cloud storage locations."""
     _require_admin_auth()
-    session_review = _session_review_module()
-    try:
-        rows = session_review.load_review_state(app)
-    except ValueError as exc:
-        abort(500, description=str(exc))
+    rows = _load_review_state_or_abort()
 
     return jsonify(
         {
             "status": "success",
-            "summary": session_review.build_summary(rows),
-            "paths": {
-                "source_jsonl": app.config["SOURCE_JSONL"],
-                "reviewed_jsonl": app.config["REVIEWED_JSONL"],
-                "sessions_to_train_jsonl": app.config["TRAIN_JSONL"],
-            },
+            "summary": session_reviews.build_summary(rows),
+            "storage": session_reviews.storage_metadata(),
         }
     )
 
 
-@app.get("/api/session-evaluations/record/<int:index>")
 @app.get("/zb_api/session-evaluations/record/<int:index>")
 def api_session_evaluations_record(index: int):
-    """Fetch one review record from the generated evaluation dataset."""
+    """Fetch one review record from the cloud-backed review manifest."""
     _require_admin_auth()
-    session_review = _session_review_module()
-    try:
-        rows = session_review.load_review_state(app)
-    except ValueError as exc:
-        abort(500, description=str(exc))
+    rows = _load_review_state_or_abort()
 
     if index < 0 or index >= len(rows):
         abort(404, description="Record index out of range")
     return jsonify(
-        {"status": "success", "record": session_review.serialize_record(rows, index)}
+        {"status": "success", "record": session_reviews.serialize_record(rows, index)}
     )
 
 
-@app.post("/api/session-evaluations/record/<int:index>/decision")
 @app.post("/zb_api/session-evaluations/record/<int:index>/decision")
 def api_session_evaluations_decision(index: int):
     """Apply a JSON review decision for the requested reviewer and record."""
     _require_admin_auth()
-    session_review = _session_review_module()
-    try:
-        rows = session_review.load_review_state(app)
-    except ValueError as exc:
-        abort(500, description=str(exc))
+    rows = _load_review_state_or_abort()
 
     if index < 0 or index >= len(rows):
         abort(404, description="Record index out of range")
@@ -1217,58 +1176,50 @@ def api_session_evaluations_decision(index: int):
         abort(400, description="JSON body is required")
 
     try:
-        evaluation = session_review.normalize_evaluation(data.get("evaluation", ""))
+        evaluation = session_reviews.normalize_evaluation(data.get("evaluation", ""))
     except ValueError as exc:
         abort(400, description=str(exc))
-    if evaluation not in session_review.REVIEW_CHOICES:
+    if evaluation not in session_reviews.REVIEW_CHOICES:
         abort(400, description="evaluation must be Use, Alter, or Reject")
     try:
-        reviewer = session_review.normalize_reviewer(data.get("reviewer", "ZB"))
+        reviewer = session_reviews.normalize_reviewer(data.get("reviewer", "ZB"))
     except ValueError as exc:
         abort(400, description=str(exc))
 
-    rows[index] = session_review.apply_reviewer_decision(rows[index], reviewer, evaluation)
-    session_review.save_review_state(app, rows)
+    rows[index] = session_reviews.apply_reviewer_decision(
+        rows[index], reviewer, evaluation
+    )
+    session_reviews.save_review_state(rows)
     return jsonify(
         {
             "status": "success",
-            "record": session_review.serialize_record(rows, index),
-            "next_unreviewed_index": session_review.next_unreviewed_after(rows, index),
+            "record": session_reviews.serialize_record(rows, index),
+            "next_unreviewed_index": session_reviews.next_unreviewed_after(rows, index),
         }
     )
 
 
-@app.get("/api/session-evaluations/next")
 @app.get("/zb_api/session-evaluations/next")
 def api_session_evaluations_next():
     """Find the next record matching a requested review state."""
     _require_admin_auth()
-    session_review = _session_review_module()
-    try:
-        rows = session_review.load_review_state(app)
-    except ValueError as exc:
-        abort(500, description=str(exc))
+    rows = _load_review_state_or_abort()
 
-    desired = request.args.get("evaluation", "unreviewed").strip() or "unreviewed"
-    if desired not in {"all", "unreviewed", "Use", "Alter", "Reject"}:
-        abort(
-            400,
-            description="evaluation must be all, unreviewed, Use, Alter, or Reject",
-        )
+    desired = _normalize_review_filter(request.args.get("evaluation", "unreviewed"))
     after = request.args.get("after", "-1").strip()
     try:
         after_index = int(after)
     except ValueError:
         abort(400, description="Query parameter 'after' must be an integer")
 
-    next_index = session_review.find_next_matching_index(rows, after_index, desired)
+    next_index = session_reviews.find_next_matching_index(rows, after_index, desired)
     return jsonify(
         {
             "status": "success",
             "evaluation_filter": desired,
             "next_index": next_index,
             "record": (
-                session_review.serialize_record(rows, next_index)
+                session_reviews.serialize_record(rows, next_index)
                 if next_index is not None
                 else None
             ),
@@ -1339,96 +1290,60 @@ def admin_review_view(record_id):
 
 @app.route("/admin/conversations")
 def admin_conversations():
-    """Render the admin list of archived conversation transcripts."""
-    conversation_files = utipy.list_conversation_files_in_gcs()
-    conversation_ids = [
-        file_name.split("/")[-1].replace(".jsonl", "")
-        for file_name in conversation_files
-    ]
+    """Render the cloud-backed review dashboard."""
+    rows = _load_review_state_or_abort()
+    evaluation = _normalize_review_filter(request.args.get("evaluation", "unreviewed"))
     return render_template(
         "admin_conversations.html",
-        conversation_ids=conversation_ids,
-        is_local=utipy.config.LOCAL,
+        summary=session_reviews.build_summary(rows),
+        evaluation=evaluation,
+        review_rows=session_reviews.list_dashboard_rows(rows, evaluation),
+        storage=session_reviews.storage_metadata(),
     )
 
 
 @app.route("/admin/conversations/<conversation_id>")
 def admin_conversation_detail(conversation_id: str):
-    """Render one archived conversation transcript in the admin UI."""
+    """Render one archived transcript plus a link back into the review flow."""
     if not conversation_id:
         abort(400)
+    rows = _load_review_state_or_abort()
     messages = utipy.get_conversation_from_gcs(conversation_id)
     if not messages:
         abort(404)
+    review_index = next(
+        (
+            index
+            for index, row in enumerate(rows)
+            if row.get("conversation_id") == conversation_id
+        ),
+        None,
+    )
     return render_template(
         "admin_conversation_detail.html",
         conversation_id=conversation_id,
         messages=messages,
-        is_local=utipy.config.LOCAL,
+        review_index=review_index,
     )
 
 
 @app.route("/admin/conversations/maintenance", methods=["POST"])
 @app.route("/download_chats", methods=["POST"])
 def download_chats():
-    """Run bulk archive maintenance from the admin conversations page."""
-    action = str(request.form.get("action", "download")).strip() or "download"
-    allowed_actions = {"download", "download_delete", "delete", "sync_review"}
+    """Run non-destructive review maintenance from the admin dashboard."""
+    action = str(request.form.get("action", "backfill_review")).strip() or "backfill_review"
+    allowed_actions = {"backfill_review"}
     if action not in allowed_actions:
         abort(400, description="Unsupported archive maintenance action")
 
-    if action == "sync_review":
-        if not utipy.config.LOCAL:
-            return _admin_conversations_response("sync_unavailable")
-        sync_summary = sync_review_queue(_repo_root())
-        return _admin_conversations_response(
-            "synced",
-            synced=sync_summary["records_kept"],
-            deduped=sync_summary["duplicates_moved"],
-            preserved=sync_summary["decisions_preserved"],
-            reviewed=sync_summary["evaluations_preserved"],
-        )
-
-    archives = utipy.download_archived_conversations()
-    if not archives:
-        return _admin_conversations_response("empty")
-
-    if action == "delete":
-        deleted = utipy.delete_archived_conversations(
-            archive.blob_name for archive in archives
-        )
-        return _admin_conversations_response("deleted", deleted=deleted)
-
-    if utipy.config.LOCAL:
-        written_paths = utipy.write_archived_conversations_to_directory(
-            archives, _collected_sessions_web_root()
-        )
-        deleted = 0
-        if action == "download_delete":
-            deleted = utipy.delete_archived_conversations(
-                archive.blob_name for archive in archives
-            )
-        sync_summary = sync_review_queue(_repo_root())
-        return _admin_conversations_response(
-            "download_delete" if action == "download_delete" else "downloaded",
-            downloaded=len(written_paths),
-            deleted=deleted,
-            synced=sync_summary["records_kept"],
-            deduped=sync_summary["duplicates_moved"],
-            preserved=sync_summary["decisions_preserved"],
-            reviewed=sync_summary["evaluations_preserved"],
-        )
-
-    bundle = _archived_conversations_zip(archives)
-    if action == "download_delete":
-        utipy.delete_archived_conversations(archive.blob_name for archive in archives)
-
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-    return send_file(
-        bundle,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=f"zbchats-{stamp}.zip",
+    summary = session_reviews.backfill_review_state(_repo_root())
+    return _admin_conversations_response(
+        "backfilled",
+        scanned=summary["transcripts_scanned"],
+        rows=summary["review_rows"],
+        preserved_existing=summary["preserved_existing_reviews"],
+        preserved_legacy=summary["preserved_legacy_reviews"],
+        train_rows=summary["sessions_to_train_rows"],
     )
 
 

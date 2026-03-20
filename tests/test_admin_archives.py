@@ -1,113 +1,69 @@
-import io
-import zipfile
-from pathlib import Path
-
 import main
-from utilities import ArchivedConversation
+import session_reviews
+import utilities
 
 
-def test_admin_conversations_download_delete_local_redirects_with_sync_counts(
-    monkeypatch, tmp_path
-):
+def test_admin_conversations_backfill_redirects_with_counts(monkeypatch, fake_bucket):
     monkeypatch.setattr(main.utipy.config, "LOCAL", True)
     monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
 
-    archives = [
-        ArchivedConversation(
-            blob_name="zbchats/one.jsonl",
-            filename="one.jsonl",
-            content=b'{"conversation_id":"one"}\n',
-        )
-    ]
-    deleted: list[str] = []
-
-    monkeypatch.setattr(main.utipy, "download_archived_conversations", lambda: archives)
-    monkeypatch.setattr(
-        main.utipy,
-        "write_archived_conversations_to_directory",
-        lambda items, target_dir: [Path(target_dir) / archive.filename for archive in items],
-    )
-    monkeypatch.setattr(
-        main.utipy,
-        "delete_archived_conversations",
-        lambda blob_names: deleted.extend(list(blob_names)) or len(deleted),
-    )
-    monkeypatch.setattr(main, "_collected_sessions_web_root", lambda: tmp_path / "web")
-    monkeypatch.setattr(
-        main,
-        "sync_review_queue",
-        lambda _repo_root: {
-            "records_kept": 7,
-            "duplicates_moved": 2,
-            "decisions_preserved": 3,
-            "evaluations_preserved": 5,
+    utilities.save_chat_to_bucket(
+        [
+            {"role": "system", "content": "You are Zenbot."},
+            {"role": "user", "content": "same transcript"},
+            {"role": "assistant", "content": "same reply"},
+        ],
+        {
+            "conversation_id": "one",
+            "student": "admin-test",
+            "model": "admin-model",
+            "saved_at": "2026-03-20T10:00:00Z",
         },
+        "zbchats/one.jsonl",
     )
 
     client = main.app.test_client()
     response = client.post(
         "/admin/conversations/maintenance",
-        data={"action": "download_delete"},
+        data={"action": "backfill_review"},
         headers={"Accept": "text/html"},
     )
 
     assert response.status_code == 302
     location = response.headers["Location"]
-    assert "status=download_delete" in location
-    assert "downloaded=1" in location
-    assert "deleted=1" in location
-    assert "synced=7" in location
-    assert "deduped=2" in location
-    assert "preserved=3" in location
-    assert "reviewed=5" in location
-    assert deleted == ["zbchats/one.jsonl"]
+    assert "status=backfilled" in location
+    assert "scanned=1" in location
+    assert "rows=1" in location
+    assert "train_rows=0" in location
 
 
-def test_admin_conversations_download_delete_remote_returns_zip(monkeypatch):
-    monkeypatch.setattr(main.utipy.config, "LOCAL", False)
-    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
-
-    archives = [
-        ArchivedConversation(
-            blob_name="zbchats/alpha.jsonl",
-            filename="alpha.jsonl",
-            content=b'{"conversation_id":"alpha"}\n',
-        )
-    ]
-    deleted: list[str] = []
-
-    monkeypatch.setattr(main.utipy, "download_archived_conversations", lambda: archives)
-    monkeypatch.setattr(
-        main.utipy,
-        "delete_archived_conversations",
-        lambda blob_names: deleted.extend(list(blob_names)) or len(deleted),
-    )
-
-    client = main.app.test_client()
-    response = client.post(
-        "/admin/conversations/maintenance",
-        data={"action": "download_delete"},
-        headers={"Authorization": "Bearer secret-token"},
-    )
-
-    assert response.status_code == 200
-    assert response.mimetype == "application/zip"
-    assert deleted == ["zbchats/alpha.jsonl"]
-
-    with zipfile.ZipFile(io.BytesIO(response.data), "r") as archive_zip:
-        assert archive_zip.namelist() == ["alpha.jsonl"]
-        assert archive_zip.read("alpha.jsonl") == b'{"conversation_id":"alpha"}\n'
-
-
-def test_admin_conversations_local_shows_review_button(monkeypatch):
+def test_admin_conversations_shows_review_dashboard(monkeypatch, fake_bucket):
     monkeypatch.setattr(main.utipy.config, "LOCAL", True)
     monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
-    monkeypatch.setattr(main.utipy, "list_conversation_files_in_gcs", lambda: [])
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    messages = [
+        {"role": "system", "content": "You are Zenbot."},
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "world"},
+    ]
+    params = {
+        "conversation_id": "dashboard-one",
+        "student": "dash-student",
+        "model": "dash-model",
+        "saved_at": "2026-03-20T13:00:00Z",
+    }
+    utilities.save_chat_to_bucket(messages, params, "zbchats/dashboard-one.jsonl")
+    session_reviews.upsert_review_record_from_session("dashboard-one", messages, params)
 
     client = main.app.test_client()
     response = client.get("/admin/conversations")
 
     body = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert 'href="/admin/review"' in body
-    assert "Open Local Review Tools" in body
+    assert "Cloud Review Dashboard" in body
+    assert "Backfill Review Manifest" in body
+    assert "dashboard-one" in body
+    assert "Download + delete all." not in body
+    assert "Delete all from cloud." not in body

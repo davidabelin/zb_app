@@ -42,15 +42,18 @@
 
 ## Review Workflow
 
-The training-review admin flow is tied directly to
-`../training/trainset04/review.csv`.
+The live review workflow is GCS-backed and no longer depends on local generated
+JSONL files or `review.csv`.
 
 Relevant assumptions:
-- `review.csv` must include `id` and `keep`
-- each row must include `source_path`
-- `source_path` must resolve under `../collected_sessions`
-- the admin UI only edits the `keep` column; it does not regenerate the review
-  dataset
+- archived transcripts live under `zbchats/*.jsonl`
+- the canonical review manifest lives at `session_reviews/index.jsonl`
+- the derived training export lives at `session_reviews/sessions_to_train.jsonl`
+- `/save_chat` and `/zb_api/save_chat` must upsert the review manifest
+- `/admin/conversations` is the primary browser review dashboard
+- `/admin/conversations/maintenance` only supports non-destructive review backfill
+- `../training/generated/collected_sessions_with_evaluations.jsonl` is only a
+  legacy preservation source for local rollout backfills
 
 ## Deploy and Verify
 
@@ -68,7 +71,8 @@ After deploy:
 - verify `gcloud meta list-files-for-upload` excludes `venv/` and `config/`
 - smoke-test `/zb_api/chat`
 - smoke-test memory index and single-entry retrieval
-- confirm admin login and archive listing still work
+- smoke-test `/zb_api/session-evaluations/summary`
+- confirm admin login and the review dashboard still work
 
 ## Troubleshooting
 
@@ -88,6 +92,6 @@ After deploy:
   chronological order
 
 ### Review admin fails
-- confirm `../training/trainset04/review.csv` exists
-- confirm the CSV columns still include `id`, `keep`, and `source_path`
-- confirm referenced session files still exist under `../collected_sessions`
+- confirm the bucket client initializes and the runtime can read `zbchats/`
+- confirm `session_reviews/index.jsonl` exists after a saved session or a backfill
+- confirm the review dashboard is not attempting to fall back to local files
