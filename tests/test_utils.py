@@ -65,7 +65,9 @@ def test_get_conversation_state_reassigns_retired_model_metadata(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        utilities.config, "MODELS", {"set03a-bs5lr05e5": "ft:active-model"}
+        utilities.config,
+        "MODELS_IN_USE",
+        {"set03a-bs5lr05e5": "ft:active-model"},
     )
     monkeypatch.setattr(
         utilities.config,

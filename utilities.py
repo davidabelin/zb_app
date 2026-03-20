@@ -103,7 +103,7 @@ def _utc_now() -> str:
 
 def _choose_session_profile() -> dict[str, Any]:
     """Select a random model/profile pair for a new conversation."""
-    model_key = rnd.choice(list(config.MODELS.keys()))
+    model_key = rnd.choice(list(config.MODELS_IN_USE.keys()))
     profile = rnd.choice(list(config.MODEL_ARGS.keys()))
     params = config.make_params(profile, model_name=model_key)
     return {
@@ -123,7 +123,7 @@ def _normalize_conversation_metadata(metadata: dict[str, Any]) -> dict[str, Any]
     model_name = str(normalized.get("model_name", "")).strip()
     profile_name = str(normalized.get("profile", "")).strip()
 
-    if model_name not in config.MODELS:
+    if model_name not in config.MODELS_IN_USE:
         refreshed = _choose_session_profile()
         logging.info(
             "Conversation metadata referenced retired model '%s'; reassigned to '%s'.",

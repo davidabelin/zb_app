@@ -9,8 +9,10 @@ set without importing deployment or API logic.
 MODELS_IN_USE = {
     "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
     "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
-    }
+}
 
+# Legacy registries are retained for reference and tooling, but `zb_app`
+# runtime selection now reads only from `MODELS_IN_USE`.
 ZB_MODELS = {
     "mmnk_ble824": "ft:gpt-4o-mini-2024-07-18:chatbot-tuners:mmnk-ble824:A7q3grXA",
     "mmnk_ble5053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble5053:ATHGiQEV",
@@ -30,7 +32,7 @@ ZB_MODELS = {
     "bs8lr08e4-set00-02": "ft:gpt-4o-2024-08-06:dca:bs8lr08e4-set00-02:BIzpjOBE",
     "set00-02mix-bs10lr05e2": "ft:gpt-4o-2024-08-06:dca:bd1eyc2n-set00-02mix-bs10lr05e2:BJ02Ragt",
     "set00-02mix-bs6lr06e3": "ft:gpt-4o-2024-08-06:dca:b9khhy0v-set00-02mix-bs6lr06e3:BJ09MKSB",
-    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT"
+    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
 }
 
 XC_MODELS = {
@@ -44,7 +46,6 @@ XC_MODELS = {
     "xcset01-bs3-lr1-ne3-s72": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs3-lr1-ne3:Ay3OQS40:ckpt-step-72",
 }
 
-# Training loss values are used for metadata, selection context, and admin views.
 MODEL_LOSSES = {
     "gpt-4": 0.0,
     "xcset01-bs4-lr04-ne4": 0.3,

@@ -21,6 +21,16 @@ import os
 
 from models import MODELS_IN_USE
 
+
+def _default_models_in_use() -> Dict[str, str]:
+    """Return the active model registry with a base-model fallback."""
+    return dict(MODELS_IN_USE) if MODELS_IN_USE else {"gpt-4": "gpt-4"}
+
+
+def _default_model_name() -> str:
+    """Return the default active model key."""
+    return next(iter(_default_models_in_use()), "gpt-4")
+
 _load_dotenv: Optional[Callable[..., bool]]
 try:
     from dotenv import load_dotenv as _dotenv_load
@@ -171,7 +181,7 @@ class Config:
     STUDENT: str | None = None
     CASE_ID: int = 0
     KOAN: Dict[str, Any] = field(default_factory=dict)
-    MODEL_NAME: str = "gpt-4o"
+    MODEL_NAME: str = field(default_factory=_default_model_name)
     TRAINING_LOSS: float = 0.0
     STREAMING: bool = field(
         default_factory=lambda: _strtobool(os.getenv("STREAMING_ENABLED"), default=True)
@@ -179,8 +189,7 @@ class Config:
     LOG_LEVEL: int = logging.INFO
 
     # Model registries
-    MODELS_IN_USE: Dict[str, str] = field(default_factory=lambda: MODELS_IN_USE)
-    MODELS: Dict[str, str] = field(init=False)
+    MODELS_IN_USE: Dict[str, str] = field(default_factory=_default_models_in_use)
 
     # Parameter defaults
     _PARAM_BASE: Dict[str, Any] = field(
@@ -242,14 +251,8 @@ class Config:
         """Finalize derived config after dataclass field initialization.
 
         Side effects:
-        - narrows the exported model registry to the currently active finetunes
-        - preserves a base-model fallback only when no finetunes are configured
         - resolves secrets from Secret Manager and environment fallback sources
         """
-        self.MODELS = dict(self.MODELS_IN_USE)
-        if not self.MODELS:
-            self.MODELS = {"gpt-4": "gpt-4"}
-
         # Resolve secrets from Secret Manager first, then env fallback.
         self.OPENAI_API_KEY = self._resolve_secret(
             self.OPENAI_API_KEY_SECRET_NAME, self.OPENAI_API_KEY
@@ -273,5 +276,5 @@ class Config:
         params = self._PARAM_BASE.copy()
         params.update(self.MODEL_ARGS.get(profile, {}))
         selected_name = model_name or self.MODEL_NAME
-        params["model"] = self.MODELS.get(selected_name, selected_name)
+        params["model"] = self.MODELS_IN_USE.get(selected_name, selected_name)
         return params
