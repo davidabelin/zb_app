@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session Review</title>
+  <style>
+    :root {
+      --bg: #f5efe4;
+      --panel: #fffaf2;
+      --ink: #1f1d1a;
+      --muted: #6d665b;
+      --line: #d7c7ae;
+      --use: #2d6a4f;
+      --alter: #b7791f;
+      --reject: #9b2c2c;
+      --accent: #24557a;
+      --shadow: rgba(65, 52, 32, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at top left, rgba(180, 130, 70, 0.18), transparent 28%),
+        linear-gradient(180deg, #efe4cf 0%, var(--bg) 100%);
+      color: var(--ink);
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-weight: 700;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 20px;
+      box-shadow: 0 14px 40px var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .subtle {
+      color: var(--muted);
+    }
+
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: #fff;
+      font-size: 0.95rem;
+    }
+
+    .pill strong {
+      margin-left: 6px;
+    }
+
+    .nav {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .decision-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .decision-row form {
+      margin: 0;
+    }
+
+    .review-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .review-grid label {
+      display: block;
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    select {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 1rem;
+      background: #fff;
+      color: var(--ink);
+      width: 100%;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 18px;
+      color: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .use { background: var(--use); }
+    .alter { background: var(--alter); }
+    .reject { background: var(--reject); }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 10px 16px;
+      margin-top: 14px;
+    }
+
+    .meta-key {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .messages {
+      display: grid;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .message {
+      border-left: 6px solid var(--line);
+      background: #fff;
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .message.system { border-left-color: #3b5b92; }
+    .message.user { border-left-color: #24557a; }
+    .message.assistant { border-left-color: #6b4f2a; }
+
+    .role {
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.45;
+      font-size: 1rem;
+    }
+
+    @media (max-width: 760px) {
+      main { padding: 14px; }
+      .meta-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <div class="topline">
+        <div>
+          <h1>Session Evaluation Review</h1>
+          <div class="subtle">Record {{ record.display_number }} of {{ record.summary.total }}</div>
+        </div>
+        <div class="subtle">
+          Final tag:
+          <strong>{{ record.evaluation or "Unreviewed" }}</strong>
+        </div>
+      </div>
+
+      <div class="review-grid">
+        <div class="pill">Review version <strong>{{ record.review_version }}</strong></div>
+        <div class="pill">ZB review <strong>{{ record.review_zb or "Unreviewed" }}</strong></div>
+        <div class="pill">CM review <strong>{{ record.review_cm or "Unreviewed" }}</strong></div>
+        <div>
+          <label for="reviewer-select">Apply decision as</label>
+          <select id="reviewer-select" name="reviewer">
+            <option value="CM" selected>CM</option>
+            <option value="ZB">ZB</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="summary">
+        <div class="pill">Use <strong>{{ record.summary.Use }}</strong></div>
+        <div class="pill">Alter <strong>{{ record.summary.Alter }}</strong></div>
+        <div class="pill">Reject <strong>{{ record.summary.Reject }}</strong></div>
+        <div class="pill">Unreviewed <strong>{{ record.summary.unreviewed }}</strong></div>
+      </div>
+
+      <div class="nav">
+        <a href="{{ url_for('admin_conversations', evaluation=dashboard_filter) }}">Back to Review Queue</a>
+        <a href="{{ url_for('review_page', index=record.navigation.previous_index, evaluation=dashboard_filter) }}">Previous</a>
+        <a href="{{ url_for('review_page', index=record.navigation.next_index, evaluation=dashboard_filter) }}">Next</a>
+        {% if record.navigation.next_unreviewed_index is not none %}
+          <a href="{{ url_for('review_page', index=record.navigation.next_unreviewed_index, evaluation=dashboard_filter) }}">Next Unreviewed</a>
+        {% endif %}
+      </div>
+
+      <div class="decision-row">
+        <form method="post" action="{{ url_for('set_decision', index=record.index) }}">
+          <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
+          <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
+          <input type="hidden" name="evaluation" value="Use">
+          <button class="use" type="submit">Use</button>
+        </form>
+        <form method="post" action="{{ url_for('set_decision', index=record.index) }}">
+          <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
+          <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
+          <input type="hidden" name="evaluation" value="Alter">
+          <button class="alter" type="submit">Alter</button>
+        </form>
+        <form method="post" action="{{ url_for('set_decision', index=record.index) }}">
+          <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
+          <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
+          <input type="hidden" name="evaluation" value="Reject">
+          <button class="reject" type="submit">Reject</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Metadata</h2>
+      <div class="meta-grid">
+        {% for key, value in record.metadata.items() %}
+          <div class="meta-key">{{ key }}</div>
+          <div>{{ value }}</div>
+        {% endfor %}
+        <div class="meta-key">bucket</div>
+        <div>{{ storage.bucket }}</div>
+        <div class="meta-key">transcripts_prefix</div>
+        <div>{{ storage.transcripts_prefix }}</div>
+        <div class="meta-key">review_index_blob</div>
+        <div>{{ storage.review_index_blob }}</div>
+        <div class="meta-key">sessions_to_train_blob</div>
+        <div>{{ storage.sessions_to_train_blob }}</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Conversation</h2>
+      <div class="messages">
+        {% for message in record.messages %}
+          <article class="message {{ message.role }}">
+            <div class="role">{{ message.role }}</div>
+            <pre>{{ message.content }}</pre>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+  <script>
+    const reviewerSelect = document.getElementById("reviewer-select");
+    const reviewerInputs = document.querySelectorAll(".reviewer-input");
+
+    function syncReviewer() {
+      reviewerInputs.forEach((input) => {
+        input.value = reviewerSelect.value;
+      });
+    }
+
+    reviewerSelect.addEventListener("change", syncReviewer);
+    syncReviewer();
+  </script>
+</body>
+</html>

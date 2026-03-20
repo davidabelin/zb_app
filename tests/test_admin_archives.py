@@ -62,7 +62,8 @@ def test_admin_conversations_shows_review_dashboard(monkeypatch, fake_bucket):
 
     body = response.get_data(as_text=True)
     assert response.status_code == 200
-    assert "Cloud Review Dashboard" in body
+    assert "Session Review Queue" in body
+    assert "Open Next Unreviewed" in body
     assert "Backfill Review Manifest" in body
     assert "dashboard-one" in body
     assert "Download + delete all." not in body

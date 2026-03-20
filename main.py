@@ -40,7 +40,6 @@ from flask import (
     stream_with_context,
     url_for,
 )
-from jinja2 import ChoiceLoader, FileSystemLoader
 from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
@@ -49,17 +48,7 @@ import utilities as utipy
 from utilities import ModelAPIError
 
 logging.basicConfig(level=utipy.config.LOG_LEVEL)
-
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_TRAINING_TEMPLATES_DIR = _REPO_ROOT / "training" / "templates"
-
 app = Flask(__name__, static_url_path="/static")
-app.jinja_loader = ChoiceLoader(
-    [
-        app.jinja_loader,
-        FileSystemLoader(str(_TRAINING_TEMPLATES_DIR.resolve())),
-    ]
-)
 app.secret_key = utipy.config.FLASK_SECRET_KEY
 
 # Secure cookie defaults.
@@ -932,7 +921,7 @@ def serve_pdf(filename):
 # -------- Data Administration --------
 def _repo_root() -> Path:
     """Return the Zenbot repository root above ``zb_app``."""
-    return _REPO_ROOT
+    return Path(__file__).resolve().parents[1]
 
 
 def _trainset04_review_csv_path() -> Path:
@@ -1293,11 +1282,13 @@ def admin_conversations():
     """Render the cloud-backed review dashboard."""
     rows = _load_review_state_or_abort()
     evaluation = _normalize_review_filter(request.args.get("evaluation", "unreviewed"))
+    review_rows = session_reviews.list_dashboard_rows(rows, evaluation)
     return render_template(
         "admin_conversations.html",
         summary=session_reviews.build_summary(rows),
         evaluation=evaluation,
-        review_rows=session_reviews.list_dashboard_rows(rows, evaluation),
+        review_rows=review_rows,
+        next_unreviewed_index=session_reviews.first_unreviewed_index(rows),
         storage=session_reviews.storage_metadata(),
     )
 

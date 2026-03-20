@@ -1,85 +1,385 @@
-{% extends "base.html" %}
-{% block title %}Zenbot Review Dashboard{% endblock %}
-{% block content %}
-<section>
-  <i>(For Administrative Use Only.)</i>
-</section>
-<header>
-  <h1>Zenbot Dokusan</h1>
-  <h2>Cloud Review Dashboard</h2>
-  <p>Archived sessions and their review status live in one shared GCS-backed queue.</p>
-</header>
-<section>
-  {% set status = request.args.get("status", "") %}
-  {% if status == "backfilled" %}
-    <p><b>Review manifest backfilled from {{ request.args.get("scanned", "0") }} archived transcript(s). Current rows: {{ request.args.get("rows", "0") }}. Preserved existing cloud reviews: {{ request.args.get("preserved_existing", "0") }}. Preserved legacy local reviews: {{ request.args.get("preserved_legacy", "0") }}. Sessions-to-train rows: {{ request.args.get("train_rows", "0") }}.</b></p>
-  {% elif status == "empty" %}
-    <p><b>No review rows are available yet. Save a session or run the review-manifest backfill.</b></p>
-  {% endif %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session Review Queue</title>
+  <style>
+    :root {
+      --bg: #f5efe4;
+      --panel: #fffaf2;
+      --ink: #1f1d1a;
+      --muted: #6d665b;
+      --line: #d7c7ae;
+      --accent: #24557a;
+      --use: #2d6a4f;
+      --alter: #b7791f;
+      --reject: #9b2c2c;
+      --unreviewed: #6d665b;
+      --shadow: rgba(65, 52, 32, 0.08);
+    }
 
-  <p>
-    <small>
-      Storage: bucket <code>{{ storage.bucket }}</code>,
-      transcripts under <code>{{ storage.transcripts_prefix }}</code>,
-      review index <code>{{ storage.review_index_blob }}</code>,
-      training export <code>{{ storage.sessions_to_train_blob }}</code>.
-    </small>
-  </p>
+    * {
+      box-sizing: border-box;
+    }
 
-  <div class="nav">
-    <a href="{{ url_for('admin_conversations', evaluation='unreviewed') }}">Unreviewed ({{ summary.unreviewed }})</a>
-    <a href="{{ url_for('admin_conversations', evaluation='Use') }}">Use ({{ summary.Use }})</a>
-    <a href="{{ url_for('admin_conversations', evaluation='Alter') }}">Alter ({{ summary.Alter }})</a>
-    <a href="{{ url_for('admin_conversations', evaluation='Reject') }}">Reject ({{ summary.Reject }})</a>
-    <a href="{{ url_for('admin_conversations', evaluation='all') }}">All ({{ summary.total }})</a>
-  </div>
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at top left, rgba(180, 130, 70, 0.18), transparent 28%),
+        linear-gradient(180deg, #efe4cf 0%, var(--bg) 100%);
+      color: var(--ink);
+    }
 
-  <br>
-  <p><b>Viewing:</b> {{ evaluation }}</p>
+    main {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 24px;
+    }
 
-  {% if review_rows %}
-    <table>
-      <thead>
-        <tr>
-          <th style="text-align:left;">Session</th>
-          <th style="text-align:left;">Preview</th>
-          <th style="text-align:left;">ZB</th>
-          <th style="text-align:left;">CM</th>
-          <th style="text-align:left;">Final</th>
-          <th style="text-align:left;">Saved</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in review_rows %}
-          <tr>
-            <td>
-              <a href="{{ url_for('review_page', index=row.index, evaluation=evaluation) }}">
-                {{ row.conversation_id }}
+    h1, h2, h3, p {
+      margin-top: 0;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px 22px;
+      box-shadow: 0 14px 40px var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 0.95rem;
+      letter-spacing: 0.03em;
+      margin-bottom: 10px;
+    }
+
+    .subtle {
+      color: var(--muted);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px;
+      min-width: min(520px, 100%);
+    }
+
+    .pill,
+    .filter-pill,
+    .action-link,
+    .action-button {
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      font-size: 0.97rem;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .pill strong {
+      margin-left: 4px;
+    }
+
+    .filter-row,
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .filter-pill.active {
+      background: #efe4cf;
+      border-color: #c8b18c;
+      font-weight: 700;
+    }
+
+    .action-button {
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .action-link.primary,
+    .action-button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .notice {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .queue-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: baseline;
+    }
+
+    .queue {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 10px 28px var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-link {
+      display: block;
+      padding: 18px;
+      color: inherit;
+      text-decoration: none;
+      height: 100%;
+    }
+
+    .card-link:hover {
+      text-decoration: none;
+      background: rgba(239, 228, 207, 0.45);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .card-top h3 {
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+
+    .badge {
+      border-radius: 999px;
+      color: #fff;
+      font-size: 0.86rem;
+      padding: 7px 10px;
+      white-space: nowrap;
+    }
+
+    .badge.Use { background: var(--use); }
+    .badge.Alter { background: var(--alter); }
+    .badge.Reject { background: var(--reject); }
+    .badge.Unreviewed { background: var(--unreviewed); }
+
+    .preview {
+      margin-top: 14px;
+      line-height: 1.45;
+    }
+
+    .preview strong {
+      color: var(--muted);
+      display: inline-block;
+      min-width: 24px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+      font-size: 0.95rem;
+    }
+
+    .meta div {
+      padding-top: 10px;
+      border-top: 1px solid #eadfcf;
+    }
+
+    .meta label {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-size: 0.86rem;
+    }
+
+    .storage {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .empty {
+      margin-top: 18px;
+      padding: 20px;
+      border-radius: 14px;
+      border: 1px dashed var(--line);
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    form.inline {
+      margin: 0;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 14px;
+      }
+
+      .summary,
+      .queue {
+        grid-template-columns: 1fr;
+      }
+
+      .meta {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    {% set status = request.args.get("status", "") %}
+    <section class="panel">
+      <div class="topline">
+        <div>
+          <div class="eyebrow">For administrative use only.</div>
+          <h1>Session Review Queue</h1>
+          <p class="subtle">Cloud-backed archived conversations live here, with review decisions shared across browser admins and Zenbot.</p>
+        </div>
+        <div class="summary">
+          <div class="pill">Total <strong>{{ summary.total }}</strong></div>
+          <div class="pill">Unreviewed <strong>{{ summary.unreviewed }}</strong></div>
+          <div class="pill">Use <strong>{{ summary.Use }}</strong></div>
+          <div class="pill">Alter <strong>{{ summary.Alter }}</strong></div>
+          <div class="pill">Reject <strong>{{ summary.Reject }}</strong></div>
+        </div>
+      </div>
+
+      {% if status == "backfilled" %}
+        <div class="notice">
+          Review manifest backfilled from {{ request.args.get("scanned", "0") }} archived transcript(s).
+          Current rows: {{ request.args.get("rows", "0") }}.
+          Preserved existing cloud reviews: {{ request.args.get("preserved_existing", "0") }}.
+          Preserved legacy local reviews: {{ request.args.get("preserved_legacy", "0") }}.
+          Sessions-to-train rows: {{ request.args.get("train_rows", "0") }}.
+        </div>
+      {% elif status == "empty" %}
+        <div class="notice">
+          No review rows are available yet. Save a session or run the review-manifest backfill.
+        </div>
+      {% endif %}
+
+      <div class="filter-row">
+        <a class="filter-pill{% if evaluation == 'unreviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='unreviewed') }}">Unreviewed</a>
+        <a class="filter-pill{% if evaluation == 'Use' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Use') }}">Use</a>
+        <a class="filter-pill{% if evaluation == 'Alter' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Alter') }}">Alter</a>
+        <a class="filter-pill{% if evaluation == 'Reject' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Reject') }}">Reject</a>
+        <a class="filter-pill{% if evaluation == 'all' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='all') }}">All</a>
+      </div>
+
+      <div class="action-row">
+        {% if next_unreviewed_index is not none %}
+          <a class="action-link primary" href="{{ url_for('review_page', index=next_unreviewed_index, evaluation='unreviewed') }}">Open Next Unreviewed</a>
+        {% endif %}
+        {% if review_rows %}
+          <a class="action-link" href="{{ url_for('review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
+        {% endif %}
+        <form class="inline" method="post" action="{{ url_for('download_chats') }}">
+          <button class="action-button" type="submit" name="action" value="backfill_review">Backfill Review Manifest</button>
+        </form>
+        <form class="inline" method="post" action="{{ url_for('admin_logout') }}">
+          <button class="action-button" type="submit">Log out</button>
+        </form>
+      </div>
+
+      <div class="storage">
+        Bucket <code>{{ storage.bucket }}</code> stores transcripts under <code>{{ storage.transcripts_prefix }}</code>.
+        Review index: <code>{{ storage.review_index_blob }}</code>.
+        Sessions-to-train export: <code>{{ storage.sessions_to_train_blob }}</code>.
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="queue-header">
+        <div>
+          {% if evaluation == "unreviewed" %}
+            <h2>Unreviewed Sessions</h2>
+          {% elif evaluation == "all" %}
+            <h2>All Sessions</h2>
+          {% else %}
+            <h2>{{ evaluation }} Sessions</h2>
+          {% endif %}
+          <p class="subtle">{{ review_rows|length }} session(s) in this view.</p>
+        </div>
+      </div>
+
+      {% if review_rows %}
+        <div class="queue">
+          {% for row in review_rows %}
+            <article class="card">
+              <a class="card-link" href="{{ url_for('review_page', index=row.index, evaluation=evaluation) }}">
+                <div class="card-top">
+                  <div>
+                    <h3>{{ row.conversation_id }}</h3>
+                    <div class="subtle">{{ row.saved_at or "Saved time unavailable" }}</div>
+                  </div>
+                  <span class="badge {{ row.evaluation }}">{{ row.evaluation }}</span>
+                </div>
+
+                <div class="preview"><strong>U:</strong> {{ row.preview_user or "No user preview available." }}</div>
+                <div class="preview"><strong>A:</strong> {{ row.preview_assistant or "No assistant preview available." }}</div>
+
+                <div class="meta">
+                  <div>
+                    <label>ZB</label>
+                    {{ row.review_zb or "Unreviewed" }}
+                  </div>
+                  <div>
+                    <label>CM</label>
+                    {{ row.review_cm or "Unreviewed" }}
+                  </div>
+                </div>
               </a>
-            </td>
-            <td>
-              <div><b>U:</b> {{ row.preview_user or "n/a" }}</div>
-              <div><b>A:</b> {{ row.preview_assistant or "n/a" }}</div>
-            </td>
-            <td>{{ row.review_zb or "Unreviewed" }}</td>
-            <td>{{ row.review_cm or "Unreviewed" }}</td>
-            <td>{{ row.evaluation }}</td>
-            <td>{{ row.saved_at or "n/a" }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p><b>No sessions match this filter.</b></p>
-  {% endif %}
-
-  <br>
-  <form method="post" action="{{ url_for('download_chats') }}">
-    <button type="submit" name="action" value="backfill_review">Backfill Review Manifest</button>
-  </form>
-  <br>
-  <form method="post" action="{{ url_for('admin_logout') }}">
-    <button type="submit">Log out</button>
-  </form>
-</section>
-{% endblock %}
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty">
+          No sessions match this filter yet.
+        </div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
