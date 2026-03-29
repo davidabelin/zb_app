@@ -59,13 +59,13 @@ Implemented v3 runtime pieces:
 
 The tool catalog can be exported with:
 
-```powershell
+```cmd
 python scripts/export_openai_tool_manifest.py
 ```
 
 The default vector-store sync helper is:
 
-```powershell
+```cmd
 python scripts/sync_openai_vector_store.py --create
 ```
 
@@ -74,20 +74,20 @@ python scripts/sync_openai_vector_store.py --create
 1. Create or activate a Python environment.
 2. Install runtime dependencies:
 
-   ```powershell
+   ```cmd
    pip install -r requirements.txt
    ```
 
 3. Install dev tooling when needed:
 
-   ```powershell
+   ```cmd
    pip install -r requirements-dev.txt
    ```
 
 4. Copy `.env.example` to `.env` and fill in the values you actually need.
 5. Run the app from `zb_app`:
 
-   ```powershell
+   ```cmd
    python main.py
    ```
 
@@ -122,11 +122,26 @@ python scripts/sync_openai_vector_store.py --create
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
 - [`RECOVERY_RUNBOOK.md`](RECOVERY_RUNBOOK.md)
+- [`scripts/DEPLOY_ORDER.md`](scripts/DEPLOY_ORDER.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
+
+## Deploying v3
+
+If you prefer the normal Windows `cmd` flow, use the scripts in this order:
+
+1. `scripts\setup_gcp_secrets.cmd`
+2. `scripts\deploy_cloudrun_service.cmd`
+3. `python scripts\sync_openai_vector_store.py --create` only when File Search
+   is enabled or the curated docs changed
+4. `scripts\get_admin_token.cmd` when you need the auth token for admin/API/GPT
+   testing
+
+`scripts\deploy_cloudrun_chat.cmd` is only a compatibility alias to the main
+Cloud Run deploy script. Do not use `deploy_appengine_web.ps1` for v3.
 
 ## Validation
 
-```powershell
+```cmd
 python -m pytest -q
 python -m flake8
 python -m mypy .

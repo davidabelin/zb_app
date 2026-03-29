@@ -10,13 +10,17 @@ account read access to those secrets.
 
 param(
   [string]$ProjectId = "zenbot-434517",
-  [string]$ServiceAccount = "zenbot-sa@zenbot-434517.iam.gserviceaccount.com",
+  [string]$ServiceAccount = "",
   [string]$Account = "",
   [switch]$SkipPrompts,
   [switch]$SkipIamBinding
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $ServiceAccount) {
+  $ServiceAccount = "zenbot-sa@$ProjectId.iam.gserviceaccount.com"
+}
 
 function Invoke-Gcloud {
   param([Parameter(Mandatory = $true)][string[]]$GcloudArgs)

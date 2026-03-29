@@ -9,15 +9,26 @@ to browser admin routes or configure GPT Actions authentication.
 
 param(
   [string]$ProjectId = "zenbot-434517",
-  [string]$Account = "davidabelin96@gmail.com",
+  [string]$Account = "",
   [string]$SecretName = "zb-action-api-token"
 )
 
 $ErrorActionPreference = "Stop"
 
-& gcloud --account=$Account secrets versions access latest `
-  --secret=$SecretName `
-  --project=$ProjectId
+$gcloudArgs = @()
+if ($Account) {
+  $gcloudArgs += "--account=$Account"
+}
+$gcloudArgs += @(
+  "secrets",
+  "versions",
+  "access",
+  "latest",
+  "--secret=$SecretName",
+  "--project=$ProjectId"
+)
+
+& gcloud @gcloudArgs
 
 if ($LASTEXITCODE -ne 0) {
   throw "Failed to read secret '$SecretName' from project '$ProjectId'."

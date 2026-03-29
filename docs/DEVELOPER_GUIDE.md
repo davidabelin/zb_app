@@ -51,7 +51,7 @@
 
 Use the bundled sync helper:
 
-```powershell
+```cmd
 python scripts/sync_openai_vector_store.py --create
 ```
 
@@ -67,14 +67,17 @@ as a separate data job once `set05` policy is settled.
 
 ## Deploy and Verify
 
-Use the scripts in `scripts/`:
+Use the scripts in `scripts/` in this order:
 
-- `setup_gcp_secrets.ps1`
-- `deploy_cloudrun_service.ps1`
-- `deploy_cloudrun_chat.ps1` as a compatibility alias
-- `get_admin_token.ps1`
+1. `setup_gcp_secrets.cmd` when bootstrapping or rotating secrets
+2. `deploy_cloudrun_service.cmd` for every real v3 deploy
+3. `deploy_cloudrun_chat.cmd` only as a compatibility alias
+4. `get_admin_token.cmd` when you need the auth token after deploy
 
 Do not use `deploy_appengine_web.ps1`; it is retained only as a deprecation stub.
+
+`DEPLOY_ORDER.md` is the short operator-facing explanation of what each script
+does and when to run it.
 
 After deploy:
 
@@ -86,7 +89,7 @@ After deploy:
 
 ## Quality Gates
 
-```powershell
+```cmd
 python -m pytest -q
 python -m flake8
 python -m mypy .

@@ -6,29 +6,30 @@ maintainer guidance, see:
 - [`README.md`](README.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
+- [`scripts/DEPLOY_ORDER.md`](scripts/DEPLOY_ORDER.md)
 
 ## 1) Bootstrap or Rotate Secrets
 
-```powershell
-.\scripts\setup_gcp_secrets.ps1
+```cmd
+scripts\setup_gcp_secrets.cmd
 ```
 
 ## 2) Deploy the Cloud Run Service
 
-```powershell
-.\scripts\deploy_cloudrun_service.ps1
+```cmd
+scripts\deploy_cloudrun_service.cmd
 ```
 
 The script deploys the single public service, resolves its URL, and then syncs
 `WEB_APP_ORIGIN` and `CHAT_API_BASE_URL` to that same host.
 
-`deploy_cloudrun_chat.ps1` remains available as a compatibility alias.
+`deploy_cloudrun_chat.cmd` remains available as a compatibility alias.
 
 ## 3) Optional: Sync the OpenAI Vector Store
 
 If File Search is enabled for the runtime, sync the curated document set:
 
-```powershell
+```cmd
 python scripts/sync_openai_vector_store.py --create
 ```
 
@@ -37,7 +38,7 @@ accordingly.
 
 ## 4) Verify Deploy Payload Hygiene
 
-```powershell
+```cmd
 gcloud meta list-files-for-upload
 ```
 
@@ -45,7 +46,7 @@ Expected: no `venv/` payloads and no local `config/` artifacts.
 
 ## 5) Run the Quality Gates
 
-```powershell
+```cmd
 python -m pytest -q
 python -m flake8
 python -m mypy .
