@@ -1,17 +1,19 @@
 """Runtime configuration for the Zenbot web application.
 
-This module is the single source of truth for configuration precedence inside
-``zb_app``. It resolves local dotenv files for development, reads secrets from
-Google Secret Manager in managed runtimes, and exposes a dataclass that the
-rest of the app uses for runtime behavior, model selection defaults, storage
-names, and security-sensitive settings.
+This module is the configuration spine for the v3 runtime. It resolves local
+dotenv files for development, reads secrets from Google Secret Manager in cloud
+runtimes, and exposes a single dataclass consumed by the Flask routes,
+Responses-based model adapter, storage helpers, and operator scripts.
 
 Key precedence rules:
 1. In local development, read `.env` and `config/.env` if python-dotenv exists.
-2. In Cloud Run or App Engine, do not load dotenv files.
-3. For secrets, prefer Secret Manager and fall back to plain environment values.
-4. Treat the app/repo release version separately from OpenAPI/schema versions.
+2. In managed runtimes, do not load dotenv files.
+3. For secrets, prefer Secret Manager and fall back to environment values.
+4. Keep model/runtime defaults deterministic; do not randomize production model
+   or profile selection.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -23,13 +25,35 @@ from models import MODELS_IN_USE
 
 
 def _default_models_in_use() -> Dict[str, str]:
-    """Return the active model registry with a base-model fallback."""
-    return dict(MODELS_IN_USE) if MODELS_IN_USE else {"gpt-4": "gpt-4"}
+    """Return the active model registry with a modern base-model fallback."""
+
+    return dict(MODELS_IN_USE) if MODELS_IN_USE else {"gpt-5.4-mini": "gpt-5.4-mini"}
 
 
 def _default_model_name() -> str:
     """Return the default active model key."""
-    return next(iter(_default_models_in_use()), "gpt-4")
+
+    return next(iter(_default_models_in_use()), "gpt-5.4-mini")
+
+
+def _csv_list(value: str | None) -> list[str]:
+    """Split a comma-delimited environment variable into trimmed values."""
+
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _intenv(value: str | None, default: int) -> int:
+    """Parse an integer environment variable with a safe fallback."""
+
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        return default
+
 
 _load_dotenv: Optional[Callable[..., bool]]
 try:
@@ -41,22 +65,16 @@ except Exception:
 
 
 def load_dotenv(*args: Any, **kwargs: Any) -> bool:
-    """Proxy to python-dotenv when installed.
+    """Proxy to python-dotenv when installed."""
 
-    Returns ``False`` when the optional dependency is unavailable so callers can
-    treat dotenv loading as best-effort rather than mandatory.
-    """
     if _load_dotenv is None:
         return False
     return bool(_load_dotenv(*args, **kwargs))
 
 
 def _strtobool(value: str | None, default: bool = False) -> bool:
-    """Parse permissive truthy environment values.
+    """Parse permissive truthy environment values."""
 
-    The app uses this helper for flags that come from local env files, App
-    Engine ``env_variables``, or Cloud Run environment configuration.
-    """
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
@@ -64,21 +82,23 @@ def _strtobool(value: str | None, default: bool = False) -> bool:
 
 def _sanitize_secret(value: str | None) -> str:
     """Normalize secret payloads before they are exposed to the app."""
+
     if value is None:
         return ""
-    # Strip whitespace and a UTF-8 BOM if a secret version was uploaded with it.
     return value.strip().lstrip("\ufeff")
 
 
 def _is_cloud_runtime() -> bool:
     """Detect whether the current process is running in a managed GCP runtime."""
+
     if os.getenv("K_SERVICE"):
         return True
     return os.getenv("GAE_ENV", "").startswith("standard")
 
 
 def _load_local_env() -> None:
-    """Load local dotenv files only when not running under App Engine or Cloud Run."""
+    """Load local dotenv files only outside managed cloud runtimes."""
+
     if _is_cloud_runtime():
         return
     load_dotenv()
@@ -90,11 +110,8 @@ _load_local_env()
 
 @lru_cache(maxsize=64)
 def _read_secret(project_id: str, secret_name: str) -> str:
-    """Read and cache the latest version of a named Secret Manager secret.
+    """Read and cache the latest version of a named Secret Manager secret."""
 
-    Returns an empty string when the secret client is unavailable, the project
-    or secret name is blank, or the lookup fails.
-    """
     if not project_id or not secret_name:
         return ""
     try:
@@ -107,22 +124,15 @@ def _read_secret(project_id: str, secret_name: str) -> str:
         name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
         response = client.access_secret_version(request={"name": name})
         return _sanitize_secret(response.payload.data.decode("utf-8"))
-    except Exception as e:
-        logging.warning("Unable to read secret '%s': %s", secret_name, e)
+    except Exception as exc:
+        logging.warning("Unable to read secret '%s': %s", secret_name, exc)
         return ""
 
 
 @dataclass
 class Config:
-    """Resolved application configuration shared across the Flask app.
+    """Resolved application configuration shared across the Zenbot runtime."""
 
-    The object is instantiated once in ``utilities.py`` and then referenced by
-    request handlers, storage helpers, and model-selection code. It combines
-    cloud/runtime detection, secret resolution, model registries, and default
-    prompt parameters in one place so maintainers can trace app behavior
-    without searching through multiple modules.
-    """
-    # Project and runtime
     GOOGLE_CLOUD_PROJECT: str = field(
         default_factory=lambda: os.getenv("GOOGLE_CLOUD_PROJECT", "zenbot-434517")
     )
@@ -132,7 +142,6 @@ class Config:
         )
     )
 
-    # Secret indirection env variables
     OPENAI_API_KEY_SECRET_NAME: str = field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY_SECRET_NAME", "")
     )
@@ -143,7 +152,6 @@ class Config:
         default_factory=lambda: os.getenv("ACTION_API_TOKEN_SECRET_NAME", "")
     )
 
-    # Optional plain env fallback (local only).
     OPENAI_API_KEY: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     FLASK_SECRET_KEY: str = field(
         default_factory=lambda: os.getenv("FLASK_SECRET_KEY", os.urandom(32).hex())
@@ -152,7 +160,6 @@ class Config:
         default_factory=lambda: os.getenv("ACTION_API_TOKEN", "")
     )
 
-    # Non-secret config
     GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     CHAT_API_BASE_URL: str = field(
         default_factory=lambda: os.getenv("CHAT_API_BASE_URL", "")
@@ -173,11 +180,28 @@ class Config:
         )
     )
 
-    BUCKET_NAME: str = "zenbot_cloudstore"
-    MEMORY_LOGBOOK: str = "memory_logbook.json"
-    MEMORY_ARCHIVES: str = "memory_logbook_archives.json"
+    BUCKET_NAME: str = field(
+        default_factory=lambda: os.getenv("BUCKET_NAME", "zenbot_cloudstore")
+    )
+    MEMORY_LOGBOOK: str = field(
+        default_factory=lambda: os.getenv("MEMORY_LOGBOOK", "memory_logbook.json")
+    )
+    MEMORY_ARCHIVES: str = field(
+        default_factory=lambda: os.getenv(
+            "MEMORY_ARCHIVES", "memory_logbook_archives.json"
+        )
+    )
+    MEMORY_CANDIDATE_QUEUE: str = field(
+        default_factory=lambda: os.getenv(
+            "MEMORY_CANDIDATE_QUEUE", "memory/memory_candidates.jsonl"
+        )
+    )
+    REVIEW_REQUESTS_BLOB: str = field(
+        default_factory=lambda: os.getenv(
+            "REVIEW_REQUESTS_BLOB", "session_reviews/review_requests.jsonl"
+        )
+    )
 
-    # Dynamic chat defaults/state
     STUDENT: str | None = None
     CASE_ID: int = 0
     KOAN: Dict[str, Any] = field(default_factory=dict)
@@ -188,50 +212,83 @@ class Config:
     )
     LOG_LEVEL: int = logging.INFO
 
-    # Model registries
-    MODELS_IN_USE: Dict[str, str] = field(default_factory=_default_models_in_use)
-
-    # Parameter defaults
-    _PARAM_BASE: Dict[str, Any] = field(
-        default_factory=lambda: {
-            "temperature": 0,
-            "max_tokens": 0,
-            "top_p": 0,
-            "frequency_penalty": 0,
-            "presence_penalty": 0,
-            "response_format": {"type": "text"},
-        }
+    OPENAI_LIVE_MODEL: str = field(
+        default_factory=lambda: os.getenv("OPENAI_LIVE_MODEL", "gpt-5.4-mini")
     )
+    OPENAI_JUDGE_MODEL: str = field(
+        default_factory=lambda: os.getenv("OPENAI_JUDGE_MODEL", "gpt-5.4")
+    )
+    OPENAI_POST_TRAINING_MODEL: str = field(
+        default_factory=lambda: os.getenv("OPENAI_POST_TRAINING_MODEL", "gpt-4.1")
+    )
+    OPENAI_REASONING_EFFORT: str = field(
+        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "minimal")
+    )
+    OPENAI_REASONING_SUMMARY: str = field(
+        default_factory=lambda: os.getenv("OPENAI_REASONING_SUMMARY", "auto")
+    )
+    OPENAI_PROMPT_CACHE_PREFIX: str = field(
+        default_factory=lambda: os.getenv("OPENAI_PROMPT_CACHE_PREFIX", "zenbot-v3")
+    )
+    OPENAI_PROMPT_CACHE_RETENTION: str = field(
+        default_factory=lambda: os.getenv("OPENAI_PROMPT_CACHE_RETENTION", "24h")
+    )
+    OPENAI_ENABLE_FILE_SEARCH: bool = field(
+        default_factory=lambda: _strtobool(
+            os.getenv("OPENAI_ENABLE_FILE_SEARCH"), default=False
+        )
+    )
+    OPENAI_ENABLE_WEB_SEARCH: bool = field(
+        default_factory=lambda: _strtobool(
+            os.getenv("OPENAI_ENABLE_WEB_SEARCH"), default=False
+        )
+    )
+    OPENAI_ENABLE_FUNCTION_TOOLS: bool = field(
+        default_factory=lambda: _strtobool(
+            os.getenv("OPENAI_ENABLE_FUNCTION_TOOLS"), default=True
+        )
+    )
+    OPENAI_ENABLE_BACKGROUND_CRITIC: bool = field(
+        default_factory=lambda: _strtobool(
+            os.getenv("OPENAI_ENABLE_BACKGROUND_CRITIC"), default=False
+        )
+    )
+    OPENAI_VECTOR_STORE_IDS: list[str] = field(
+        default_factory=lambda: _csv_list(os.getenv("OPENAI_VECTOR_STORE_IDS", ""))
+    )
+    DEFAULT_RESPONSE_PROFILE: str = field(
+        default_factory=lambda: os.getenv("DEFAULT_RESPONSE_PROFILE", "live")
+    )
+
+    REDIS_URL: str = field(default_factory=lambda: os.getenv("REDIS_URL", ""))
+    HOT_STATE_BACKEND: str = field(
+        default_factory=lambda: os.getenv("HOT_STATE_BACKEND", "")
+    )
+    SESSION_TTL_SECONDS: int = field(
+        default_factory=lambda: _intenv(os.getenv("SESSION_TTL_SECONDS"), 86400)
+    )
+
+    MODELS_IN_USE: Dict[str, str] = field(default_factory=_default_models_in_use)
 
     MODEL_ARGS: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
-            "high": {
-                "temperature": 1.75,
-                "max_tokens": 5120,
-                "top_p": 0.75,
-                "frequency_penalty": 1.75,
-                "presence_penalty": 0.75,
+            "live": {
+                "temperature": 0.9,
+                "max_output_tokens": 900,
+                "top_p": 1.0,
+                "reasoning_effort": "minimal",
             },
-            "mid": {
-                "temperature": 1.0,
-                "max_tokens": 1024,
-                "top_p": 0.5,
-                "frequency_penalty": 1.0,
-                "presence_penalty": 0.5,
+            "balanced": {
+                "temperature": 0.7,
+                "max_output_tokens": 700,
+                "top_p": 1.0,
+                "reasoning_effort": "minimal",
             },
-            "low": {
-                "temperature": 0.5,
-                "max_tokens": 512,
-                "top_p": 0.25,
-                "frequency_penalty": 0.25,
-                "presence_penalty": 0.075,
-            },
-            "good": {
-                "temperature": 1.2,
-                "max_tokens": 768,
-                "top_p": 0.333,
-                "frequency_penalty": 1.2,
-                "presence_penalty": 0.333,
+            "judge": {
+                "temperature": 0.2,
+                "max_output_tokens": 1000,
+                "top_p": 1.0,
+                "reasoning_effort": "medium",
             },
         }
     )
@@ -240,20 +297,21 @@ class Config:
         "smiles": [
             {
                 "role": "system",
-                "content": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a customized LLM/GPT chatbot, fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in his 13thC CE compilation, the 'Gateless Gate'. Now, centuries later, here you are holding a Dokusan session with the students; focused on the koan each is working on, and on what barriers to it each is focused. The student will now enter.",
+                "content": (
+                    "You are Mumonbot, a disciplined Zen teacher voice shaped by "
+                    "the Mumonkan and related Zen training records. Speak with "
+                    "clarity, brevity, and grounded koan attention. Avoid modern "
+                    "AI meta-commentary unless directly asked."
+                ),
             },
             {"role": "user", "content": "(student enters, bows, sits)"},
-            {"role": "assistant", "content": "What brings you here?"}, # was "(smiles)"
+            {"role": "assistant", "content": "(smiles)"},
         ]
     }
 
-    def __post_init__(self):
-        """Finalize derived config after dataclass field initialization.
+    def __post_init__(self) -> None:
+        """Finalize derived config after dataclass field initialization."""
 
-        Side effects:
-        - resolves secrets from Secret Manager and environment fallback sources
-        """
-        # Resolve secrets from Secret Manager first, then env fallback.
         self.OPENAI_API_KEY = self._resolve_secret(
             self.OPENAI_API_KEY_SECRET_NAME, self.OPENAI_API_KEY
         )
@@ -264,17 +322,55 @@ class Config:
             self.ACTION_API_TOKEN_SECRET_NAME, self.ACTION_API_TOKEN
         )
 
+        if not self.HOT_STATE_BACKEND:
+            self.HOT_STATE_BACKEND = "redis" if self.REDIS_URL else "firestore"
+
+        if self.MODEL_NAME not in self.MODELS_IN_USE:
+            self.MODEL_NAME = self.OPENAI_LIVE_MODEL
+
     def _resolve_secret(self, secret_name: str, fallback: str) -> str:
         """Resolve one secret with Secret Manager first and env fallback second."""
+
         value = _read_secret(self.GOOGLE_CLOUD_PROJECT, secret_name)
         return value or _sanitize_secret(fallback)
+
+    @staticmethod
+    def _supports_reasoning(model_name: str) -> bool:
+        """Return whether a model name plausibly accepts reasoning options."""
+
+        prefixes = ("gpt-5", "o1", "o3", "o4")
+        return model_name.startswith(prefixes)
 
     def make_params(
         self, profile: str, model_name: str | None = None
     ) -> Dict[str, Any]:
-        """Build a chat-completions parameter dict for a named profile."""
-        params = self._PARAM_BASE.copy()
-        params.update(self.MODEL_ARGS.get(profile, {}))
-        selected_name = model_name or self.MODEL_NAME
-        params["model"] = self.MODELS_IN_USE.get(selected_name, selected_name)
+        """Build a Responses-API parameter dict for a named profile."""
+
+        selected_name = model_name or self.MODEL_NAME or self.OPENAI_LIVE_MODEL
+        resolved_model = self.MODELS_IN_USE.get(selected_name, selected_name)
+        profile_config = self.MODEL_ARGS.get(
+            profile, self.MODEL_ARGS.get(self.DEFAULT_RESPONSE_PROFILE, {})
+        )
+
+        params: Dict[str, Any] = {
+            "model": resolved_model,
+            "store": True,
+            "truncation": "auto",
+        }
+        if "temperature" in profile_config:
+            params["temperature"] = profile_config["temperature"]
+        if "max_output_tokens" in profile_config:
+            params["max_output_tokens"] = profile_config["max_output_tokens"]
+        if "top_p" in profile_config:
+            params["top_p"] = profile_config["top_p"]
+
+        effort = str(
+            profile_config.get("reasoning_effort", self.OPENAI_REASONING_EFFORT)
+        ).strip()
+        if effort and self._supports_reasoning(resolved_model):
+            params["reasoning"] = {
+                "effort": effort,
+                "summary": self.OPENAI_REASONING_SUMMARY,
+            }
+
         return params

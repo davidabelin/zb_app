@@ -1,12 +1,12 @@
 """Utility layer for conversation state, model calls, storage, and memory data.
 
-This module sits under ``main.py`` and carries most of the app's operational
-logic. It owns:
+This module sits under ``main.py`` and carries most of the application's
+operational logic. It owns:
 
-- conversation lifecycle and Firestore persistence
+- conversation lifecycle and hot-state persistence
 - koan/case loading from ``static/mmnk.json``
-- randomized model/profile selection
-- OpenAI chat completion and streaming adapters
+- deterministic model/profile selection for the v3 runtime
+- OpenAI Responses API adapters, prompt caching, and tool orchestration
 - chat transcript archiving in local files or Google Cloud Storage
 - memory-logbook normalization, indexing, and persistence
 
@@ -20,18 +20,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 import logging
-import os
 import random as rnd
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Generator, Iterable, Optional
+from typing import Any, Callable, Generator, Iterable, Optional
 
 from flask import request
+from pydantic import BaseModel, ValidationError
 
 from config import Config
+from contracts import (
+    ArchiveSessionArgs,
+    EnqueueReviewArgs,
+    LoadCaseContextArgs,
+    LoadMemoryEntryArgs,
+    LoadMemorySummariesArgs,
+    ToolCallResult,
+    ReportUiStatusArgs,
+    SaveMemoryCandidateArgs,
+    SearchExemplarsArgs,
+)
 from models import MODEL_LOSSES
 
 # Optional cloud dependencies.
@@ -45,12 +57,21 @@ try:
 except Exception:
     storage = None
 
+OpenAIClient: Any = None
 try:
-    import openai
-    from openai import OpenAI
+    from openai import OpenAI as _OpenAIClient
+
+    OpenAIClient = _OpenAIClient
 except Exception:
-    openai = None
-    OpenAI = None
+    OpenAIClient = None
+
+RedisClient: Any = None
+try:
+    from redis import Redis as _RedisClient  # type: ignore[import]
+
+    RedisClient = _RedisClient
+except Exception:
+    RedisClient = None
 
 
 class ModelAPIError(Exception):
@@ -61,7 +82,9 @@ config = Config()
 logging.basicConfig(level=config.LOG_LEVEL)
 
 BOTLING = (
-    OpenAI(api_key=config.OPENAI_API_KEY) if OpenAI and config.OPENAI_API_KEY else None
+    OpenAIClient(api_key=config.OPENAI_API_KEY)
+    if OpenAIClient is not None and config.OPENAI_API_KEY
+    else None
 )
 
 DB = None
@@ -80,11 +103,26 @@ if storage is not None:
     except Exception as e:
         logging.warning("Cloud Storage disabled: %s", e)
 
-# Local fallback cache used when Firestore is unavailable.
+REDIS = None
+if RedisClient is not None and config.REDIS_URL:
+    try:
+        REDIS = RedisClient.from_url(config.REDIS_URL, decode_responses=True)
+        REDIS.ping()
+    except Exception as e:
+        REDIS = None
+        logging.warning("Redis hot-state backend disabled: %s", e)
+
+# Local fallback cache used when Redis/Firestore are unavailable.
 _LOCAL_CONVERSATIONS: dict[str, dict[str, Any]] = {}
 
 MEMORY_LOGBOOK = config.MEMORY_LOGBOOK
 _LOCAL_LOGBOOK_PATH = Path(__file__).resolve().parent / "config" / MEMORY_LOGBOOK
+_LOCAL_MEMORY_CANDIDATE_PATH = (
+    Path(__file__).resolve().parent / "config" / "memory_candidates.jsonl"
+)
+_LOCAL_REVIEW_REQUESTS_PATH = (
+    Path(__file__).resolve().parent / "config" / "review_requests.jsonl"
+)
 
 
 @dataclass(frozen=True)
@@ -101,10 +139,45 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _conversation_store_key(conversation_id: str) -> str:
+    """Return the canonical hot-state key for one live conversation."""
+
+    return f"conversation:{conversation_id}"
+
+
+def _write_jsonl_record(blob_name: str, record: dict[str, Any], local_path: Path) -> None:
+    """Append one JSON record to GCS or a local JSONL fallback file."""
+
+    payload = json.dumps(record, ensure_ascii=False, default=str) + "\n"
+    if BUCKET:
+        blob = BUCKET.blob(blob_name)
+        existing = ""
+        if blob.exists():
+            existing = blob.download_as_text()
+        blob.upload_from_string(existing + payload, content_type="application/jsonl")
+        return
+
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    with local_path.open("a", encoding="utf-8") as handle:
+        handle.write(payload)
+
+
+def _hash_identifier(value: str) -> str:
+    """Return a short stable hash for OpenAI safety and cache identifiers."""
+
+    text = value.strip() or "anon"
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
 def _choose_session_profile() -> dict[str, Any]:
-    """Select a random model/profile pair for a new conversation."""
-    model_key = rnd.choice(list(config.MODELS_IN_USE.keys()))
-    profile = rnd.choice(list(config.MODEL_ARGS.keys()))
+    """Select the deterministic model/profile pair for a new conversation."""
+
+    model_key = config.MODEL_NAME
+    if model_key not in config.MODELS_IN_USE:
+        model_key = next(iter(config.MODELS_IN_USE), config.OPENAI_LIVE_MODEL)
+    profile = config.DEFAULT_RESPONSE_PROFILE
+    if profile not in config.MODEL_ARGS:
+        profile = next(iter(config.MODEL_ARGS), "live")
     params = config.make_params(profile, model_name=model_key)
     return {
         "model_name": model_key,
@@ -122,6 +195,8 @@ def _normalize_conversation_metadata(metadata: dict[str, Any]) -> dict[str, Any]
     normalized = dict(metadata)
     model_name = str(normalized.get("model_name", "")).strip()
     profile_name = str(normalized.get("profile", "")).strip()
+    normalized.setdefault("last_response_id", "")
+    normalized.setdefault("provider", "responses_api")
 
     if model_name not in config.MODELS_IN_USE:
         refreshed = _choose_session_profile()
@@ -185,6 +260,8 @@ def _build_metadata(
         "profile": profile["profile"],
         "training_loss": profile["training_loss"],
         "params": profile["params"],
+        "provider": "responses_api",
+        "last_response_id": "",
         "created_at": _utc_now(),
         "updated_at": _utc_now(),
     }
@@ -211,13 +288,24 @@ def save_messages_to_firestore(
     messages: list[dict[str, str]],
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Persist live conversation state to Firestore or the local fallback cache."""
+    """Persist live conversation state to Redis, Firestore, or the local cache."""
     payload = {
         "conversation_id": conversation_id,
         "messages": messages,
         "metadata": metadata or {},
         "updated_at": _utc_now(),
     }
+
+    if REDIS is not None and config.HOT_STATE_BACKEND == "redis":
+        try:
+            REDIS.setex(
+                _conversation_store_key(conversation_id),
+                config.SESSION_TTL_SECONDS,
+                json.dumps(payload, ensure_ascii=False, default=str),
+            )
+            return
+        except Exception as e:
+            logging.warning("Redis save failed for %s: %s", conversation_id, e)
 
     if DB is None:
         existing = _LOCAL_CONVERSATIONS.get(conversation_id, {})
@@ -243,6 +331,17 @@ def get_conversation_state(
     """Load live conversation messages and metadata for one conversation ID."""
     if not conversation_id:
         return config.START_CHATS["smiles"].copy(), {}
+
+    if REDIS is not None and config.HOT_STATE_BACKEND == "redis":
+        try:
+            payload = REDIS.get(_conversation_store_key(conversation_id))
+            if payload:
+                parsed = json.loads(payload)
+                return parsed.get("messages", []), _normalize_conversation_metadata(
+                    parsed.get("metadata", {})
+                )
+        except Exception as e:
+            logging.warning("Redis load failed for %s: %s", conversation_id, e)
 
     if DB is None:
         payload = _LOCAL_CONVERSATIONS.get(conversation_id)
@@ -280,9 +379,15 @@ def get_conversation_metadata(conversation_id: str) -> dict[str, Any]:
 
 
 def delete_messages_from_firestore(conversation_id: str) -> None:
-    """Delete one live conversation record from Firestore or local cache."""
+    """Delete one live conversation record from Redis, Firestore, or local cache."""
     if not conversation_id:
         return
+
+    if REDIS is not None and config.HOT_STATE_BACKEND == "redis":
+        try:
+            REDIS.delete(_conversation_store_key(conversation_id))
+        except Exception as e:
+            logging.warning("Redis delete failed for %s: %s", conversation_id, e)
 
     if DB is None:
         _LOCAL_CONVERSATIONS.pop(conversation_id, None)
@@ -403,37 +508,586 @@ def get_or_init_params(metadata: dict[str, Any]) -> dict[str, Any]:
 
 def _get_openai_client():
     """Return the lazily initialized OpenAI client or raise a model error."""
-    if BOTLING is None or openai is None:
+    if BOTLING is None:
         raise ModelAPIError(
             "OpenAI client unavailable. Install `openai` and set OPENAI_API_KEY."
         )
     return BOTLING
 
 
+def _strict_json_schema(model_cls: type[BaseModel]) -> dict[str, Any]:
+    """Return a strict JSON schema suitable for OpenAI function tools."""
+
+    schema = model_cls.model_json_schema()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                node.setdefault("additionalProperties", False)
+            for value in node.values():
+                walk(value)
+            return
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(schema)
+    return schema
+
+
+def _response_function_tools() -> list[dict[str, Any]]:
+    """Return strict Zenbot function-tool definitions for sync response turns."""
+
+    return [
+        {
+            "type": "function",
+            "name": "load_case_context",
+            "description": (
+                "Load exact Mumonkan case text and optional commentary for one case."
+            ),
+            "parameters": _strict_json_schema(LoadCaseContextArgs),
+            "strict": True,
+        },
+        {
+            "type": "function",
+            "name": "search_exemplars",
+            "description": (
+                "Search reviewer-approved exemplar session snippets relevant to the prompt."
+            ),
+            "parameters": _strict_json_schema(SearchExemplarsArgs),
+            "strict": True,
+        },
+        {
+            "type": "function",
+            "name": "load_memory_summaries",
+            "description": (
+                "Load compact newest-first memory summaries before choosing one full entry."
+            ),
+            "parameters": _strict_json_schema(LoadMemorySummariesArgs),
+            "strict": True,
+        },
+        {
+            "type": "function",
+            "name": "load_memory_entry",
+            "description": "Load one full memory entry by serial number.",
+            "parameters": _strict_json_schema(LoadMemoryEntryArgs),
+            "strict": True,
+        },
+        {
+            "type": "function",
+            "name": "save_memory_candidate",
+            "description": "Queue one structured memory candidate for later review.",
+            "parameters": _strict_json_schema(SaveMemoryCandidateArgs),
+            "strict": True,
+        },
+        {
+            "type": "function",
+            "name": "archive_session",
+            "description": "Archive a live conversation and remove it from hot state.",
+            "parameters": _strict_json_schema(ArchiveSessionArgs),
+            "strict": True,
+        },
+        {
+            "type": "function",
+            "name": "enqueue_review",
+            "description": "Queue a follow-up review request for a conversation.",
+            "parameters": _strict_json_schema(EnqueueReviewArgs),
+            "strict": True,
+        },
+        {
+            "type": "function",
+            "name": "report_ui_status",
+            "description": "Emit a lightweight UI/runtime status event for operators.",
+            "parameters": _strict_json_schema(ReportUiStatusArgs),
+            "strict": True,
+        },
+    ]
+
+
+def _response_builtin_tools(allow_web_search: bool) -> list[dict[str, Any]]:
+    """Return built-in Responses tools enabled for the current request."""
+
+    tools: list[dict[str, Any]] = []
+
+    if config.OPENAI_ENABLE_FILE_SEARCH and config.OPENAI_VECTOR_STORE_IDS:
+        tools.append(
+            {
+                "type": "file_search",
+                "vector_store_ids": config.OPENAI_VECTOR_STORE_IDS,
+                "max_num_results": 4,
+            }
+        )
+
+    if allow_web_search and config.OPENAI_ENABLE_WEB_SEARCH:
+        tools.append({"type": "web_search", "search_context_size": "medium"})
+
+    return tools
+
+
+def response_tool_definitions(include_web_search: bool = False) -> list[dict[str, Any]]:
+    """Expose the full Zenbot v3 tool catalog for scripts and schema generation."""
+
+    return _response_builtin_tools(include_web_search) + _response_function_tools()
+
+
+def _response_tools_for_mode(mode: str, allow_web_search: bool = False) -> list[dict[str, Any]]:
+    """Return the tool set appropriate for one request mode."""
+
+    tools = _response_builtin_tools(allow_web_search)
+    if mode == "sync" and config.OPENAI_ENABLE_FUNCTION_TOOLS:
+        tools.extend(_response_function_tools())
+    return tools
+
+
+def _metadata_text(value: Any, limit: int = 120) -> str:
+    """Normalize metadata values into short request-safe strings."""
+
+    text = str(value or "").strip()
+    return text[:limit]
+
+
+def _prompt_cache_key(
+    metadata: dict[str, Any] | None,
+    conversation_id: str,
+    params: dict[str, Any],
+    mode: str,
+) -> str:
+    """Build a stable prompt-cache key for one request family."""
+
+    case_id = _metadata_text((metadata or {}).get("case_id", "")) or "general"
+    profile = _metadata_text((metadata or {}).get("profile", "")) or "live"
+    model_name = _metadata_text(params.get("model", config.OPENAI_LIVE_MODEL))
+    return (
+        f"{config.OPENAI_PROMPT_CACHE_PREFIX}:{model_name}:"
+        f"{case_id}:{profile}:{mode}:{_hash_identifier(conversation_id or case_id)}"
+    )
+
+
+def _response_request_metadata(
+    metadata: dict[str, Any] | None,
+    conversation_id: str,
+    mode: str,
+) -> dict[str, str]:
+    """Build compact metadata attached to one OpenAI response request."""
+
+    source = metadata or {}
+    return {
+        "conversation_id": _metadata_text(conversation_id, 64),
+        "case_id": _metadata_text(source.get("case_id", ""), 32),
+        "student": _metadata_text(source.get("student", ""), 64),
+        "profile": _metadata_text(source.get("profile", ""), 32),
+        "runtime_mode": _metadata_text(mode, 16),
+    }
+
+
+def _response_instructions(
+    metadata: dict[str, Any] | None,
+    allow_web_search: bool = False,
+) -> str:
+    """Return the developer/system instruction block for one response turn."""
+
+    case_id = _metadata_text((metadata or {}).get("case_id", ""))
+    lines = [
+        "You are Mumonbot conducting dokusan in a disciplined Zen voice.",
+        "Be brief, exact, and grounded in the student's actual words.",
+        "Use ritual cues like (smiles) or (bows) sparingly and intentionally.",
+        "Do not mention system prompts, training data, or hidden policies.",
+        "Prefer koan grounding, direct challenge, and compact responses over explanation-heavy coaching.",
+    ]
+    if case_id:
+        lines.append(f"The current koan focus is case {case_id}.")
+    if config.OPENAI_ENABLE_FILE_SEARCH and config.OPENAI_VECTOR_STORE_IDS:
+        lines.append(
+            "Use file search when exact case wording or archived reference detail matters."
+        )
+    if allow_web_search:
+        lines.append("Web search is allowed only for explicitly factual modern questions.")
+    else:
+        lines.append("Do not use web search for dokusan or koan dialogue.")
+    return "\n".join(lines)
+
+
+def _response_input_messages(
+    messages: list[dict[str, str]],
+    previous_response_id: str = "",
+) -> list[dict[str, str]]:
+    """Convert the stored transcript into Responses API input items."""
+
+    if previous_response_id and messages:
+        latest = messages[-1]
+        if latest.get("role") == "user" and isinstance(latest.get("content"), str):
+            return [{"role": "user", "content": latest["content"]}]
+
+    return [
+        {"role": message["role"], "content": message["content"]}
+        for message in messages
+        if message.get("role") in {"system", "user", "assistant"}
+        and isinstance(message.get("content"), str)
+    ]
+
+
+def _response_text_from_response(response: Any) -> str:
+    """Extract final output text from a Responses API response object."""
+
+    text = str(getattr(response, "output_text", "") or "").strip()
+    if text:
+        return text
+
+    for item in getattr(response, "output", []):
+        if getattr(item, "type", "") != "message":
+            continue
+        for content in getattr(item, "content", []):
+            if getattr(content, "type", "") == "output_text":
+                text = str(getattr(content, "text", "") or "").strip()
+                if text:
+                    return text
+    return ""
+
+
+def _candidate_previous_response_id(
+    metadata: dict[str, Any] | None,
+    messages: list[dict[str, str]],
+) -> str:
+    """Return the previous Responses API response ID if it is safe to reuse."""
+
+    if not metadata or not messages:
+        return ""
+    previous_response_id = str(metadata.get("last_response_id", "")).strip()
+    if not previous_response_id:
+        return ""
+    latest = messages[-1]
+    if latest.get("role") != "user":
+        return ""
+    return previous_response_id
+
+
+def _load_case_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Load one koan case payload for function-tool execution."""
+
+    args = LoadCaseContextArgs.model_validate(arguments)
+    koan = get_mmnk_case(args.case_id)
+    if not koan:
+        return {"status": "not_found", "case_id": args.case_id}
+
+    payload = {
+        "status": "success",
+        "case_id": str(koan.get("id", "")),
+        "title": str(koan.get("title", "")),
+        "body": str(koan.get("body", "")),
+    }
+    if args.include_commentary:
+        payload["comment"] = str(koan.get("comment", ""))
+        payload["verse"] = koan.get("verse", [])
+    return payload
+
+
+def _excerpt_messages(messages: list[dict[str, Any]], limit: int = 280) -> str:
+    """Build a compact transcript excerpt for tool outputs."""
+
+    parts = []
+    for message in messages[:4]:
+        role = str(message.get("role", "")).strip()
+        content = " ".join(str(message.get("content", "")).split())
+        if not role or not content:
+            continue
+        parts.append(f"{role}: {content}")
+    text = " | ".join(parts)
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _search_exemplars_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Search accepted transcripts for exemplar snippets relevant to a query."""
+
+    args = SearchExemplarsArgs.model_validate(arguments)
+    tokens = [token for token in args.query.lower().split() if len(token) > 2]
+    if not tokens:
+        return {"status": "empty_query", "results": []}
+
+    try:
+        import session_reviews
+
+        rows = session_reviews.load_review_state()
+    except Exception as exc:
+        logging.warning("search_exemplars unavailable: %s", exc)
+        return {"status": "unavailable", "results": []}
+
+    ranked: list[tuple[int, dict[str, Any]]] = []
+    for index, row in enumerate(rows):
+        if str(row.get("evaluation", "")).strip() != "Use":
+            continue
+        if args.case_id and str(row.get("case_id", "")).strip() != args.case_id:
+            continue
+        haystack = " ".join(
+            [
+                str(row.get("preview_user", "")),
+                str(row.get("preview_assistant", "")),
+                str(row.get("case_id", "")),
+            ]
+        ).lower()
+        score = sum(1 for token in tokens if token in haystack)
+        if score <= 0:
+            continue
+        try:
+            record = session_reviews.serialize_record(rows, index)
+        except Exception:
+            continue
+        ranked.append(
+            (
+                score,
+                {
+                    "conversation_id": record["metadata"]["conversation_id"],
+                    "case_id": record["metadata"].get("case_id", ""),
+                    "score": score,
+                    "preview_user": record.get("preview_user", ""),
+                    "preview_assistant": record.get("preview_assistant", ""),
+                    "excerpt": _excerpt_messages(record.get("messages", [])),
+                },
+            )
+        )
+
+    ranked.sort(key=lambda item: (-item[0], item[1]["conversation_id"]))
+    return {"status": "success", "results": [item[1] for item in ranked[: args.limit]]}
+
+
+def _load_memory_summaries_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Load compact memory summaries for tool-driven retrieval."""
+
+    args = LoadMemorySummariesArgs.model_validate(arguments)
+    summaries, total_count = load_memory_logbook_summaries(limit=args.limit)
+    return {
+        "status": "success" if summaries else "empty",
+        "summaries": summaries,
+        "returned_count": len(summaries),
+        "total_count": total_count,
+    }
+
+
+def _load_memory_entry_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Load one canonical memory entry for tool-driven retrieval."""
+
+    args = LoadMemoryEntryArgs.model_validate(arguments)
+    entry = get_memory_logbook_entry(args.serial_number)
+    if not entry:
+        return {"status": "not_found", "serial_number": args.serial_number, "memory": None}
+    return {
+        "status": "success",
+        "serial_number": args.serial_number,
+        "memory": entry,
+    }
+
+
+def _save_memory_candidate_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Queue a memory candidate rather than mutating the canonical logbook inline."""
+
+    args = SaveMemoryCandidateArgs.model_validate(arguments)
+    payload = {
+        "queued_at": _utc_now(),
+        "entry": args.entry.model_dump(mode="json"),
+    }
+    _write_jsonl_record(
+        config.MEMORY_CANDIDATE_QUEUE, payload, _LOCAL_MEMORY_CANDIDATE_PATH
+    )
+    return {
+        "status": "queued",
+        "serial_number": args.entry.serial_number,
+        "title": args.entry.title,
+    }
+
+
+def _archive_session_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Archive one live session through the same path as the public save endpoint."""
+
+    args = ArchiveSessionArgs.model_validate(arguments)
+    messages, metadata = get_conversation_state(args.conversation_id)
+    if not messages:
+        return {"status": "not_found", "conversation_id": args.conversation_id}
+
+    import session_reviews
+
+    params = {
+        "conversation_id": args.conversation_id,
+        "student": metadata.get("student", "tool"),
+        "case_id": metadata.get("case_id", ""),
+        "model": metadata.get("model_name", ""),
+        "profile": metadata.get("profile", ""),
+        "loss": metadata.get("training_loss", 0.0),
+        "saved_at": _utc_now(),
+    }
+    blob_name = f"{session_reviews.TRANSCRIPTS_PREFIX}{args.conversation_id}.jsonl"
+    save_chat_to_bucket(messages, params, blob_name)
+    session_reviews.upsert_review_record_from_session(args.conversation_id, messages, params)
+    delete_messages_from_firestore(args.conversation_id)
+    return {
+        "status": "archived",
+        "conversation_id": args.conversation_id,
+        "blob_name": blob_name,
+    }
+
+
+def _enqueue_review_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Queue one review follow-up request for operators."""
+
+    args = EnqueueReviewArgs.model_validate(arguments)
+    payload = {
+        "queued_at": _utc_now(),
+        "conversation_id": args.conversation_id,
+        "reviewer": args.reviewer,
+        "note": args.note,
+    }
+    _write_jsonl_record(config.REVIEW_REQUESTS_BLOB, payload, _LOCAL_REVIEW_REQUESTS_PATH)
+    return {"status": "queued", **payload}
+
+
+def _report_ui_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Log one UI/runtime status event."""
+
+    args = ReportUiStatusArgs.model_validate(arguments)
+    logging.info("ui_status stage=%s detail=%s", args.stage, args.detail)
+    return {"status": "reported", "stage": args.stage, "detail": args.detail}
+
+
+def _dispatch_function_tool(
+    name: str,
+    raw_arguments: str,
+) -> dict[str, Any]:
+    """Execute one model-requested function tool and return a structured result."""
+
+    try:
+        arguments = json.loads(raw_arguments or "{}")
+    except json.JSONDecodeError as exc:
+        result = ToolCallResult(
+            name=name,
+            ok=False,
+            payload={"error": "invalid_json_arguments", "details": str(exc)},
+        )
+        return result.model_dump(mode="json")
+
+    handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+        "load_case_context": _load_case_context_tool,
+        "search_exemplars": _search_exemplars_tool,
+        "load_memory_summaries": _load_memory_summaries_tool,
+        "load_memory_entry": _load_memory_entry_tool,
+        "save_memory_candidate": _save_memory_candidate_tool,
+        "archive_session": _archive_session_tool,
+        "enqueue_review": _enqueue_review_tool,
+        "report_ui_status": _report_ui_status_tool,
+    }
+    handler = handlers.get(name)
+    if handler is None:
+        result = ToolCallResult(
+            name=name,
+            ok=False,
+            payload={"error": "unsupported_tool"},
+        )
+        return result.model_dump(mode="json")
+
+    try:
+        payload = handler(arguments)
+        result = ToolCallResult(name=name, ok=True, payload=payload)
+    except ValidationError as exc:
+        result = ToolCallResult(
+            name=name,
+            ok=False,
+            payload={"error": "validation_error", "details": exc.errors()},
+        )
+    except Exception as exc:
+        logging.exception("Function tool '%s' failed", name)
+        result = ToolCallResult(
+            name=name,
+            ok=False,
+            payload={"error": "tool_execution_failed", "details": str(exc)},
+        )
+    return result.model_dump(mode="json")
+
+
+def _response_request_kwargs(
+    messages: list[dict[str, str]],
+    params: dict[str, Any],
+    metadata: dict[str, Any] | None,
+    conversation_id: str,
+    mode: str,
+    allow_web_search: bool = False,
+    previous_response_id: str = "",
+    input_override: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build one Responses API request payload from the current session state."""
+
+    request_kwargs: dict[str, Any] = {
+        **params,
+        "input": input_override or _response_input_messages(messages, previous_response_id),
+        "instructions": _response_instructions(metadata, allow_web_search=allow_web_search),
+        "prompt_cache_key": _prompt_cache_key(metadata, conversation_id, params, mode),
+        "prompt_cache_retention": config.OPENAI_PROMPT_CACHE_RETENTION,
+        "metadata": _response_request_metadata(metadata, conversation_id, mode),
+        "parallel_tool_calls": False,
+        "safety_identifier": _hash_identifier(
+            str((metadata or {}).get("student", conversation_id or "anon"))
+        ),
+    }
+    tools = _response_tools_for_mode(mode, allow_web_search=allow_web_search)
+    if tools:
+        request_kwargs["tools"] = tools
+        request_kwargs["max_tool_calls"] = 6
+    if previous_response_id:
+        request_kwargs["previous_response_id"] = previous_response_id
+    return request_kwargs
+
+
 def get_model_stream(
     messages: list[dict[str, str]],
     params: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+    conversation_id: str = "",
 ) -> Generator[str, None, None]:
-    """Yield a streamed assistant reply from OpenAI with a small retry budget."""
+    """Yield a streamed assistant reply from the OpenAI Responses API."""
+
     client = _get_openai_client()
     max_attempts = 2
     for attempt in range(1, max_attempts + 1):
         produced_output = False
         try:
-            stream = client.chat.completions.create(
-                messages=messages, stream=True, **params
-            )
-            for chunk in stream:
-                text = chunk.choices[0].delta.content
-                if text:
-                    produced_output = True
-                    yield text
+            previous_response_id = _candidate_previous_response_id(metadata, messages)
+            with client.responses.stream(
+                **_response_request_kwargs(
+                    messages,
+                    params,
+                    metadata,
+                    conversation_id,
+                    mode="stream",
+                    previous_response_id=previous_response_id,
+                )
+            ) as stream:
+                for event in stream:
+                    if getattr(event, "type", "") != "response.output_text.delta":
+                        continue
+                    text = str(getattr(event, "delta", "") or "")
+                    if text:
+                        produced_output = True
+                        yield text
+
+                response = stream.get_final_response()
+                response_text = _response_text_from_response(response)
+                if metadata is not None:
+                    metadata["last_response_id"] = str(getattr(response, "id", "") or "")
+                    metadata["provider"] = "responses_api"
+                if response_text and not produced_output:
+                    yield response_text
+                if not response_text and not produced_output:
+                    raise ModelAPIError("No model response received.")
             return
         except Exception as e:
             is_last = attempt >= max_attempts
+            if (
+                "previous_response_id" in str(e).lower()
+                and metadata is not None
+                and metadata.get("last_response_id")
+            ):
+                metadata["last_response_id"] = ""
             if not produced_output and not is_last:
                 logging.warning(
-                    "OpenAI streaming attempt %s/%s failed before first token: %s",
+                    "Responses streaming attempt %s/%s failed before first token: %s",
                     attempt,
                     max_attempts,
                     e,
@@ -444,21 +1098,90 @@ def get_model_stream(
             raise ModelAPIError(str(e))
 
 
-def get_model_reply(messages: list[dict[str, str]], params: dict[str, Any]) -> str:
-    """Return a full assistant reply from OpenAI with retry-once behavior."""
+def get_model_reply(
+    messages: list[dict[str, str]],
+    params: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+    conversation_id: str = "",
+    allow_web_search: bool = False,
+) -> str:
+    """Return a full assistant reply from the Responses API with tool handling."""
+
     client = _get_openai_client()
     max_attempts = 2
     for attempt in range(1, max_attempts + 1):
         try:
-            completion = client.chat.completions.create(messages=messages, **params)
-            content = completion.choices[0].message.content
+            previous_response_id = _candidate_previous_response_id(metadata, messages)
+            response = client.responses.create(
+                **_response_request_kwargs(
+                    messages,
+                    params,
+                    metadata,
+                    conversation_id,
+                    mode="sync",
+                    allow_web_search=allow_web_search,
+                    previous_response_id=previous_response_id,
+                )
+            )
+
+            tool_hops = 0
+            while True:
+                function_calls = [
+                    item
+                    for item in getattr(response, "output", [])
+                    if getattr(item, "type", "") == "function_call"
+                ]
+                if not function_calls:
+                    break
+                if tool_hops >= 4:
+                    raise ModelAPIError("Tool-call budget exceeded before final response.")
+
+                outputs = [
+                    {
+                        "type": "function_call_output",
+                        "call_id": str(call.call_id),
+                        "output": json.dumps(
+                            _dispatch_function_tool(
+                                str(getattr(call, "name", "")),
+                                str(getattr(call, "arguments", "") or "{}"),
+                            ),
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                    }
+                    for call in function_calls
+                ]
+                response = client.responses.create(
+                    **_response_request_kwargs(
+                        messages,
+                        params,
+                        metadata,
+                        conversation_id,
+                        mode="sync",
+                        allow_web_search=allow_web_search,
+                        previous_response_id=str(getattr(response, "id", "") or ""),
+                        input_override=outputs,
+                    )
+                )
+                tool_hops += 1
+
+            content = _response_text_from_response(response)
+            if metadata is not None:
+                metadata["last_response_id"] = str(getattr(response, "id", "") or "")
+                metadata["provider"] = "responses_api"
             if content:
                 return content
             raise ModelAPIError("No model response received.")
         except Exception as e:
+            if (
+                "previous_response_id" in str(e).lower()
+                and metadata is not None
+                and metadata.get("last_response_id")
+            ):
+                metadata["last_response_id"] = ""
             if attempt < max_attempts:
                 logging.warning(
-                    "OpenAI reply attempt %s/%s failed: %s",
+                    "Responses reply attempt %s/%s failed: %s",
                     attempt,
                     max_attempts,
                     e,
@@ -474,10 +1197,19 @@ def prompt_and_reply(
     messages: list[dict[str, str]],
     prompt: str,
     params: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+    conversation_id: str = "",
+    allow_web_search: bool = False,
 ) -> list[dict[str, str]]:
     """Append a user prompt, fetch a reply, and mutate the message list in place."""
     messages.append({"role": "user", "content": prompt})
-    reply = get_model_reply(messages, params)
+    reply = get_model_reply(
+        messages,
+        params,
+        metadata=metadata,
+        conversation_id=conversation_id,
+        allow_web_search=allow_web_search,
+    )
     messages.append({"role": "assistant", "content": reply})
     return messages
 
@@ -496,6 +1228,8 @@ def friendly_model_error_message(raw_error: str) -> str:
         return "OpenAI rate limit reached. Please retry shortly."
     if "authentication" in text or "invalid_api_key" in text:
         return "OpenAI API key rejected. Check the configured key."
+    if "previous_response_id" in text:
+        return "Session context expired. Please retry the turn."
     return "No model response received. Please retry."
 
 
@@ -504,8 +1238,9 @@ def prompt_and_stream(
     prompt: str,
     params: dict[str, Any],
     conversation_id: str,
+    metadata: dict[str, Any] | None = None,
 ) -> Generator[str, None, None]:
-    """Stream one assistant turn as SSE events with fallback-to-full-reply logic."""
+    """Stream one assistant turn as SSE events with Responses API fallback logic."""
     if not isinstance(prompt, str) or len(prompt) > 2048:
         raise ModelAPIError("Invalid input prompt")
 
@@ -519,7 +1254,12 @@ def prompt_and_stream(
     first_token_time = None
     stream_error = None
     try:
-        for chunk in get_model_stream(messages, params):
+        for chunk in get_model_stream(
+            messages,
+            params,
+            metadata=metadata,
+            conversation_id=conversation_id,
+        ):
             if first_token_time is None:
                 first_token_time = time.perf_counter()
                 logging.info(
@@ -542,7 +1282,12 @@ def prompt_and_stream(
         )
         if not full_reply:
             try:
-                fallback_reply = get_model_reply(messages, params)
+                fallback_reply = get_model_reply(
+                    messages,
+                    params,
+                    metadata=metadata,
+                    conversation_id=conversation_id,
+                )
                 if isinstance(fallback_reply, str) and fallback_reply:
                     full_reply = fallback_reply
                     yield _sse({"event": "fallback", "response": fallback_reply})
@@ -572,6 +1317,100 @@ def prompt_and_stream(
         len(full_reply),
     )
     yield _sse({"response": "[DONE]"})
+
+
+def submit_background_session_critic(
+    messages: list[dict[str, Any]],
+    metadata: dict[str, Any],
+    conversation_id: str,
+) -> str:
+    """Submit a non-blocking session critic request via Responses background mode."""
+
+    if not config.OPENAI_ENABLE_BACKGROUND_CRITIC:
+        return ""
+
+    try:
+        client = _get_openai_client()
+    except ModelAPIError:
+        return ""
+
+    critic_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "style_drift": {"type": "integer", "minimum": 1, "maximum": 5},
+            "koan_grounding": {"type": "integer", "minimum": 1, "maximum": 5},
+            "ritual_correctness": {"type": "integer", "minimum": 1, "maximum": 5},
+            "meta_leakage": {"type": "integer", "minimum": 1, "maximum": 5},
+            "notes": {"type": "string"},
+        },
+        "required": [
+            "style_drift",
+            "koan_grounding",
+            "ritual_correctness",
+            "meta_leakage",
+            "notes",
+        ],
+    }
+    transcript_excerpt = _excerpt_messages(messages, limit=1200)
+
+    try:
+        response = client.responses.create(
+            model=config.OPENAI_JUDGE_MODEL,
+            background=True,
+            store=True,
+            instructions=(
+                "Evaluate this Zen session for style drift, koan grounding, ritual "
+                "correctness, and meta-AI leakage. Score conservatively."
+            ),
+            input=[
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "conversation_id": conversation_id,
+                            "case_id": metadata.get("case_id", ""),
+                            "profile": metadata.get("profile", ""),
+                            "transcript_excerpt": transcript_excerpt,
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "session_critic",
+                    "schema": critic_schema,
+                    "strict": True,
+                }
+            },
+            prompt_cache_key=(
+                f"{config.OPENAI_PROMPT_CACHE_PREFIX}:critic:"
+                f"{metadata.get('case_id', 'general')}"
+            ),
+            prompt_cache_retention=config.OPENAI_PROMPT_CACHE_RETENTION,
+            metadata=_response_request_metadata(metadata, conversation_id, "critic"),
+            safety_identifier=_hash_identifier(
+                str(metadata.get("student", conversation_id or "anon"))
+            ),
+        )
+    except Exception as exc:
+        logging.warning(
+            "Background session critic submission failed for %s: %s",
+            conversation_id,
+            exc,
+        )
+        return ""
+
+    response_id = str(getattr(response, "id", "") or "")
+    if response_id:
+        logging.info(
+            "Background session critic queued conversation_id=%s response_id=%s",
+            conversation_id,
+            response_id,
+        )
+    return response_id
 
 
 # ---------------- GCS/Local Files ----------------
@@ -1144,6 +1983,12 @@ def process_chat(conversation_id: str, user_input: str) -> list[dict[str, str]]:
     """
     messages, metadata = get_conversation_state(conversation_id)
     params = get_or_init_params(metadata)
-    updated = prompt_and_reply(messages, user_input, params=params)
+    updated = prompt_and_reply(
+        messages,
+        user_input,
+        params=params,
+        metadata=metadata,
+        conversation_id=conversation_id,
+    )
     save_messages_to_firestore(conversation_id, updated, metadata=metadata)
     return updated

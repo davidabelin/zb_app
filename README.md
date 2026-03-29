@@ -1,54 +1,73 @@
 # ZB App
 
-Current app/repo release: `v2.0.0`
+Current app/repo release: `v3.0.0`
 
-`zb_app` is the web application layer of the larger Zenbot project. It serves
-the browser-facing shell, the authenticated JSON API used by GPT Actions and
-other tools, the admin/review tooling, and the operational scripts that deploy
-the hybrid App Engine + Cloud Run runtime.
+`zb_app` is the web, API, and operator surface for Zenbot. In v3 it is a
+single Cloud Run application with an OpenAI-native runtime underneath:
+
+- browser chat and reference pages
+- authenticated `zb_api` routes used by GPT Actions and other clients
+- review/admin pages
+- Responses API chat runtime with prompt caching and provider conversation state
+- optional File Search, strict function tools, and background session critic
 
 ## What Lives Here
 
-- `main.py`: Flask routes for the web shell, authenticated API, admin pages, and
-  training-review workflow
-- `utilities.py`: conversation state, koan loading, OpenAI calls, GCS/Firestore
-  persistence, memory-logbook normalization, and archive helpers
+- `main.py`: Flask routes for browser, API, admin, and review flows
+- `utilities.py`: hot-state storage, Responses API adapter, koan lookup, GCS
+  archive helpers, memory logbook helpers, and tool handlers
+- `contracts.py`: typed runtime contracts and tool schemas
 - `config.py`: runtime/env/secret resolution
-- `models.py`: model registries and training-loss metadata
-- `chat_api.py`: Cloud Run entrypoint shim
-- `scripts/`: deployment and secret-management entrypoints
+- `models.py`: active model registry plus legacy fine-tune catalog
+- `scripts/`: deploy, vector-store sync, and tooling export helpers
 - `templates/` and `static/`: browser UI assets
-
-## How It Fits Into Zenbot
-
-`zb_app` is not the whole Zenbot repo. It directly depends on a few sibling
-areas:
-
-- `../zenbot_knowledge/action_schemas.yaml`: GPT Actions/OpenAPI contract
-- `../zenbot_knowledge/*`: knowledge and reference material maintainers consult
-- `static/mmnk.json`: bundled koan source used at runtime
-
-It also depends on external services:
-
-- OpenAI API
-- Google Secret Manager
-- Google Cloud Firestore
-- Google Cloud Storage
-- App Engine
-- Cloud Run
 
 ## Runtime Topology
 
-The app is deployed in a hybrid shape:
+The v3 runtime is Cloud Run-only:
 
-- App Engine serves the web shell, templates, static assets, and browser-facing
-  routes
-- Cloud Run serves the chat/API workload
-- both runtimes read secrets through Secret Manager and share backing data in
-  Firestore and Cloud Storage
+- one public Cloud Run service serves browser routes, SSE chat, admin pages,
+  and authenticated API routes
+- active conversation state uses Redis/Memorystore when `REDIS_URL` is set,
+  then falls back to Firestore, then local memory for development
+- archived transcripts and generated review/training artifacts stay in GCS
+- review manifests and memory workflows remain GCS-backed today, with the new
+  runtime ready for stricter structured backends later
 
-This separation exists because Cloud Run handles the chat/API workload and
-streaming behavior more reliably than App Engine Standard.
+## OpenAI-Native Runtime
+
+The live Mumonbot path now uses the current OpenAI Python SDK and the
+Responses API rather than Chat Completions.
+
+Implemented v3 runtime pieces:
+
+- deterministic live model defaults: `gpt-5.4-mini` for chat, `gpt-5.4` for
+  critic/judging, `gpt-4.1` reserved for post-training work
+- prompt caching via stable `prompt_cache_key` values
+- provider-side conversation continuation via `previous_response_id`
+- optional File Search through configured vector stores
+- strict internal function tools:
+  - `load_case_context`
+  - `search_exemplars`
+  - `load_memory_summaries`
+  - `load_memory_entry`
+  - `save_memory_candidate`
+  - `archive_session`
+  - `enqueue_review`
+  - `report_ui_status`
+- optional background session critic submissions
+
+The tool catalog can be exported with:
+
+```powershell
+python scripts/export_openai_tool_manifest.py
+```
+
+The default vector-store sync helper is:
+
+```powershell
+python scripts/sync_openai_vector_store.py --create
+```
 
 ## Local Setup
 
@@ -65,64 +84,50 @@ streaming behavior more reliably than App Engine Standard.
    pip install -r requirements-dev.txt
    ```
 
-4. For local-only development, provide env values in `.env` or `config/.env`.
+4. Copy `.env.example` to `.env` and fill in the values you actually need.
 5. Run the app from `zb_app`:
 
    ```powershell
    python main.py
    ```
 
-## Secrets and Env
-
-In cloud runtimes, `zb_app` prefers Secret Manager and falls back to plain
-environment variables only when needed.
-
-Key secret indirection env vars:
+## Key Env Vars
 
 - `OPENAI_API_KEY_SECRET_NAME`
 - `FLASK_SECRET_KEY_SECRET_NAME`
 - `ACTION_API_TOKEN_SECRET_NAME`
-
-Key non-secret env vars:
-
-- `GOOGLE_CLOUD_PROJECT`
+- `OPENAI_LIVE_MODEL`
+- `OPENAI_JUDGE_MODEL`
+- `OPENAI_ENABLE_FILE_SEARCH`
+- `OPENAI_VECTOR_STORE_IDS`
+- `OPENAI_ENABLE_BACKGROUND_CRITIC`
+- `REDIS_URL`
+- `SESSION_TTL_SECONDS`
+- `STREAMING_ENABLED`
 - `CHAT_API_BASE_URL`
 - `WEB_APP_ORIGIN`
-- `STREAMING_ENABLED`
-- `ZB_API_STRICT_AUTH`
-- `SESSION_COOKIE_SECURE`
 
 ## Key Workflows
 
-- Browser chat: `/chatter` -> `/chat` -> Firestore live state -> `/save_chat` ->
-  GCS archive + review manifest upsert
-- API chat: `/zb_api/chat` and `/zb_api/chat_case/<case_id>` -> Firestore live
-  state -> `/zb_api/save_chat` -> review manifest upsert
-- Memory selection: `/zb_api/load_memory_logbook` -> `/zb_api/load_memory_entry/<serial_number>`
-- Cloud review dashboard: `/admin/conversations` filtered by review status
-- Session evaluation review: `/admin/review` -> `/admin/conversations` -> `/review`
-- Legacy keep/discard queue: `/admin/review/legacy` remains available only for historical local inspection
+- Browser chat: `/chatter` -> `/chat` -> hot session state -> `/save_chat` ->
+  GCS archive + review manifest upsert + optional background critic
+- API chat: `/zb_api/chat` and `/zb_api/chat_case/<case_id>` ->
+  same live runtime, no browser cookies required
+- Memory selection: `/zb_api/load_memory_logbook` ->
+  `/zb_api/load_memory_entry/<serial_number>`
+- Review/admin: `/admin/conversations` and `/review`
 
 ## Documentation Map
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): subsystem map, request/data
-  flows, storage layout, and sibling-directory dependencies
-- [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md): how to modify routes,
-  schema, config, deployment, and troubleshooting safely
-- [`RECOVERY_RUNBOOK.md`](RECOVERY_RUNBOOK.md): concise operational runbook for
-  secrets, deploy, and verification
-- [`CHANGELOG.md`](CHANGELOG.md): release history, starting with `v2.0.0`
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
+- [`RECOVERY_RUNBOOK.md`](RECOVERY_RUNBOOK.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
 
 ## Validation
-
-The normal maintenance checks are:
 
 ```powershell
 python -m pytest -q
 python -m flake8
 python -m mypy .
 ```
-
-The test suite includes a doc-coverage check for the core Python modules so
-future edits do not immediately erode the documentation pass introduced in
-`v2.0.0`.

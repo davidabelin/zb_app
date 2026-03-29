@@ -21,11 +21,13 @@ import csv
 import hmac
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
 from flask import (
     Flask,
     Response,
@@ -43,6 +45,7 @@ from flask import (
 from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
+from contracts import TurnRequest
 import session_reviews
 import utilities as utipy
 from utilities import ModelAPIError
@@ -80,16 +83,30 @@ class ChatTurnRequest:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ChatTurnRequest":
         """Validate and normalize one inbound chat payload."""
-        message = str(data.get("message", "")).strip()
-        if not message:
-            raise ValueError("No user input detected.")
-        if len(message) > 2048:
-            raise ValueError("Input exceeds max length (2048).")
+        try:
+            validated = TurnRequest.model_validate(
+                {
+                    "message": str(data.get("message", "")).strip(),
+                    "conversation_id": str(data.get("conversation_id", "")).strip(),
+                    "student": str(data.get("student", "")).strip() or "webmonkE",
+                }
+            )
+        except ValidationError as exc:
+            message_errors = [
+                err
+                for err in exc.errors()
+                if err.get("loc") and err["loc"][0] == "message"
+            ]
+            if message_errors:
+                if any(error.get("type") == "string_too_long" for error in message_errors):
+                    raise ValueError("Input exceeds max length (2048).") from exc
+                raise ValueError("No user input detected.") from exc
+            raise ValueError(str(exc)) from exc
 
         return cls(
-            message=message,
-            conversation_id=str(data.get("conversation_id", "")).strip(),
-            student=str(data.get("student", "")).strip() or "webmonkE",
+            message=validated.message,
+            conversation_id=validated.conversation_id,
+            student=validated.student or "webmonkE",
         )
 
 
@@ -415,7 +432,13 @@ def chat():
         params = utipy.get_or_init_params(metadata)
 
         if not utipy.config.STREAMING:
-            messages = utipy.prompt_and_reply(messages, payload.message, params=params)
+            messages = utipy.prompt_and_reply(
+                messages,
+                payload.message,
+                params=params,
+                metadata=metadata,
+                conversation_id=conversation_id,
+            )
             metadata["updated_at"] = _utc_now()
             utipy.save_messages_to_firestore(
                 conversation_id, messages, metadata=metadata
@@ -439,6 +462,7 @@ def chat():
                 payload.message,
                 params=params,
                 conversation_id=conversation_id,
+                metadata=metadata,
             ):
                 yield event
 
@@ -530,7 +554,18 @@ def save_chat():
             messages,
             params,
         )
+        critic_response_id = utipy.submit_background_session_critic(
+            messages,
+            metadata,
+            conversation_id,
+        )
         logging.info("Chat saved to GCS as %s and upserted into review queue", blob_name)
+        if critic_response_id:
+            logging.info(
+                "Background critic queued for %s as %s",
+                conversation_id,
+                critic_response_id,
+            )
 
         utipy.delete_messages_from_firestore(conversation_id)
         response = make_response(jsonify({"status": "success"}), 200)
@@ -561,7 +596,13 @@ def zb_api_chat():
             )
 
         params = utipy.get_or_init_params(metadata)
-        messages = utipy.prompt_and_reply(messages, payload.message, params=params)
+        messages = utipy.prompt_and_reply(
+            messages,
+            payload.message,
+            params=params,
+            metadata=metadata,
+            conversation_id=conversation_id,
+        )
         metadata["updated_at"] = _utc_now()
         utipy.save_messages_to_firestore(conversation_id, messages, metadata=metadata)
 
@@ -679,9 +720,17 @@ def zb_api_save_chat():
             messages,
             params,
         )
+        critic_response_id = utipy.submit_background_session_critic(
+            messages,
+            metadata,
+            conversation_id,
+        )
         utipy.delete_messages_from_firestore(conversation_id)
 
-        return jsonify({"status": "success", "error": "None"}), 200
+        payload = {"status": "success", "error": "None"}
+        if critic_response_id:
+            payload["background_critic_response_id"] = critic_response_id
+        return jsonify(payload), 200
     except Exception as e:
         logging.exception("/zb_api/save_chat failed")
         return jsonify({"status": "failure", "error": str(e)}), 500

@@ -1,19 +1,24 @@
 """Static model registries used by the Zenbot web application.
 
-This module is intentionally data-only. It keeps finetuned model identifiers
-and their associated training-loss metadata out of request-handling code so the
-runtime configuration layer can select and expose the currently supported model
-set without importing deployment or API logic.
+The v3 runtime no longer treats finetuned Mumonbot checkpoints as the default
+production path. Live inference is anchored on current general-purpose OpenAI
+models, while prior finetunes remain catalogued for evaluation, archival, and
+training-pipeline work.
 """
 
+from __future__ import annotations
+
+
 MODELS_IN_USE = {
-    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
-    "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
+    "gpt-5.4-mini": "gpt-5.4-mini",
+    "gpt-5.4": "gpt-5.4",
+    "gpt-4.1": "gpt-4.1",
 }
 
-# Legacy registries are retained for reference and tooling, but `zb_app`
-# runtime selection now reads only from `MODELS_IN_USE`.
-ZB_MODELS = {
+# Legacy finetunes are retained for reference and offline evaluation.
+LEGACY_FINETUNES = {
+    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
+    "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
     "mmnk_ble824": "ft:gpt-4o-mini-2024-07-18:chatbot-tuners:mmnk-ble824:A7q3grXA",
     "mmnk_ble5053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble5053:ATHGiQEV",
     "mmnk_ble8053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble8053:AV7mu6NG",
@@ -32,22 +37,12 @@ ZB_MODELS = {
     "bs8lr08e4-set00-02": "ft:gpt-4o-2024-08-06:dca:bs8lr08e4-set00-02:BIzpjOBE",
     "set00-02mix-bs10lr05e2": "ft:gpt-4o-2024-08-06:dca:bd1eyc2n-set00-02mix-bs10lr05e2:BJ02Ragt",
     "set00-02mix-bs6lr06e3": "ft:gpt-4o-2024-08-06:dca:b9khhy0v-set00-02mix-bs6lr06e3:BJ09MKSB",
-    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
-}
-
-XC_MODELS = {
-    "xcset01-bs3-lr3-ne3": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs3-lr3-ne3:Ay3Xz411",
-    "xcset01-bs3-lr033-ne3": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs3-lr033-ne3:AxzCKK12",
-    "xcset01-bs4-lr04-ne4": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs4-lr04-ne4:Ay3MdXVg",
-    "xcset01-bs4-lr04-ne4-s54": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs4-lr04-ne4:Ay3McO8O:ckpt-step-54",
-    "xcset01-bs2-lr04-ne4": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs2-lr04-ne4:Ay3TpHKf",
-    "xcset01-bs2-lr04-ne4-s108": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs2-lr04-ne4:Ay3TpHKf:ckpt-step-108",
-    "xcset01-bs3-lr1-ne3": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs3-lr1-ne3:Ay3OQylM",
-    "xcset01-bs3-lr1-ne3-s72": "ft:gpt-4o-2024-08-06:chatbot-tuners:set01-bs3-lr1-ne3:Ay3OQS40:ckpt-step-72",
 }
 
 MODEL_LOSSES = {
-    "gpt-4": 0.0,
+    "gpt-5.4-mini": 0.0,
+    "gpt-5.4": 0.0,
+    "gpt-4.1": 0.0,
     "xcset01-bs4-lr04-ne4": 0.3,
     "xcset01-bs4-lr04-ne4-s54": 0.5,
     "xcset01-bs2-lr04-ne4": 0.27,

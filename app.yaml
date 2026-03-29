@@ -1,5 +1,6 @@
-# App Engine serves the browser shell and shared web routes. Chat/API traffic
-# is forwarded from the front end to the Cloud Run base URL below.
+# Archived App Engine reference file.
+# Zenbot v3 deploys the browser shell and API together on Cloud Run, so this
+# file is no longer part of the active production path.
 runtime: python314
 entrypoint: gunicorn --workers 2 --threads 4 --timeout 120 -b :$PORT main:app
 

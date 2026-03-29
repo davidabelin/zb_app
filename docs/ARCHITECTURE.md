@@ -2,19 +2,22 @@
 
 ## Overview
 
-`zb_app` is the operational web/API layer of Zenbot. It exposes:
+`zb_app` is the operational web/API layer of Zenbot. In v3 it is a single
+Cloud Run service that serves:
 
-- browser pages for public chat and reference browsing
-- authenticated API routes for GPT Actions and other clients
-- admin/archive tooling
-- cloud-backed session review tooling
+- public browser pages
+- streaming and non-streaming chat
+- authenticated `zb_api` routes
+- admin review tooling
 
-The app is intentionally split into a thin orchestration layer (`main.py`) and
-an operational utility layer (`utilities.py`).
+The app is still intentionally split into a thin orchestration layer
+(`main.py`) and an operational utility layer (`utilities.py`), but the runtime
+below that orchestration is now OpenAI-native.
 
 ## Component Responsibilities
 
 ### `main.py`
+
 - owns Flask app creation
 - applies auth, rate limiting, and CORS policy
 - renders templates and static-facing pages
@@ -22,119 +25,148 @@ an operational utility layer (`utilities.py`).
 - coordinates admin and review workflows
 
 ### `utilities.py`
-- conversation lifecycle and ID generation
-- Firestore live-session persistence
+
+- conversation lifecycle and hot-state persistence
 - koan lookup from `static/mmnk.json`
-- OpenAI request/stream handling
+- OpenAI Responses requests, streaming, prompt caching, and tool dispatch
 - GCS archive read/write
 - memory-logbook normalization, resequencing, indexing, and persistence
 
+### `contracts.py`
+
+- typed runtime contracts
+- strict tool argument schemas
+- shared shape definitions for review, memory, and training objects
+
 ### `config.py`
+
 - determines local vs managed-cloud runtime
 - loads `.env` for local development only
 - resolves secrets from Secret Manager
-- exposes shared config defaults and model parameter presets
+- exposes deterministic runtime/model defaults
 
 ### `models.py`
-- stores the curated model registries
-- stores training-loss metadata used in selection/admin context
 
-### `chat_api.py`
-- exposes `main.app` under a Cloud Run-oriented entrypoint name
+- stores the active general-model registry
+- preserves legacy fine-tuned model identifiers for evaluation/reference
 
 ## Deployment Topology
 
-### App Engine
-- serves the browser shell and template/static routes
-- injects `CHAT_API_BASE_URL` into the browser bundle
-- uses the same secret indirection env vars as the API service
-
 ### Cloud Run
-- serves the chat/API workload
-- handles authenticated `/zb_api/*` routes
-- handles browser `/chat`, `/chat_case/*`, and `/save_chat` when called through
-  the hybrid front-end path
+
+- serves browser, API, SSE chat, and admin routes together
+- uses one public base URL for `WEB_APP_ORIGIN` and `CHAT_API_BASE_URL`
+- should run with `min instances = 1` and moderate concurrency
+
+### App Engine
+
+- no longer part of the active production path
+- `app.yaml` remains only as archived reference material during migration cleanup
 
 ## Storage and External Services
 
-### Firestore
-- stores live conversation state for active sessions
+### Redis / Memorystore
+
+- preferred hot-state backend for active conversation sessions
 - keyed by `conversation_id`
-- contains both message list and conversation metadata
+- stores the live transcript plus metadata, including the last Responses API ID
+
+### Firestore
+
+- current structured fallback when Redis is not configured
+- still used for live state in compatibility mode
 
 ### Cloud Storage
+
 - stores archived chat transcripts under `zbchats/*.jsonl`
-- stores the canonical session review manifest under `session_reviews/index.jsonl`
-- stores the derived sessions-to-train export under `session_reviews/sessions_to_train.jsonl`
+- stores the canonical review manifest under `session_reviews/index.jsonl`
+- stores the derived sessions-to-train export under
+  `session_reviews/sessions_to_train.jsonl`
 - stores the canonical memory logbook object
+- stores queued memory/review helper artifacts when those queues are used
 
 ### Secret Manager
+
 - stores OpenAI API key
 - stores Flask secret key
 - stores action/admin token
 
 ### OpenAI
-- used for streaming and non-streaming chat completion requests
-- model/profile selection is randomized per new conversation and then kept in
-  conversation metadata
+
+- Responses API powers live chat
+- prompt caching reduces repeated static prompt cost
+- `previous_response_id` reduces per-turn transcript replay
+- optional File Search is available when vector stores are configured
+- strict function tools support Zenbot-specific retrieval and admin actions
+- optional Background mode queues a non-blocking session critic
 
 ## Sibling-Directory Dependencies
 
-`zb_app` reads or depends on the following repo-adjacent assets:
-
 - `../zenbot_knowledge/action_schemas.yaml`
-  - GPT Actions/OpenAPI contract
+- `../zenbot_knowledge/openai_response_tools.json`
+- `../project/rolling_to_do_list.md`
+- `../training/trainset04/readme_set04.md`
 - `static/mmnk.json`
-  - runtime koan dataset bundled with the app
-
-The app does not attempt to document or own all of `training/` or
-`zenbot_knowledge/`; it documents only the pieces that materially affect app
-behavior.
 
 ## Request/Data Flows
 
 ### Browser Chat
+
 1. Browser loads `/chatter`.
-2. `base.html` injects `CHAT_API_BASE_URL` for the front-end bundle.
-3. `static/scripts.js` sends `/chat` or `/chat_case/<case_id>`.
-4. `main.py` validates request and auth/cookie context.
-5. `utilities.py` loads or creates the conversation state.
-6. OpenAI is called in streaming or non-streaming mode.
-7. Firestore is updated with live transcript state.
-8. `/save_chat` archives the session to GCS, upserts the review manifest, and removes live Firestore state.
+2. `static/scripts.js` sends `/chat` or `/chat_case/<case_id>`.
+3. `main.py` validates request and auth/cookie context.
+4. `utilities.py` loads or creates the conversation state.
+5. The Responses API is called with:
+   - deterministic model/profile params
+   - prompt caching
+   - optional provider-side continuation via `previous_response_id`
+   - built-in File Search when configured
+6. Hot state is updated with transcript and latest provider response ID.
+7. `/save_chat` archives the session to GCS, upserts the review manifest, and
+   optionally queues a background critic.
 
 ### Authenticated API Chat
-1. Client sends `Authorization` header.
+
+1. Client sends `Authorization`.
 2. `/zb_api/chat` or `/zb_api/chat_case/<case_id>` validates auth.
-3. Conversation state is created or continued in Firestore.
-4. Response returns `conversation_id` and status, plus assistant text for
-   ordinary chat.
+3. Conversation state is created or continued in the same hot-state backend.
+4. The response returns `conversation_id` plus one assistant reply.
+
+### Tool-Enabled Sync Turns
+
+For synchronous Responses requests, the runtime can expose strict function
+tools. The model may call them to:
+
+- load exact case context
+- search approved exemplars
+- load compact or full memory entries
+- queue memory candidates or review requests
+- archive a session
+
+The runtime resolves those tool calls locally, then continues the Responses
+turn until final text is produced.
 
 ### Memory Workflow
+
 1. Client calls `/zb_api/load_memory_logbook` for a compact newest-first index.
 2. Client chooses a `serial_number`.
 3. Client calls `/zb_api/load_memory_entry/<serial_number>` for one full record.
 4. Memory write endpoints append or replace the logbook and re-sequence serials.
 
-### Admin Archive Flow
-1. Browser signs in via `/admin/login`.
-2. `/admin/conversations` loads the GCS-backed review manifest and renders one filtered review queue.
-3. `/review` renders one full transcript plus decision controls for a selected manifest row.
-4. `/admin/conversations/maintenance` can backfill the manifest from existing archived transcripts without deleting any data.
-
 ### Admin Review Flow
-1. `/admin/review` redirects into `/admin/conversations?evaluation=unreviewed`.
-2. `/admin/conversations` shows filtered `unreviewed`, `Use`, `Alter`, `Reject`, and `all` views over the same manifest.
-3. `/review` shows the selected transcript and applies ZB or CM review decisions.
-4. Helper-GPT callers use `/zb_api/session-evaluations/*` only.
-5. The older CSV-backed keep/discard queue remains available at
-   `/admin/review/legacy`, but it is no longer the live review source of truth.
+
+1. `/admin/login` establishes browser admin auth.
+2. `/admin/conversations` loads the GCS-backed review manifest.
+3. `/review` renders one full transcript plus decision controls.
+4. `/zb_api/session-evaluations/*` exposes the same review queue for GPT-side use.
 
 ## Notable Operational Constraints
 
-- In dokusan/channeling mode, message forwarding must be verbatim.
+- In dokusan/channeling mode, forwarded user text must remain verbatim.
 - Cloud runtimes must not silently fall back to local memory-logbook state.
-- The full memory logbook is intentionally kept out of GPT Actions because the
-  payload is too large; the compact index + single-entry fetch pattern is the
-  supported route.
-- The OpenAPI/schema version is independent from the app/repo release version.
+- The full memory logbook remains too large for GPT Actions; use summary index
+  plus single-entry fetch.
+- The action schema version is independent from the app release version.
+- The current v3 repo still keeps review and memory canonical storage in GCS;
+  Redis/File Search/Background mode are implemented first because they tighten
+  latency and runtime behavior without requiring a full data-store rewrite.

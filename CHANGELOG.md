@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.0.0 - 2026-03-28
+
+OpenAI-native runtime rebuild for `zb_app`.
+
+- replaced Chat Completions usage with the OpenAI Responses API
+- made live model/profile selection deterministic
+- added prompt caching and provider-side continuation via `previous_response_id`
+- added strict internal Responses function tools and exported tool manifest support
+- added optional File Search/vector-store sync tooling
+- added optional background session critic submission
+- added Redis/Memorystore-compatible hot session storage with Firestore fallback
+- updated the session-evaluation schema to document `needs_cm_review`
+- switched maintainer docs and deploy scripts to a Cloud Run-only runtime story
+- formalized the app/repo release marker as `v3.0.0`
+
 ## v2.0.0 - 2026-03-15
 
 Documentation-complete release for `zb_app`.
