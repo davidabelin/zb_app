@@ -122,22 +122,21 @@ python scripts/sync_openai_vector_store.py --create
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
 - [`RECOVERY_RUNBOOK.md`](RECOVERY_RUNBOOK.md)
-- [`scripts/DEPLOY_ORDER.md`](scripts/DEPLOY_ORDER.md)
+- [`scripts/WHAT_TO_RUN.md`](scripts/WHAT_TO_RUN.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
 
 ## Deploying v3
 
-If you prefer the normal Windows `cmd` flow, use the scripts in this order:
+Use the simple scripts in `scripts\`:
 
-1. `scripts\setup_gcp_secrets.cmd`
-2. `scripts\deploy_cloudrun_service.cmd`
-3. `python scripts\sync_openai_vector_store.py --create` only when File Search
-   is enabled or the curated docs changed
-4. `scripts\get_admin_token.cmd` when you need the auth token for admin/API/GPT
-   testing
+1. First time only: `scripts\one_time_only_DELETE_ME.bat`
+2. Code deploy: `scripts\deploy.bat`
+3. Docs/settings/search-context update: `scripts\update.bat`
+4. Rotate secrets only: `scripts\rotate_keys.bat`
+5. Same as update, explicit name: `scripts\refresh_context.bat`
+6. Print the admin/API token: `scripts\get_token.bat`
 
-`scripts\deploy_cloudrun_chat.cmd` is only a compatibility alias to the main
-Cloud Run deploy script. Do not use `deploy_appengine_web.ps1` for v3.
+If you want the short explanation, read `scripts\WHAT_TO_RUN.md`.
 
 ## Validation
 

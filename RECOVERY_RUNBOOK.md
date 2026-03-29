@@ -6,34 +6,32 @@ maintainer guidance, see:
 - [`README.md`](README.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
-- [`scripts/DEPLOY_ORDER.md`](scripts/DEPLOY_ORDER.md)
+- [`scripts/WHAT_TO_RUN.md`](scripts/WHAT_TO_RUN.md)
 
 ## 1) Bootstrap or Rotate Secrets
 
 ```cmd
-scripts\setup_gcp_secrets.cmd
+scripts\rotate_keys.bat
 ```
 
 ## 2) Deploy the Cloud Run Service
 
 ```cmd
-scripts\deploy_cloudrun_service.cmd
+scripts\deploy.bat
 ```
 
 The script deploys the single public service, resolves its URL, and then syncs
 `WEB_APP_ORIGIN` and `CHAT_API_BASE_URL` to that same host.
 
-`deploy_cloudrun_chat.cmd` remains available as a compatibility alias.
+## 3) Optional: Refresh Docs/Search Context
 
-## 3) Optional: Sync the OpenAI Vector Store
-
-If File Search is enabled for the runtime, sync the curated document set:
+If File Search is enabled for the runtime, refresh the curated context set:
 
 ```cmd
-python scripts/sync_openai_vector_store.py --create
+scripts\refresh_context.bat --create
 ```
 
-Record the returned vector store ID and set `OPENAI_VECTOR_STORE_IDS`
+Record the returned store ID and set `OPENAI_VECTOR_STORE_IDS`
 accordingly.
 
 ## 4) Verify Deploy Payload Hygiene

@@ -15,21 +15,16 @@ if not defined SERVICE_NAME set "SERVICE_NAME=zb-chat-api"
 
 set "SERVICE_ACCOUNT=%~4"
 if not defined SERVICE_ACCOUNT set "SERVICE_ACCOUNT=zenbot-sa@%PROJECT_ID%.iam.gserviceaccount.com"
-
-set "ENV_VARS=GOOGLE_CLOUD_PROJECT=%PROJECT_ID%,STREAMING_ENABLED=true,ZB_API_STRICT_AUTH=true,SESSION_COOKIE_SECURE=true,OPENAI_API_KEY_SECRET_NAME=zb-openai-api-key,FLASK_SECRET_KEY_SECRET_NAME=zb-flask-secret-key,ACTION_API_TOKEN_SECRET_NAME=zb-action-api-token,OPENAI_LIVE_MODEL=gpt-5.4-mini,OPENAI_JUDGE_MODEL=gpt-5.4,OPENAI_POST_TRAINING_MODEL=gpt-4.1,OPENAI_ENABLE_FUNCTION_TOOLS=true,OPENAI_PROMPT_CACHE_RETENTION=24h"
+set "CREDS_PATH=C:\Users\David\Documents\Local_Data\creds"
+set "ENV_VARS=GOOGLE_APPLICATION_CREDENTIALS=%CREDS_PATH%\google_zenbot_434517.json",GOOGLE_CLOUD_PROJECT=%PROJECT_ID%,STREAMING_ENABLED=true,ZB_API_STRICT_AUTH=true,SESSION_COOKIE_SECURE=true,OPENAI_API_KEY_SECRET_NAME=zb-openai-api-key,FLASK_SECRET_KEY_SECRET_NAME=zb-flask-secret-key,ACTION_API_TOKEN_SECRET_NAME=zb-action-api-token,OPENAI_LIVE_MODEL=gpt-5.4-mini,OPENAI_JUDGE_MODEL=gpt-5.4,OPENAI_POST_TRAINING_MODEL=gpt-4.1,OPENAI_ENABLE_FUNCTION_TOOLS=true,OPENAI_PROMPT_CACHE_RETENTION=24h"
 
 echo.
-echo Zenbot v3 Cloud Run deploy
+echo Zenbot v3 deploy
+echo Run this for normal deploys.
 echo   project        : %PROJECT_ID%
 echo   region         : %REGION%
 echo   service        : %SERVICE_NAME%
 echo   service account: %SERVICE_ACCOUNT%
-echo.
-echo Order of use:
-echo   1. Run setup_gcp_secrets.cmd once per project or whenever secrets rotate.
-echo   2. Run this script for each app deploy.
-echo   3. Run sync_openai_vector_store.py only if File Search is enabled or docs changed.
-echo   4. Follow RECOVERY_RUNBOOK.md smoke tests.
 echo.
 
 echo [1/4] Setting gcloud project...
@@ -66,23 +61,24 @@ if errorlevel 1 goto :error
 
 echo.
 echo Deploy complete.
-echo Next:
-echo   - Optional File Search sync:
-echo       python scripts\sync_openai_vector_store.py --create
-echo   - Quality gates:
-echo       python -m pytest -q
-echo       python -m flake8
-echo       python -m mypy .
-echo   - Smoke tests: see RECOVERY_RUNBOOK.md
+echo Optional next steps:
+echo   scripts\refresh_context.bat     only if docs/search context changed
+echo   scripts\get_token.bat           if you need the admin/API token
+echo   python -m pytest -q
+echo   python -m flake8
+echo   python -m mypy .
 echo.
 exit /b 0
 
 :usage
 echo Usage:
-echo   deploy_cloudrun_service.cmd [PROJECT_ID] [REGION] [SERVICE_NAME] [SERVICE_ACCOUNT]
+echo   deploy.bat [PROJECT_ID] [REGION] [SERVICE_NAME] [SERVICE_ACCOUNT]
+echo.
+echo Most people should just run:
+echo   deploy.bat
 echo.
 echo Example:
-echo   deploy_cloudrun_service.cmd zenbot-434517 us-central1 zb-chat-api zenbot-sa@zenbot-434517.iam.gserviceaccount.com
+echo   deploy.bat zenbot-434517 us-central1 zb-chat-api zenbot-sa@zenbot-434517.iam.gserviceaccount.com
 echo.
 exit /b 0
 

@@ -67,16 +67,16 @@ as a separate data job once `set05` policy is settled.
 
 ## Deploy and Verify
 
-Use the scripts in `scripts/` in this order:
+Use the simple scripts in `scripts/`:
 
-1. `setup_gcp_secrets.cmd` when bootstrapping or rotating secrets
-2. `deploy_cloudrun_service.cmd` for every real v3 deploy
-3. `deploy_cloudrun_chat.cmd` only as a compatibility alias
-4. `get_admin_token.cmd` when you need the auth token after deploy
+1. `one_time_only_DELETE_ME.bat` for the first deploy in a project
+2. `deploy.bat` for code deploys
+3. `update.bat` for docs/settings/search-context refreshes
+4. `rotate_keys.bat` when bootstrapping or rotating secrets
+5. `refresh_context.bat` as the explicit equivalent of `update.bat`
+6. `get_token.bat` when you need the auth token after deploy
 
-Do not use `deploy_appengine_web.ps1`; it is retained only as a deprecation stub.
-
-`DEPLOY_ORDER.md` is the short operator-facing explanation of what each script
+`WHAT_TO_RUN.md` is the short operator-facing explanation of what each script
 does and when to run it.
 
 After deploy:
