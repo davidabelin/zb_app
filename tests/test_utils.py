@@ -89,3 +89,23 @@ def test_get_conversation_state_reassigns_retired_model_metadata(monkeypatch):
     assert metadata["model_name"] == "set03a-bs5lr05e5"
     assert metadata["profile"] == "mid"
     assert metadata["params"]["model"] == "ft:active-model"
+
+
+def test_make_params_maps_legacy_minimal_reasoning_to_low():
+    config = utilities.Config(
+        MODELS_IN_USE={"gpt-5.4-mini": "gpt-5.4-mini"},
+        MODEL_ARGS={
+            "live": {
+                "temperature": 0.9,
+                "max_output_tokens": 900,
+                "top_p": 1.0,
+                "reasoning_effort": "minimal",
+            }
+        },
+    )
+
+    params = config.make_params("live", model_name="gpt-5.4-mini")
+
+    assert params["reasoning"]["effort"] == "low"
+    assert "temperature" not in params
+    assert "top_p" not in params

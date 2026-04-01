@@ -15,8 +15,7 @@ if not defined SERVICE_NAME set "SERVICE_NAME=zb-chat-api"
 
 set "SERVICE_ACCOUNT=%~4"
 if not defined SERVICE_ACCOUNT set "SERVICE_ACCOUNT=zenbot-sa@%PROJECT_ID%.iam.gserviceaccount.com"
-set "CREDS_PATH=C:\Users\David\Documents\Local_Data\creds"
-set "ENV_VARS=GOOGLE_APPLICATION_CREDENTIALS=%CREDS_PATH%\google_zenbot_434517.json",GOOGLE_CLOUD_PROJECT=%PROJECT_ID%,STREAMING_ENABLED=true,ZB_API_STRICT_AUTH=true,SESSION_COOKIE_SECURE=true,OPENAI_API_KEY_SECRET_NAME=zb-openai-api-key,FLASK_SECRET_KEY_SECRET_NAME=zb-flask-secret-key,ACTION_API_TOKEN_SECRET_NAME=zb-action-api-token,OPENAI_LIVE_MODEL=gpt-5.4-mini,OPENAI_JUDGE_MODEL=gpt-5.4,OPENAI_POST_TRAINING_MODEL=gpt-4.1,OPENAI_ENABLE_FUNCTION_TOOLS=true,OPENAI_PROMPT_CACHE_RETENTION=24h"
+set "ENV_VARS=GOOGLE_CLOUD_PROJECT=%PROJECT_ID%,STREAMING_ENABLED=true,ZB_API_STRICT_AUTH=true,SESSION_COOKIE_SECURE=true,OPENAI_API_KEY_SECRET_NAME=zb-openai-api-key,FLASK_SECRET_KEY_SECRET_NAME=zb-flask-secret-key,ACTION_API_TOKEN_SECRET_NAME=zb-action-api-token,OPENAI_LIVE_MODEL=gpt-5.4-mini,OPENAI_JUDGE_MODEL=gpt-5.4,OPENAI_POST_TRAINING_MODEL=gpt-4.1,OPENAI_ENABLE_FUNCTION_TOOLS=true,OPENAI_PROMPT_CACHE_RETENTION=24h"
 
 echo.
 echo Zenbot v3 deploy
@@ -28,11 +27,11 @@ echo   service account: %SERVICE_ACCOUNT%
 echo.
 
 echo [1/4] Setting gcloud project...
-gcloud config set project "%PROJECT_ID%"
+call gcloud config set project "%PROJECT_ID%"
 if errorlevel 1 goto :error
 
 echo [2/4] Deploying Cloud Run service...
-gcloud run deploy "%SERVICE_NAME%" ^
+call gcloud run deploy "%SERVICE_NAME%" ^
   --source . ^
   --region "%REGION%" ^
   --quiet ^
@@ -53,7 +52,7 @@ if not defined SERVICE_URL (
 echo Resolved URL: %SERVICE_URL%
 
 echo [4/4] Syncing WEB_APP_ORIGIN and CHAT_API_BASE_URL...
-gcloud run services update "%SERVICE_NAME%" ^
+call gcloud run services update "%SERVICE_NAME%" ^
   --region "%REGION%" ^
   --quiet ^
   --update-env-vars "WEB_APP_ORIGIN=%SERVICE_URL%,CHAT_API_BASE_URL=%SERVICE_URL%"

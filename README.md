@@ -28,6 +28,8 @@ The v3 runtime is Cloud Run-only:
 
 - one public Cloud Run service serves browser routes, SSE chat, admin pages,
   and authenticated API routes
+- if a browser shell is still served from another origin during migration,
+  allow it with `CHAT_ALLOWED_ORIGINS`
 - active conversation state uses Redis/Memorystore when `REDIS_URL` is set,
   then falls back to Firestore, then local memory for development
 - archived transcripts and generated review/training artifacts stay in GCS
@@ -106,6 +108,7 @@ python scripts/sync_openai_vector_store.py --create
 - `STREAMING_ENABLED`
 - `CHAT_API_BASE_URL`
 - `WEB_APP_ORIGIN`
+- `CHAT_ALLOWED_ORIGINS`
 
 ## Key Workflows
 

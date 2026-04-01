@@ -56,6 +56,8 @@ below that orchestration is now OpenAI-native.
 
 - serves browser, API, SSE chat, and admin routes together
 - uses one public base URL for `WEB_APP_ORIGIN` and `CHAT_API_BASE_URL`
+- can temporarily allow separate browser-shell origins through
+  `CHAT_ALLOWED_ORIGINS` during migration/debugging
 - should run with `min instances = 1` and moderate concurrency
 - is deployed via `scripts\deploy.bat`; see `scripts/WHAT_TO_RUN.md` for the
   operator shortcuts

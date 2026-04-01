@@ -169,6 +169,9 @@ class Config:
             "WEB_APP_ORIGIN", "https://zenbot-434517.uw.r.appspot.com"
         )
     )
+    CHAT_ALLOWED_ORIGINS: list[str] = field(
+        default_factory=lambda: _csv_list(os.getenv("CHAT_ALLOWED_ORIGINS", ""))
+    )
     ZB_API_STRICT_AUTH: bool = field(
         default_factory=lambda: _strtobool(
             os.getenv("ZB_API_STRICT_AUTH"), default=True
@@ -222,7 +225,7 @@ class Config:
         default_factory=lambda: os.getenv("OPENAI_POST_TRAINING_MODEL", "gpt-4.1")
     )
     OPENAI_REASONING_EFFORT: str = field(
-        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "minimal")
+        default_factory=lambda: os.getenv("OPENAI_REASONING_EFFORT", "low")
     )
     OPENAI_REASONING_SUMMARY: str = field(
         default_factory=lambda: os.getenv("OPENAI_REASONING_SUMMARY", "auto")
@@ -276,13 +279,13 @@ class Config:
                 "temperature": 0.9,
                 "max_output_tokens": 900,
                 "top_p": 1.0,
-                "reasoning_effort": "minimal",
+                "reasoning_effort": "low",
             },
             "balanced": {
                 "temperature": 0.7,
                 "max_output_tokens": 700,
                 "top_p": 1.0,
-                "reasoning_effort": "minimal",
+                "reasoning_effort": "low",
             },
             "judge": {
                 "temperature": 0.2,
@@ -341,6 +344,22 @@ class Config:
         prefixes = ("gpt-5", "o1", "o3", "o4")
         return model_name.startswith(prefixes)
 
+    @staticmethod
+    def _supports_sampling_controls(model_name: str) -> bool:
+        """Return whether temperature/top-p style controls should be sent."""
+
+        prefixes = ("gpt-5", "o1", "o3", "o4")
+        return not model_name.startswith(prefixes)
+
+    @staticmethod
+    def _normalize_reasoning_effort(effort: str | None) -> str:
+        """Map legacy reasoning aliases onto currently supported API values."""
+
+        value = str(effort or "").strip().lower()
+        if value == "minimal":
+            return "low"
+        return value
+
     def make_params(
         self, profile: str, model_name: str | None = None
     ) -> Dict[str, Any]:
@@ -357,16 +376,17 @@ class Config:
             "store": True,
             "truncation": "auto",
         }
-        if "temperature" in profile_config:
-            params["temperature"] = profile_config["temperature"]
+        if self._supports_sampling_controls(resolved_model):
+            if "temperature" in profile_config:
+                params["temperature"] = profile_config["temperature"]
+            if "top_p" in profile_config:
+                params["top_p"] = profile_config["top_p"]
         if "max_output_tokens" in profile_config:
             params["max_output_tokens"] = profile_config["max_output_tokens"]
-        if "top_p" in profile_config:
-            params["top_p"] = profile_config["top_p"]
 
-        effort = str(
-            profile_config.get("reasoning_effort", self.OPENAI_REASONING_EFFORT)
-        ).strip()
+        effort = self._normalize_reasoning_effort(
+            str(profile_config.get("reasoning_effort", self.OPENAI_REASONING_EFFORT))
+        )
         if effort and self._supports_reasoning(resolved_model):
             params["reasoning"] = {
                 "effort": effort,

@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 from flask import (
@@ -62,11 +63,6 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 _RATE_BUCKETS: dict[str, tuple[float, int]] = {}
 _RATE_WINDOW_SECONDS = 60
 _RATE_MAX_REQUESTS = 40
-_ALLOWED_ORIGINS = {
-    utipy.config.WEB_APP_ORIGIN.rstrip("/"),
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-}
 
 
 @dataclass
@@ -113,6 +109,60 @@ class ChatTurnRequest:
 def _utc_now() -> str:
     """Return a UTC timestamp string for API payloads and stored metadata."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _normalize_origin(origin: str) -> str:
+    """Return a normalized origin string suitable for CORS comparisons."""
+
+    text = (origin or "").strip().rstrip("/")
+    if not text:
+        return ""
+    parsed = urlsplit(text)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def _configured_chat_origins() -> set[str]:
+    """Return explicit chat origins allowed by runtime configuration."""
+
+    origins = {
+        _normalize_origin(utipy.config.WEB_APP_ORIGIN),
+        _normalize_origin(utipy.config.CHAT_API_BASE_URL),
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    }
+    for origin in utipy.config.CHAT_ALLOWED_ORIGINS:
+        origins.add(_normalize_origin(origin))
+    return {origin for origin in origins if origin}
+
+
+def _is_same_project_app_engine_origin(origin: str) -> bool:
+    """Allow the default App Engine shell host for this project as a browser origin."""
+
+    normalized = _normalize_origin(origin)
+    if not normalized:
+        return False
+
+    hostname = (urlsplit(normalized).hostname or "").lower()
+    project_id = str(utipy.config.GOOGLE_CLOUD_PROJECT or "").strip().lower()
+    if not project_id:
+        return False
+    if hostname == f"{project_id}.appspot.com":
+        return True
+    return hostname.startswith(f"{project_id}.") and hostname.endswith(".r.appspot.com")
+
+
+def _origin_is_allowed(origin: str) -> bool:
+    """Return whether one browser Origin is permitted to call chat endpoints."""
+
+    normalized = _normalize_origin(origin)
+    if not normalized:
+        return False
+    return (
+        normalized in _configured_chat_origins()
+        or _is_same_project_app_engine_origin(normalized)
+    )
 
 
 def _set_chat_cookies(
@@ -178,8 +228,8 @@ def _is_cors_chat_path(path: str) -> bool:
 def _cors_preflight_response() -> Response:
     """Build a CORS preflight response for chat endpoints."""
     response = make_response("", 204)
-    origin = request.headers.get("Origin", "")
-    if origin and origin.rstrip("/") in _ALLOWED_ORIGINS:
+    origin = _normalize_origin(request.headers.get("Origin", ""))
+    if origin and _origin_is_allowed(origin):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
@@ -280,8 +330,8 @@ def _apply_cors_headers(response: Response):
     """Attach CORS headers to chat responses when the origin is allowed."""
     if not _is_cors_chat_path(request.path):
         return response
-    origin = request.headers.get("Origin", "")
-    if origin and origin.rstrip("/") in _ALLOWED_ORIGINS:
+    origin = _normalize_origin(request.headers.get("Origin", ""))
+    if origin and _origin_is_allowed(origin):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"

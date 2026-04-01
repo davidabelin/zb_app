@@ -524,6 +524,9 @@ def _strict_json_schema(model_cls: type[BaseModel]) -> dict[str, Any]:
         if isinstance(node, dict):
             if node.get("type") == "object":
                 node.setdefault("additionalProperties", False)
+                properties = node.get("properties", {})
+                if isinstance(properties, dict) and properties:
+                    node["required"] = list(properties.keys())
             for value in node.values():
                 walk(value)
             return
@@ -657,10 +660,19 @@ def _prompt_cache_key(
     case_id = _metadata_text((metadata or {}).get("case_id", "")) or "general"
     profile = _metadata_text((metadata or {}).get("profile", "")) or "live"
     model_name = _metadata_text(params.get("model", config.OPENAI_LIVE_MODEL))
-    return (
-        f"{config.OPENAI_PROMPT_CACHE_PREFIX}:{model_name}:"
-        f"{case_id}:{profile}:{mode}:{_hash_identifier(conversation_id or case_id)}"
+    prefix = _metadata_text(config.OPENAI_PROMPT_CACHE_PREFIX, 12) or "zenbot"
+    mode_text = _metadata_text(mode, 8) or "sync"
+    material = ":".join(
+        [
+            prefix,
+            model_name,
+            case_id,
+            profile,
+            mode_text,
+            _hash_identifier(conversation_id or case_id),
+        ]
     )
+    return f"{prefix}:{_hash_identifier(material)[:40]}"
 
 
 def _response_request_metadata(
@@ -1228,6 +1240,16 @@ def friendly_model_error_message(raw_error: str) -> str:
         return "OpenAI rate limit reached. Please retry shortly."
     if "authentication" in text or "invalid_api_key" in text:
         return "OpenAI API key rejected. Check the configured key."
+    if "unsupported parameter" in text and (
+        "temperature" in text or "top_p" in text
+    ):
+        return "Configured sampling controls are not supported by the selected model."
+    if "reasoning.effort" in text or (
+        "unsupported value" in text and "reasoning" in text
+    ):
+        return "Configured reasoning effort is not supported by the selected model."
+    if "model_not_found" in text or "does not exist" in text:
+        return "Configured model name is unavailable to the current API project."
     if "previous_response_id" in text:
         return "Session context expired. Please retry the turn."
     return "No model response received. Please retry."

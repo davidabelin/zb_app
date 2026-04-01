@@ -2,21 +2,6 @@
 
 Use the stupid-simple script names in `scripts\`.
 
-## First time only
-
-If you already ran the first-time setup flow once, skip this.
-
-Run:
-
-```cmd
-scripts\one_time_only_DELETE_ME.bat
-```
-
-That does:
-
-1. `rotate_keys.bat`
-2. `deploy.bat`
-
 ## Normal deploy
 
 Run:
