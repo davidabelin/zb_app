@@ -91,11 +91,48 @@
       margin-left: 6px;
     }
 
+    .notice {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      line-height: 1.45;
+    }
+
     .nav {
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
       margin-top: 16px;
+    }
+
+    .nav a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      text-decoration: none;
+      box-shadow: 0 6px 18px rgba(65, 52, 32, 0.06);
+    }
+
+    .nav a:hover {
+      text-decoration: none;
+      background: #f3e8d5;
+    }
+
+    .nav a.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .nav a.primary:hover {
+      background: #1d4766;
     }
 
     .decision-row {
@@ -232,7 +269,19 @@
         <div class="pill">Alter <strong>{{ record.summary.Alter }}</strong></div>
         <div class="pill">Reject <strong>{{ record.summary.Reject }}</strong></div>
         <div class="pill">Unreviewed <strong>{{ record.summary.unreviewed }}</strong></div>
+        <div class="pill">Awaiting Other Review <strong>{{ progress_summary.awaiting_other_review }}</strong></div>
+        <div class="pill">CM Reviewed <strong>{{ progress_summary.cm_reviewed }}</strong></div>
+        <div class="pill">ZB Reviewed <strong>{{ progress_summary.zb_reviewed }}</strong></div>
       </div>
+
+      {% if request.args.get("saved_conversation_id") %}
+        <div class="notice">
+          Saved {{ request.args.get("saved_reviewer", "") }} {{ request.args.get("saved_evaluation", "") }}
+          for <strong>{{ request.args.get("saved_conversation_id") }}</strong>.
+          Current status: <strong>{{ request.args.get("saved_status", "Awaiting Other Review") }}</strong>.
+          Final Use/Alter/Reject counts only change after both reviewer decisions are present.
+        </div>
+      {% endif %}
 
       {% if not record.evaluation and (record.review_zb or record.review_cm) %}
         <p class="subtle" style="margin-top: 14px;">
@@ -241,7 +290,7 @@
       {% endif %}
 
       <div class="nav">
-        <a href="{{ url_for('admin_conversations', evaluation=dashboard_filter) }}">Back to Review Queue</a>
+        <a class="primary" href="{{ url_for('admin_conversations', evaluation=dashboard_filter) }}">Session Review Queue</a>
         <a href="{{ url_for('review_page', index=record.navigation.previous_index, evaluation=dashboard_filter) }}">Previous</a>
         <a href="{{ url_for('review_page', index=record.navigation.next_index, evaluation=dashboard_filter) }}">Next</a>
         {% if record.navigation.next_unreviewed_index is not none %}

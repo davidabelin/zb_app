@@ -60,9 +60,8 @@ def test_chat_and_zb_api_options_routes_return_session_payload(monkeypatch):
     assert browser_response.status_code == 200
     assert api_response.status_code == 200
     assert browser_response.get_json()["defaults"]["preset_id"] == "balanced_mumon"
-    assert api_response.get_json()["settings_version"] == browser_response.get_json()[
-        "settings_version"
-    ]
+    assert api_response.get_json()["status"] == "success"
+    assert api_response.get_json()["settings_version"] == browser_response.get_json()["settings_version"]
 
 
 def test_chat_rejects_mid_session_settings_change(monkeypatch):

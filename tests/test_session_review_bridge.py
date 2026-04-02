@@ -140,7 +140,7 @@ def test_browser_decision_leaves_cm_queue_after_save(monkeypatch, fake_bucket):
     )
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith(
+    assert response.headers["Location"].startswith(
         "/admin/conversations?evaluation=needs_cm_review"
     )
 
@@ -153,6 +153,39 @@ def test_browser_decision_leaves_cm_queue_after_save(monkeypatch, fake_bucket):
 
     rows = session_reviews.load_review_state()
     assert rows[0]["review_cm"] == "Use"
+
+
+def test_browser_review_page_confirms_saved_pending_reject(monkeypatch, fake_bucket):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    _archive_review_record(fake_bucket, conversation_id="browser-reject-001")
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+
+    response = client.post(
+        "/review/record/0/decision",
+        headers=headers,
+        data={
+            "dashboard_filter": "needs_cm_review",
+            "reviewer": "CM",
+            "evaluation": "Reject",
+        },
+        follow_redirects=True,
+    )
+
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Saved CM Reject" in body
+    assert "browser-reject-001" in body
+    assert "Final Use/Alter/Reject counts only change after both reviewer decisions are present." in body
+    assert "Awaiting Other Review" in body
+
+    revisit = client.get("/review?index=0&evaluation=needs_cm_review", headers=headers)
+    revisit_body = revisit.get_data(as_text=True)
+    assert revisit.status_code == 200
+    assert 'CM review <strong>Reject</strong>' in revisit_body
 
 
 def test_save_chat_upserts_manifest_without_duplicate_rows(monkeypatch, fake_bucket):

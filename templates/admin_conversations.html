@@ -299,6 +299,13 @@
           Preserved legacy local reviews: {{ request.args.get("preserved_legacy", "0") }}.
           Sessions-to-train rows: {{ request.args.get("train_rows", "0") }}.
         </div>
+      {% elif request.args.get("saved_conversation_id") %}
+        <div class="notice">
+          Saved {{ request.args.get("saved_reviewer", "") }} {{ request.args.get("saved_evaluation", "") }}
+          for <strong>{{ request.args.get("saved_conversation_id") }}</strong>.
+          Current status: <strong>{{ request.args.get("saved_status", "Awaiting Other Review") }}</strong>.
+          Final Use/Alter/Reject counts only change after both reviewer decisions are present.
+        </div>
       {% elif status == "empty" %}
         <div class="notice">
           No review rows are available yet. Save a session or run the review-manifest backfill.

@@ -254,6 +254,12 @@ def _is_cors_chat_path(path: str) -> bool:
     return path in {"/chat", "/chat/options", "/save_chat"} or path.startswith("/chat_case/")
 
 
+def _is_api_json_path(path: str) -> bool:
+    """Return whether a route should emit GPT-facing JSON error envelopes."""
+
+    return path.startswith("/zb_api/") or path == "/appendMemoryLogbookEntry"
+
+
 def _cors_preflight_response() -> Response:
     """Build a CORS preflight response for chat endpoints."""
     response = make_response("", 204)
@@ -379,20 +385,98 @@ def inject_runtime_config() -> dict[str, Any]:
     }
 
 
+def _default_api_error_code(status_code: int, description: str = "") -> str:
+    """Map an HTTP status onto a stable API error code."""
+
+    if status_code == 400:
+        return "bad_request"
+    if status_code == 401:
+        return "unauthorized"
+    if status_code == 403:
+        return "forbidden"
+    if status_code == 404:
+        return "not_found"
+    if status_code == 405:
+        return "method_not_allowed"
+    if status_code == 409:
+        return "conflict"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code == 503:
+        return (
+            "storage_unavailable"
+            if "storage" in str(description or "").lower()
+            else "service_unavailable"
+        )
+    return "internal_server_error"
+
+
+def _api_success(status_code: int = 200, **payload: Any) -> Response:
+    """Return one normalized GPT-facing success envelope."""
+
+    return make_response(jsonify({"status": "success", **payload}), status_code)
+
+
+def _api_failure(
+    error: str,
+    message: str,
+    status_code: int,
+    **payload: Any,
+) -> Response:
+    """Return one normalized GPT-facing failure envelope."""
+
+    body: dict[str, Any] = {
+        "status": "failure",
+        "error": str(error).strip() or "internal_server_error",
+        "message": str(message).strip() or "Request failed.",
+    }
+    for key, value in payload.items():
+        if value is not None:
+            body[key] = value
+    return make_response(jsonify(body), status_code)
+
+
+def _api_storage_unavailable(
+    message: str = "Required storage backend is unavailable.",
+    **payload: Any,
+) -> Response:
+    """Return a normalized storage-unavailable API failure."""
+
+    return _api_failure("storage_unavailable", message, 503, **payload)
+
+
+def _api_archive_storage_guard(
+    message: str = "Archive storage is unavailable or unconfigured.",
+) -> Response | None:
+    """Return a failure response when archive/review storage is unavailable."""
+
+    if utipy.BUCKET:
+        return None
+    return _api_storage_unavailable(message)
+
+
+def _load_review_state_for_api() -> list[dict[str, Any]]:
+    """Load the review manifest for API routes or raise a storage/runtime error."""
+
+    if not utipy.BUCKET:
+        raise RuntimeError("Review storage is unavailable or unconfigured.")
+    return session_reviews.load_review_state()
+
+
 def _memory_mutation_response(
-    status: str,
+    message: str,
     memories: list[dict[str, Any]],
     entry: dict[str, Any] | None = None,
 ) -> Response:
     """Return a compact success payload for memory write operations."""
     payload: dict[str, Any] = {
-        "status": status,
+        "message": str(message).strip(),
         "count": len(memories),
     }
     if entry:
         payload["serial_number"] = str(entry.get("serial_number", "")).strip()
         payload["title"] = str(entry.get("title", "")).strip()
-    return make_response(jsonify(payload), 200)
+    return _api_success(**payload)
 
 
 def _parse_bounded_int_arg(
@@ -489,7 +573,25 @@ def handle_model_error(err):
     )
 
 
-def _settings_locked_response(err: SessionSettingsLockedError, api: bool = False):
+@app.errorhandler(HTTPException)
+def handle_http_exception(err: HTTPException):
+    """Return JSON error envelopes for GPT-facing API routes."""
+
+    if not _is_api_json_path(request.path):
+        return err
+    status_code = int(err.code or 500)
+    return _api_failure(
+        _default_api_error_code(status_code, str(err.description or "")),
+        str(err.description or err.name or "Request failed."),
+        status_code,
+    )
+
+
+def _settings_locked_response(
+    err: SessionSettingsLockedError,
+    api: bool = False,
+    conversation_id: str = "",
+):
     """Translate a settings-lock conflict into a user-facing JSON response."""
 
     payload: dict[str, Any] = {
@@ -498,8 +600,51 @@ def _settings_locked_response(err: SessionSettingsLockedError, api: bool = False
         "session_settings": err.current_settings,
     }
     if api:
-        payload["status"] = "failure"
+        return _api_failure(
+            "settings_locked",
+            payload["message"],
+            409,
+            session_settings=err.current_settings,
+            conversation_id=conversation_id or None,
+        )
     return jsonify(payload), 409
+
+
+def _resolve_api_chat_session(
+    payload: ChatTurnRequest,
+) -> tuple[str, list[dict[str, str]], dict[str, Any], str, str]:
+    """Resolve API chat state for create/continue/recreate behavior."""
+
+    requested_conversation_id = payload.conversation_id.strip()
+    if not requested_conversation_id:
+        conversation_id, messages, metadata = utipy.create_conversation(
+            student=payload.student,
+            settings=payload.settings,
+        )
+        return conversation_id, messages, metadata, "created", ""
+
+    messages, metadata = utipy.get_conversation_state(requested_conversation_id)
+    if metadata:
+        utipy.ensure_locked_session_settings(metadata, payload.settings)
+        return (
+            requested_conversation_id,
+            messages,
+            metadata,
+            "continued",
+            "",
+        )
+
+    conversation_id, messages, metadata = utipy.create_conversation(
+        student=payload.student,
+        settings=payload.settings,
+    )
+    return (
+        conversation_id,
+        messages,
+        metadata,
+        "recreated_from_unknown_id",
+        requested_conversation_id,
+    )
 
 
 # -------- Chat Routes --------
@@ -696,7 +841,7 @@ def save_chat():
 def zb_api_chat_options():
     """Return the canonical authenticated session-settings options payload."""
 
-    return jsonify(utipy.session_options_payload()), 200
+    return _api_success(**utipy.session_options_payload())
 
 
 @app.route("/zb_api/chat", methods=["POST"])
@@ -706,21 +851,14 @@ def zb_api_chat():
     try:
         data = utipy.get_request_data()
         payload = ChatTurnRequest.from_dict(data)
-
-        conversation_id = payload.conversation_id
-        if conversation_id:
-            messages, metadata = utipy.get_conversation_state(conversation_id)
-            if not metadata:
-                metadata = utipy.reset_test(
-                    student=payload.student,
-                    settings=payload.settings,
-                )
-            utipy.ensure_locked_session_settings(metadata, payload.settings)
-        else:
-            conversation_id, messages, metadata = utipy.create_conversation(
-                student=payload.student,
-                settings=payload.settings,
-            )
+        conversation_id = payload.conversation_id.strip()
+        (
+            conversation_id,
+            messages,
+            metadata,
+            conversation_status,
+            requested_conversation_id,
+        ) = _resolve_api_chat_session(payload)
 
         params = utipy.get_or_init_params(metadata)
         messages = utipy.prompt_and_reply(
@@ -733,41 +871,33 @@ def zb_api_chat():
         metadata["updated_at"] = _utc_now()
         utipy.save_messages_to_firestore(conversation_id, messages, metadata=metadata)
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "conversation_id": conversation_id,
-                    "response": messages[-1]["content"],
-                    "session_settings": utipy.session_settings_from_metadata(metadata),
-                }
-            ),
-            200,
+        success_payload: dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "conversation_status": conversation_status,
+            "response": messages[-1]["content"],
+            "session_settings": utipy.session_settings_from_metadata(metadata),
+        }
+        if requested_conversation_id:
+            success_payload["requested_conversation_id"] = requested_conversation_id
+        return _api_success(
+            **success_payload,
         )
     except SessionSettingsLockedError as e:
-        return _settings_locked_response(e, api=True)
+        return _settings_locked_response(e, api=True, conversation_id=conversation_id)
     except ValueError as e:
-        return (
-            jsonify(
-                {
-                    "status": "failure",
-                    "error": str(e),
-                    "conversation_id": conversation_id or None,
-                }
-            ),
+        return _api_failure(
+            "bad_request",
+            str(e),
             400,
+            conversation_id=conversation_id or None,
         )
     except Exception as e:
         logging.exception("/zb_api/chat failed")
-        return (
-            jsonify(
-                {
-                    "status": "failure",
-                    "error": str(e),
-                    "conversation_id": conversation_id or None,
-                }
-            ),
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while processing the turn.",
             500,
+            conversation_id=conversation_id or None,
         )
 
 
@@ -784,41 +914,27 @@ def zb_api_chat_case(case_id: str):
             case_id=case_id,
             settings=payload.settings,
         )
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "conversation_id": conversation_id,
-                    "case_id": str(case_id),
-                    "session_settings": _metadata.get("session_settings", {}),
-                }
-            ),
-            200,
+        return _api_success(
+            conversation_id=conversation_id,
+            case_id=str(case_id),
+            session_settings=_metadata.get("session_settings", {}),
         )
     except ValueError as e:
-        return (
-            jsonify(
-                {
-                    "status": "failure",
-                    "error": str(e),
-                    "conversation_id": conversation_id or None,
-                    "case_id": str(case_id),
-                }
-            ),
+        return _api_failure(
+            "bad_request",
+            str(e),
             400,
+            conversation_id=conversation_id or None,
+            case_id=str(case_id),
         )
     except Exception as e:
         logging.exception("/zb_api/chat_case failed")
-        return (
-            jsonify(
-                {
-                    "status": "failure",
-                    "error": str(e),
-                    "conversation_id": conversation_id or None,
-                    "case_id": str(case_id),
-                }
-            ),
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while creating the koan conversation.",
             500,
+            conversation_id=conversation_id or None,
+            case_id=str(case_id),
         )
 
 
@@ -826,25 +942,28 @@ def zb_api_chat_case(case_id: str):
 def zb_api_save_chat():
     """Archive an authenticated API conversation by conversation ID."""
     try:
+        storage_failure = _api_archive_storage_guard(
+            "Archive storage is unavailable or unconfigured."
+        )
+        if storage_failure is not None:
+            return storage_failure
+
         data = utipy.get_request_data()
         conversation_id = str(data.get("conversation_id", "")).strip()
         if not conversation_id:
-            return (
-                jsonify({"status": "failure", "error": "No conversation_id provided."}),
+            return _api_failure(
+                "bad_request",
+                "No conversation_id provided.",
                 400,
             )
 
         messages, metadata = utipy.get_conversation_state(conversation_id)
         if not messages:
-            return (
-                jsonify(
-                    {
-                        "status": "failure",
-                        "error": "No messages found for conversation_id.",
-                        "conversation_id": conversation_id,
-                    }
-                ),
+            return _api_failure(
+                "conversation_not_found",
+                "No active conversation found for the requested conversation_id.",
                 404,
+                conversation_id=conversation_id,
             )
 
         params = {
@@ -874,58 +993,72 @@ def zb_api_save_chat():
         )
         utipy.delete_messages_from_firestore(conversation_id)
 
-        payload = {"status": "success", "error": "None"}
+        payload: dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "archived": True,
+        }
         if critic_response_id:
             payload["background_critic_response_id"] = critic_response_id
-        return jsonify(payload), 200
+        return _api_success(**payload)
+    except RuntimeError as e:
+        return _api_storage_unavailable(str(e), conversation_id=locals().get("conversation_id", None))
     except Exception as e:
         logging.exception("/zb_api/save_chat failed")
-        return jsonify({"status": "failure", "error": str(e)}), 500
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while archiving the conversation.",
+            500,
+            conversation_id=locals().get("conversation_id", None),
+        )
 
 
 @app.route("/zb_api/conversations/list", methods=["GET"])
 def zb_api_conversations_list():
     """List archived conversation identifiers stored in Cloud Storage."""
-    files = utipy.list_conversation_files_in_gcs()
+    storage_failure = _api_archive_storage_guard(
+        "Archive storage is unavailable or unconfigured."
+    )
+    if storage_failure is not None:
+        return storage_failure
+    try:
+        files = utipy.list_conversation_files_in_gcs()
+    except Exception as exc:
+        logging.exception("/zb_api/conversations/list failed")
+        return _api_storage_unavailable(str(exc))
     conversation_ids = [f.split("/")[-1].replace(".jsonl", "") for f in files]
-    return jsonify({"status": "success", "conversation_ids": conversation_ids}), 200
+    return _api_success(conversation_ids=conversation_ids)
 
 
 @app.route("/zb_api/conversations/<conversation_id>", methods=["GET"])
 def zb_api_conversation(conversation_id: str):
     """Fetch one archived conversation transcript from Cloud Storage."""
+    storage_failure = _api_archive_storage_guard(
+        "Archive storage is unavailable or unconfigured."
+    )
+    if storage_failure is not None:
+        return storage_failure
+
     if not conversation_id:
-        return (
-            jsonify(
-                {
-                    "conversation_id": None,
-                    "messages": None,
-                    "status": "Missing conversation_id.",
-                }
-            ),
-            404,
+        return _api_failure(
+            "bad_request",
+            "Missing conversation_id.",
+            400,
         )
-    messages = utipy.get_conversation_from_gcs(conversation_id)
+    try:
+        messages = utipy.get_conversation_from_gcs(conversation_id)
+    except Exception as exc:
+        logging.exception("/zb_api/conversations/%s failed", conversation_id)
+        return _api_storage_unavailable(str(exc), conversation_id=conversation_id)
     if not messages:
-        return (
-            jsonify(
-                {
-                    "conversation_id": conversation_id,
-                    "messages": None,
-                    "status": "Conversation not found.",
-                }
-            ),
+        return _api_failure(
+            "conversation_not_found",
+            "Archived conversation not found.",
             404,
+            conversation_id=conversation_id,
         )
-    return (
-        jsonify(
-            {
-                "conversation_id": conversation_id,
-                "messages": messages,
-                "status": "success",
-            }
-        ),
-        200,
+    return _api_success(
+        conversation_id=conversation_id,
+        messages=messages,
     )
 
 
@@ -935,65 +1068,52 @@ def zb_api_load_memory_logbook():
     try:
         limit = _parse_bounded_int_arg("limit", default=12, minimum=1, maximum=25)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _api_failure("bad_request", str(exc), 400)
 
-    summaries, total_count = utipy.load_memory_logbook_summaries(limit=limit)
-    return (
-        jsonify(
-            {
-                "summaries": summaries,
-                "status": "success" if total_count else "empty",
-                "returned_count": len(summaries),
-                "total_count": total_count,
-                "limit": limit,
-                "has_more": total_count > len(summaries),
-            }
-        ),
-        200,
+    try:
+        summaries, total_count = utipy.load_memory_logbook_summaries(limit=limit)
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    return _api_success(
+        summaries=summaries,
+        returned_count=len(summaries),
+        total_count=total_count,
+        limit=limit,
+        has_more=total_count > len(summaries),
     )
 
 
 @app.route("/zb_api/load_memory_entry/<serial_number>", methods=["GET"])
 def zb_api_load_memory_entry(serial_number: str):
     """Fetch one canonical memory-logbook entry by serial number."""
-    memory = utipy.get_memory_logbook_entry(serial_number)
+    try:
+        memory = utipy.get_memory_logbook_entry(serial_number)
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc), serial_number=str(serial_number))
     if not memory:
-        return (
-            jsonify(
-                {
-                    "status": "not_found",
-                    "serial_number": str(serial_number),
-                    "memory": None,
-                }
-            ),
+        return _api_failure(
+            "memory_entry_not_found",
+            "Memory entry not found.",
             404,
+            serial_number=str(serial_number),
         )
 
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "serial_number": str(serial_number),
-                "memory": memory,
-            }
-        ),
-        200,
+    return _api_success(
+        serial_number=str(serial_number),
+        memory=memory,
     )
 
 
 @app.route("/zb_api/load_memory_logbook_full", methods=["GET"])
 def zb_api_load_memory_logbook_full():
     """Return the full canonical memory logbook for internal/admin use."""
-    memories = utipy.load_memory_logbook()
-    return (
-        jsonify(
-            {
-                "memories": memories,
-                "status": "success" if memories else "empty",
-                "count": len(memories),
-            }
-        ),
-        200,
+    try:
+        memories = utipy.load_memory_logbook()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    return _api_success(
+        memories=memories,
+        count=len(memories),
     )
 
 
@@ -1002,43 +1122,53 @@ def zb_api_update_memory_logbook():
     """Append one entry or replace the full memory logbook via the new API."""
     data = request.get_json(silent=True)
     if not data:
-        return jsonify({"error": "Invalid or missing JSON body"}), 400
+        return _api_failure("bad_request", "Invalid or missing JSON body.", 400)
 
     if "entry" in data and "full_logbook" in data:
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "JSON body must contain either 'entry' or 'full_logbook', "
-                        "not both"
-                    )
-                }
-            ),
+        return _api_failure(
+            "bad_request",
+            "JSON body must contain either 'entry' or 'full_logbook', not both.",
             400,
         )
 
     if "entry" in data:
         entry = data["entry"]
         if not isinstance(entry, dict):
-            return jsonify({"error": "'entry' must be an object"}), 400
+            return _api_failure("bad_request", "'entry' must be an object.", 400)
         try:
             updated = utipy.update_logbook(entry)
             saved_entry = updated[-1] if updated else utipy.normalize_memory_entry(entry)
             return _memory_mutation_response(
                 "entry appended via POST", updated, entry=saved_entry
             )
+        except RuntimeError as e:
+            return _api_storage_unavailable(str(e))
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return _api_failure(
+                "internal_server_error",
+                "Unexpected server-side failure while updating the memory logbook.",
+                500,
+            )
 
     if "full_logbook" in data:
         full = data["full_logbook"]
         if not isinstance(full, list):
-            return jsonify({"error": "'full_logbook' must be an array"}), 400
+            return _api_failure(
+                "bad_request",
+                "'full_logbook' must be an array.",
+                400,
+            )
         try:
             normalized = utipy.save_logbook(full)
             return _memory_mutation_response("logbook replaced via POST", normalized)
+        except RuntimeError as e:
+            return _api_storage_unavailable(str(e))
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return _api_failure(
+                "internal_server_error",
+                "Unexpected server-side failure while replacing the memory logbook.",
+                500,
+            )
 
     if isinstance(data, dict):
         try:
@@ -1047,11 +1177,18 @@ def zb_api_update_memory_logbook():
             return _memory_mutation_response(
                 "entry appended via POST (legacy body)", updated, entry=saved_entry
             )
+        except RuntimeError as e:
+            return _api_storage_unavailable(str(e))
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return _api_failure(
+                "internal_server_error",
+                "Unexpected server-side failure while updating the memory logbook.",
+                500,
+            )
 
-    return (
-        jsonify({"error": "JSON body must contain either 'entry' or 'full_logbook'"}),
+    return _api_failure(
+        "bad_request",
+        "JSON body must contain either 'entry' or 'full_logbook'.",
         400,
     )
 
@@ -1061,15 +1198,21 @@ def append_memory_logbook_entry_legacy():
     """Append one memory entry via the legacy compatibility endpoint."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return jsonify({"error": "Invalid or missing JSON body"}), 400
+        return _api_failure("bad_request", "Invalid or missing JSON body.", 400)
     try:
         updated = utipy.update_logbook(data)
         saved_entry = updated[-1] if updated else utipy.normalize_memory_entry(data)
         return _memory_mutation_response(
             "entry appended (legacy endpoint)", updated, entry=saved_entry
         )
+    except RuntimeError as e:
+        return _api_storage_unavailable(str(e))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while updating the memory logbook.",
+            500,
+        )
 
 
 @app.route("/zb_api/get_random_koan", methods=["GET"])
@@ -1077,15 +1220,23 @@ def zb_api_get_random_koan():
     """Return one random koan case as a flattened JSON payload."""
     case_id = utipy.get_random_koan_case_id()
     if not case_id:
-        return (jsonify({"status": "Random number not generated."}), 404)
+        return _api_failure(
+            "koan_not_found",
+            "A random koan could not be selected.",
+            404,
+        )
 
     koan = utipy.get_mmnk_case(case_id)
     if not koan:
-        return (jsonify({"status": "koan not found"}), 404)
+        return _api_failure(
+            "koan_not_found",
+            "The selected koan could not be loaded.",
+            404,
+            case_id=str(case_id),
+        )
 
     payload = dict(koan)
-    payload["status"] = "success"
-    return (jsonify(payload), 200)
+    return _api_success(**payload)
 
 
 # -------- Source Text Pages --------
@@ -1283,6 +1434,7 @@ def review_page():
         "session_review.html",
         record=record,
         dashboard_filter=dashboard_filter,
+        progress_summary=session_reviews.build_progress_summary(rows),
         storage=session_reviews.storage_metadata(),
     )
 
@@ -1314,6 +1466,7 @@ def set_decision(index: int):
     rows[index] = session_reviews.apply_reviewer_decision(
         rows[index], reviewer, evaluation
     )
+    saved_row = dict(rows[index])
     session_reviews.save_review_state(rows)
 
     dashboard_filter = _normalize_review_filter(
@@ -1322,14 +1475,31 @@ def set_decision(index: int):
     redirect_index = session_reviews.next_index_needing_reviewer_after(
         rows, index, reviewer
     )
+    saved_redirect_args = {
+        "saved_conversation_id": saved_row.get("conversation_id", ""),
+        "saved_reviewer": reviewer,
+        "saved_evaluation": evaluation,
+        "saved_status": session_reviews.status_label(saved_row),
+    }
     if redirect_index is None and dashboard_filter == "needs_cm_review":
-        return redirect(url_for("admin_conversations", evaluation=dashboard_filter))
+        return redirect(
+            url_for(
+                "admin_conversations",
+                evaluation=dashboard_filter,
+                **saved_redirect_args,
+            )
+        )
     if redirect_index is None:
         redirect_index = session_reviews.next_unreviewed_after(rows, index)
     if redirect_index is None:
         redirect_index = session_reviews.next_index(rows, index)
     return redirect(
-        url_for("review_page", index=redirect_index, evaluation=dashboard_filter)
+        url_for(
+            "review_page",
+            index=redirect_index,
+            evaluation=dashboard_filter,
+            **saved_redirect_args,
+        )
     )
 
 
@@ -1337,14 +1507,21 @@ def set_decision(index: int):
 def api_session_evaluations_summary():
     """Return review counts plus the active cloud storage locations."""
     _require_admin_auth()
-    rows = _load_review_state_or_abort()
+    try:
+        rows = _load_review_state_for_api()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/summary failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while loading review summary.",
+            500,
+        )
 
-    return jsonify(
-        {
-            "status": "success",
-            "summary": session_reviews.build_summary(rows),
-            "storage": session_reviews.storage_metadata(),
-        }
+    return _api_success(
+        summary=session_reviews.build_summary(rows),
+        storage=session_reviews.storage_metadata(),
     )
 
 
@@ -1352,12 +1529,28 @@ def api_session_evaluations_summary():
 def api_session_evaluations_record(index: int):
     """Fetch one review record from the cloud-backed review manifest."""
     _require_admin_auth()
-    rows = _load_review_state_or_abort()
+    try:
+        rows = _load_review_state_for_api()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc), index=index)
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/record/%s failed", index)
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while loading the review record.",
+            500,
+            index=index,
+        )
 
     if index < 0 or index >= len(rows):
-        abort(404, description="Record index out of range")
-    return jsonify(
-        {"status": "success", "record": session_reviews.serialize_record(rows, index)}
+        return _api_failure(
+            "review_record_not_found",
+            "Record index out of range.",
+            404,
+            index=index,
+        )
+    return _api_success(
+        record=session_reviews.serialize_record(rows, index)
     )
 
 
@@ -1365,36 +1558,65 @@ def api_session_evaluations_record(index: int):
 def api_session_evaluations_decision(index: int):
     """Apply a JSON review decision for the requested reviewer and record."""
     _require_admin_auth()
-    rows = _load_review_state_or_abort()
+    try:
+        rows = _load_review_state_for_api()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc), index=index)
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/record/%s/decision failed", index)
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while loading the review manifest.",
+            500,
+            index=index,
+        )
 
     if index < 0 or index >= len(rows):
-        abort(404, description="Record index out of range")
+        return _api_failure(
+            "review_record_not_found",
+            "Record index out of range.",
+            404,
+            index=index,
+        )
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        abort(400, description="JSON body is required")
+        return _api_failure("bad_request", "JSON body is required.", 400, index=index)
 
     try:
         evaluation = session_reviews.normalize_evaluation(data.get("evaluation", ""))
     except ValueError as exc:
-        abort(400, description=str(exc))
+        return _api_failure("bad_request", str(exc), 400, index=index)
     if evaluation not in session_reviews.REVIEW_CHOICES:
-        abort(400, description="evaluation must be Use, Alter, or Reject")
+        return _api_failure(
+            "bad_request",
+            "evaluation must be Use, Alter, or Reject.",
+            400,
+            index=index,
+        )
     try:
         reviewer = session_reviews.normalize_reviewer(data.get("reviewer", "ZB"))
     except ValueError as exc:
-        abort(400, description=str(exc))
+        return _api_failure("bad_request", str(exc), 400, index=index)
 
     rows[index] = session_reviews.apply_reviewer_decision(
         rows[index], reviewer, evaluation
     )
-    session_reviews.save_review_state(rows)
-    return jsonify(
-        {
-            "status": "success",
-            "record": session_reviews.serialize_record(rows, index),
-            "next_unreviewed_index": session_reviews.next_unreviewed_after(rows, index),
-        }
+    try:
+        session_reviews.save_review_state(rows)
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc), index=index)
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/record/%s/decision save failed", index)
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while saving the review decision.",
+            500,
+            index=index,
+        )
+    return _api_success(
+        record=session_reviews.serialize_record(rows, index),
+        next_unreviewed_index=session_reviews.next_unreviewed_after(rows, index),
     )
 
 
@@ -1402,27 +1624,38 @@ def api_session_evaluations_decision(index: int):
 def api_session_evaluations_next():
     """Find the next record matching a requested review state."""
     _require_admin_auth()
-    rows = _load_review_state_or_abort()
+    try:
+        rows = _load_review_state_for_api()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/next failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while searching review records.",
+            500,
+        )
 
     desired = _normalize_review_filter(request.args.get("evaluation", "unreviewed"))
     after = request.args.get("after", "-1").strip()
     try:
         after_index = int(after)
     except ValueError:
-        abort(400, description="Query parameter 'after' must be an integer")
+        return _api_failure(
+            "bad_request",
+            "Query parameter 'after' must be an integer.",
+            400,
+        )
 
     next_index = session_reviews.find_next_matching_index(rows, after_index, desired)
-    return jsonify(
-        {
-            "status": "success",
-            "evaluation_filter": desired,
-            "next_index": next_index,
-            "record": (
-                session_reviews.serialize_record(rows, next_index)
-                if next_index is not None
-                else None
-            ),
-        }
+    return _api_success(
+        evaluation_filter=desired,
+        next_index=next_index,
+        record=(
+            session_reviews.serialize_record(rows, next_index)
+            if next_index is not None
+            else None
+        ),
     )
 
 
