@@ -17,6 +17,20 @@ def _archive_review_record(fake_bucket, conversation_id="bridge-test-001"):
         "case_id": "11",
         "model": "bridge-model",
         "profile": "mid",
+        "botling_id": "fierce_barrier",
+        "settings_version": "v3.1",
+        "session_settings": {
+            "preset_id": "fierce_barrier",
+            "model_name": "gpt-5.4-mini",
+            "reasoning_effort": "medium",
+            "temperature": None,
+            "top_p": None,
+            "max_output_tokens": 700,
+            "enable_function_tools": True,
+            "enable_file_search": False,
+            "enable_web_search": False,
+            "enable_background_critic": False,
+        },
         "loss": 0.25,
         "saved_at": "2026-03-20T12:00:00Z",
     }
@@ -99,6 +113,12 @@ def test_review_page_and_api_use_cloud_review_manifest(monkeypatch, fake_bucket)
     ]
     assert train_rows == [{"messages": messages}]
 
+    rows = session_reviews.load_review_state()
+    record = session_reviews.serialize_record(rows, 0)
+    assert record["metadata"]["botling_id"] == "fierce_barrier"
+    assert record["metadata"]["settings_version"] == "v3.1"
+    assert record["metadata"]["session_settings"]["preset_id"] == "fierce_barrier"
+
 
 def test_browser_decision_leaves_cm_queue_after_save(monkeypatch, fake_bucket):
     monkeypatch.setattr(main.utipy.config, "LOCAL", True)
@@ -150,6 +170,20 @@ def test_save_chat_upserts_manifest_without_duplicate_rows(monkeypatch, fake_buc
         "model_name": "save-model",
         "profile": "high",
         "training_loss": 0.5,
+        "botling_id": "balanced_mumon",
+        "settings_version": "v3.1",
+        "session_settings": {
+            "preset_id": "balanced_mumon",
+            "model_name": "gpt-5.4-mini",
+            "reasoning_effort": "low",
+            "temperature": None,
+            "top_p": None,
+            "max_output_tokens": 900,
+            "enable_function_tools": True,
+            "enable_file_search": False,
+            "enable_web_search": False,
+            "enable_background_critic": False,
+        },
     }
 
     monkeypatch.setattr(
@@ -166,6 +200,8 @@ def test_save_chat_upserts_manifest_without_duplicate_rows(monkeypatch, fake_buc
     rows = session_reviews.load_review_state()
     assert len(rows) == 1
     assert rows[0]["conversation_id"] == "save-me"
+    assert rows[0]["botling_id"] == "balanced_mumon"
+    assert rows[0]["session_settings"]["preset_id"] == "balanced_mumon"
 
     response = client.post("/save_chat", json={"conversation_id": "save-me"})
     assert response.status_code == 200

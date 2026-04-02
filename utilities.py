@@ -39,10 +39,16 @@ from contracts import (
     LoadCaseContextArgs,
     LoadMemoryEntryArgs,
     LoadMemorySummariesArgs,
-    ToolCallResult,
     ReportUiStatusArgs,
+    ResolvedSessionSettings,
     SaveMemoryCandidateArgs,
     SearchExemplarsArgs,
+    SessionModelOption,
+    SessionOptionsPayload,
+    SessionPresetOption,
+    SessionSettingsInput,
+    SessionToolCaps,
+    ToolCallResult,
 )
 from models import MODEL_LOSSES
 
@@ -76,6 +82,14 @@ except Exception:
 
 class ModelAPIError(Exception):
     """Raised when an OpenAI API call fails."""
+
+
+class SessionSettingsLockedError(ValueError):
+    """Raised when a request tries to mutate settings for an active conversation."""
+
+    def __init__(self, current_settings: dict[str, Any]):
+        super().__init__("Session settings are locked for this conversation.")
+        self.current_settings = current_settings
 
 
 config = Config()
@@ -169,80 +183,352 @@ def _hash_identifier(value: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
 
 
-def _choose_session_profile() -> dict[str, Any]:
-    """Select the deterministic model/profile pair for a new conversation."""
+def _runtime_profile_name(profile_name: str | None = None) -> str:
+    """Return the active low-level runtime profile name."""
+
+    profile = str(profile_name or config.DEFAULT_RESPONSE_PROFILE).strip()
+    if profile not in config.MODEL_ARGS:
+        return next(iter(config.MODEL_ARGS), "live")
+    return profile
+
+
+def _coerce_session_settings_input(
+    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Normalize an inbound session-settings payload into a compact dict."""
+
+    if raw_settings is None:
+        return {}
+    if isinstance(raw_settings, ResolvedSessionSettings):
+        payload = raw_settings.model_dump(exclude_none=True)
+    elif isinstance(raw_settings, SessionSettingsInput):
+        payload = raw_settings.model_dump(exclude_none=True)
+    elif isinstance(raw_settings, dict):
+        payload = SessionSettingsInput.model_validate(raw_settings).model_dump(
+            exclude_none=True
+        )
+    else:
+        raise ValueError("Invalid session settings payload.")
+
+    for key in ("preset_id", "model_name", "reasoning_effort"):
+        text = str(payload.get(key, "")).strip()
+        if text:
+            payload[key] = text
+        else:
+            payload.pop(key, None)
+    return payload
+
+
+def _tool_caps() -> dict[str, bool]:
+    """Return deployment caps for per-session tool toggles."""
+
+    return dict(config.tool_caps())
+
+
+def _botling_preset_definition(preset_id: str) -> dict[str, Any]:
+    """Return one configured botling preset or raise a validation error."""
+
+    key = str(preset_id or "").strip() or config.DEFAULT_BOTLING_ID
+    preset = config.BOTLING_PRESETS.get(key)
+    if preset is None:
+        raise ValueError(f"Unsupported preset_id: {preset_id!r}")
+    return {"id": key, **preset}
+
+
+def _default_model_key() -> str:
+    """Return the current default model key."""
 
     model_key = config.MODEL_NAME
     if model_key not in config.MODELS_IN_USE:
-        model_key = next(iter(config.MODELS_IN_USE), config.OPENAI_LIVE_MODEL)
-    profile = config.DEFAULT_RESPONSE_PROFILE
-    if profile not in config.MODEL_ARGS:
-        profile = next(iter(config.MODEL_ARGS), "live")
-    params = config.make_params(profile, model_name=model_key)
+        return next(iter(config.MODELS_IN_USE), config.OPENAI_LIVE_MODEL)
+    return model_key
+
+
+def _params_from_session_settings(
+    session_settings: dict[str, Any], profile_name: str | None = None
+) -> dict[str, Any]:
+    """Translate one resolved session-settings snapshot into Responses params."""
+
+    profile = _runtime_profile_name(profile_name)
+    settings = ResolvedSessionSettings.model_validate(session_settings).model_dump(
+        mode="json"
+    )
+    selected_name = settings["model_name"]
+    resolved_model = config.MODELS_IN_USE.get(selected_name, selected_name)
+    params: dict[str, Any] = {
+        "model": resolved_model,
+        "store": True,
+        "truncation": "auto",
+        "max_output_tokens": settings["max_output_tokens"],
+    }
+    if config._supports_sampling_controls(resolved_model):
+        if settings.get("temperature") is not None:
+            params["temperature"] = settings["temperature"]
+        if settings.get("top_p") is not None:
+            params["top_p"] = settings["top_p"]
+
+    effort = config._normalize_reasoning_effort(settings.get("reasoning_effort", ""))
+    if effort and config._supports_reasoning(resolved_model):
+        params["reasoning"] = {
+            "effort": effort,
+            "summary": config.OPENAI_REASONING_SUMMARY,
+        }
+    return params
+
+
+def resolve_session_settings(
+    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None,
+    *,
+    fallback_model_name: str = "",
+    profile_name: str | None = None,
+) -> dict[str, Any]:
+    """Resolve preset defaults plus raw overrides into one canonical snapshot."""
+
+    profile = _runtime_profile_name(profile_name)
+    input_data = _coerce_session_settings_input(raw_settings)
+    preset_id = str(input_data.pop("preset_id", "")).strip() or config.DEFAULT_BOTLING_ID
+    preset = _botling_preset_definition(preset_id)
+    resolved: dict[str, Any] = {
+        "preset_id": preset_id,
+        **dict(preset.get("settings", {})),
+    }
+    default_profile = dict(config.MODEL_ARGS.get(profile, {}))
+    for key, value in input_data.items():
+        resolved[key] = value
+
+    model_name = str(
+        resolved.get("model_name") or fallback_model_name or _default_model_key()
+    ).strip()
+    if model_name not in config.MODELS_IN_USE:
+        raise ValueError(f"Unsupported model_name: {model_name!r}")
+    resolved["model_name"] = model_name
+
+    model_caps = config.model_capabilities(model_name)
+    requested_reasoning = config._normalize_reasoning_effort(
+        str(resolved.get("reasoning_effort", "") or default_profile.get("reasoning_effort", ""))
+    )
+    if model_caps["supports_reasoning"]:
+        if requested_reasoning and requested_reasoning not in model_caps["reasoning_efforts"]:
+            raise ValueError(
+                f"Unsupported reasoning_effort '{requested_reasoning}' for {model_name}."
+            )
+        resolved["reasoning_effort"] = requested_reasoning
+    else:
+        if "reasoning_effort" in input_data and requested_reasoning:
+            raise ValueError(f"reasoning_effort is not supported by {model_name}.")
+        resolved["reasoning_effort"] = ""
+
+    if model_caps["supports_sampling_controls"]:
+        if resolved.get("temperature") is None and "temperature" in default_profile:
+            resolved["temperature"] = default_profile["temperature"]
+        if resolved.get("top_p") is None and "top_p" in default_profile:
+            resolved["top_p"] = default_profile["top_p"]
+    else:
+        if input_data.get("temperature") is not None:
+            raise ValueError(f"temperature is not supported by {model_name}.")
+        if input_data.get("top_p") is not None:
+            raise ValueError(f"top_p is not supported by {model_name}.")
+        resolved["temperature"] = None
+        resolved["top_p"] = None
+
+    if resolved.get("max_output_tokens") is None:
+        resolved["max_output_tokens"] = int(default_profile.get("max_output_tokens", 900))
+
+    tool_caps = _tool_caps()
+    for key, cap_enabled in tool_caps.items():
+        explicit_value = input_data.get(key, None)
+        base_value = bool(resolved.get(key, False))
+        if explicit_value is True and not cap_enabled:
+            raise ValueError(f"{key} is not available in this deployment.")
+        if explicit_value is None:
+            resolved[key] = bool(base_value and cap_enabled)
+        else:
+            resolved[key] = bool(explicit_value and cap_enabled)
+
+    validated = ResolvedSessionSettings.model_validate(resolved)
+    return validated.model_dump(mode="json")
+
+
+def session_options_payload() -> dict[str, Any]:
+    """Return the canonical browser/API payload describing session controls."""
+
+    defaults = resolve_session_settings(None)
+    presets = [
+        SessionPresetOption.model_validate(
+            {
+                "id": preset_id,
+                "label": preset["label"],
+                "description": preset["description"],
+                "settings": resolve_session_settings({"preset_id": preset_id}),
+            }
+        )
+        for preset_id, preset in config.BOTLING_PRESETS.items()
+    ]
+    models = [
+        SessionModelOption.model_validate(config.model_capabilities(model_name))
+        for model_name in config.MODELS_IN_USE
+    ]
+    payload = SessionOptionsPayload(
+        settings_version=config.SESSION_SETTINGS_VERSION,
+        defaults=ResolvedSessionSettings.model_validate(defaults),
+        presets=presets,
+        models=models,
+        tool_caps=SessionToolCaps.model_validate(_tool_caps()),
+    )
+    return payload.model_dump(mode="json")
+
+
+def _legacy_session_settings(
+    metadata: dict[str, Any], profile_name: str, model_name: str
+) -> dict[str, Any]:
+    """Backfill a synthetic v3.1 session-settings snapshot for legacy metadata."""
+
+    params = metadata.get("params") if isinstance(metadata.get("params"), dict) else {}
+    snapshot: dict[str, Any] = {
+        "preset_id": str(metadata.get("botling_id", "")).strip() or config.DEFAULT_BOTLING_ID,
+        "model_name": model_name or _default_model_key(),
+        "max_output_tokens": params.get(
+            "max_output_tokens",
+            config.MODEL_ARGS.get(profile_name, {}).get("max_output_tokens", 900),
+        ),
+        "enable_function_tools": _tool_caps()["enable_function_tools"],
+        "enable_file_search": _tool_caps()["enable_file_search"],
+        "enable_web_search": _tool_caps()["enable_web_search"],
+        "enable_background_critic": _tool_caps()["enable_background_critic"],
+    }
+    reasoning = params.get("reasoning", {})
+    if isinstance(reasoning, dict):
+        snapshot["reasoning_effort"] = str(reasoning.get("effort", "")).strip()
+    if "temperature" in params:
+        snapshot["temperature"] = params.get("temperature")
+    if "top_p" in params:
+        snapshot["top_p"] = params.get("top_p")
+    return resolve_session_settings(
+        snapshot,
+        fallback_model_name=model_name,
+        profile_name=profile_name,
+    )
+
+
+def session_settings_from_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the resolved session-settings snapshot associated with metadata."""
+
+    normalized = _normalize_conversation_metadata(metadata or {})
+    settings = normalized.get("session_settings")
+    if isinstance(settings, dict):
+        return settings
+    return resolve_session_settings(None)
+
+
+def ensure_locked_session_settings(
+    metadata: dict[str, Any] | None,
+    raw_settings: SessionSettingsInput | dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Validate that optional incoming settings match the active conversation lock."""
+
+    current = session_settings_from_metadata(metadata or {})
+    if raw_settings is None:
+        return current
+    requested = resolve_session_settings(
+        raw_settings,
+        fallback_model_name=current.get("model_name", ""),
+        profile_name=str((metadata or {}).get("profile", "")).strip(),
+    )
+    if requested != current:
+        raise SessionSettingsLockedError(current)
+    return current
+
+
+def _choose_session_profile(
+    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None = None,
+    profile_name: str | None = None,
+) -> dict[str, Any]:
+    """Select one deterministic live runtime profile for a new conversation."""
+
+    profile = _runtime_profile_name(profile_name)
+    session_settings = resolve_session_settings(raw_settings, profile_name=profile)
+    model_name = session_settings["model_name"]
     return {
-        "model_name": model_key,
+        "model_name": model_name,
         "profile": profile,
-        "training_loss": MODEL_LOSSES.get(model_key, 0.0),
-        "params": params,
+        "training_loss": MODEL_LOSSES.get(model_name, 0.0),
+        "params": _params_from_session_settings(session_settings, profile_name=profile),
+        "botling_id": session_settings["preset_id"],
+        "settings_version": config.SESSION_SETTINGS_VERSION,
+        "session_settings": session_settings,
     }
 
 
 def _normalize_conversation_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Remap stored session metadata onto the currently supported model pool."""
+    """Remap stored session metadata onto the current model and settings contract."""
+
     if not isinstance(metadata, dict) or not metadata:
         return metadata if isinstance(metadata, dict) else {}
 
     normalized = dict(metadata)
-    model_name = str(normalized.get("model_name", "")).strip()
-    profile_name = str(normalized.get("profile", "")).strip()
+    original_model = str(normalized.get("model_name", "")).strip()
+    profile_name = _runtime_profile_name(str(normalized.get("profile", "")).strip())
+    fallback_model = original_model if original_model in config.MODELS_IN_USE else ""
     normalized.setdefault("last_response_id", "")
     normalized.setdefault("provider", "responses_api")
 
-    if model_name not in config.MODELS_IN_USE:
-        refreshed = _choose_session_profile()
+    try:
+        if isinstance(normalized.get("session_settings"), dict):
+            session_settings = resolve_session_settings(
+                normalized.get("session_settings"),
+                fallback_model_name=fallback_model,
+                profile_name=profile_name,
+            )
+        else:
+            session_settings = _legacy_session_settings(
+                normalized,
+                profile_name=profile_name,
+                model_name=fallback_model or _default_model_key(),
+            )
+    except Exception:
+        session_settings = resolve_session_settings(None, profile_name=profile_name)
+
+    if original_model and original_model not in config.MODELS_IN_USE:
         logging.info(
             "Conversation metadata referenced retired model '%s'; reassigned to '%s'.",
-            model_name or "<blank>",
-            refreshed["model_name"],
+            original_model or "<blank>",
+            session_settings["model_name"],
         )
-        normalized.update(
-            {
-                "model_name": refreshed["model_name"],
-                "profile": refreshed["profile"],
-                "training_loss": refreshed["training_loss"],
-                "params": refreshed["params"],
-                "updated_at": _utc_now(),
-            }
-        )
-        return normalized
 
-    if profile_name not in config.MODEL_ARGS:
-        refreshed = _choose_session_profile()
-        normalized.update(
-            {
-                "model_name": model_name,
-                "profile": refreshed["profile"],
-                "training_loss": MODEL_LOSSES.get(model_name, 0.0),
-                "params": config.make_params(
-                    refreshed["profile"], model_name=model_name
-                ),
-                "updated_at": _utc_now(),
-            }
-        )
-        return normalized
-
-    expected_params = config.make_params(profile_name, model_name=model_name)
-    expected_loss = MODEL_LOSSES.get(model_name, 0.0)
-    if normalized.get("params") != expected_params or normalized.get(
-        "training_loss"
-    ) != expected_loss:
-        normalized.update(
-            {
-                "training_loss": expected_loss,
-                "params": expected_params,
-                "updated_at": _utc_now(),
-            }
-        )
+    expected_params = _params_from_session_settings(
+        session_settings, profile_name=profile_name
+    )
+    expected_loss = MODEL_LOSSES.get(session_settings["model_name"], 0.0)
+    previous_snapshot = {
+        "model_name": normalized.get("model_name"),
+        "profile": normalized.get("profile"),
+        "training_loss": normalized.get("training_loss"),
+        "params": normalized.get("params"),
+        "botling_id": normalized.get("botling_id"),
+        "settings_version": normalized.get("settings_version"),
+        "session_settings": normalized.get("session_settings"),
+    }
+    normalized.update(
+        {
+            "model_name": session_settings["model_name"],
+            "profile": profile_name,
+            "training_loss": expected_loss,
+            "params": expected_params,
+            "botling_id": session_settings["preset_id"],
+            "settings_version": config.SESSION_SETTINGS_VERSION,
+            "session_settings": session_settings,
+        }
+    )
+    if previous_snapshot != {
+        "model_name": normalized.get("model_name"),
+        "profile": normalized.get("profile"),
+        "training_loss": normalized.get("training_loss"),
+        "params": normalized.get("params"),
+        "botling_id": normalized.get("botling_id"),
+        "settings_version": normalized.get("settings_version"),
+        "session_settings": normalized.get("session_settings"),
+    }:
+        normalized["updated_at"] = _utc_now()
     return normalized
 
 
@@ -252,6 +538,7 @@ def _build_metadata(
     session_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build conversation metadata stored alongside live session state."""
+
     profile = session_profile or _choose_session_profile()
     return {
         "student": student,
@@ -260,6 +547,9 @@ def _build_metadata(
         "profile": profile["profile"],
         "training_loss": profile["training_loss"],
         "params": profile["params"],
+        "botling_id": profile["botling_id"],
+        "settings_version": profile["settings_version"],
+        "session_settings": profile["session_settings"],
         "provider": "responses_api",
         "last_response_id": "",
         "created_at": _utc_now(),
@@ -330,7 +620,7 @@ def get_conversation_state(
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
     """Load live conversation messages and metadata for one conversation ID."""
     if not conversation_id:
-        return config.START_CHATS["smiles"].copy(), {}
+        return base_startup(), {}
 
     if REDIS is not None and config.HOT_STATE_BACKEND == "redis":
         try:
@@ -346,7 +636,7 @@ def get_conversation_state(
     if DB is None:
         payload = _LOCAL_CONVERSATIONS.get(conversation_id)
         if not payload:
-            return config.START_CHATS["smiles"].copy(), {}
+            return base_startup(), {}
         return payload.get("messages", []), _normalize_conversation_metadata(
             payload.get("metadata", {})
         )
@@ -355,10 +645,10 @@ def get_conversation_state(
         doc = DB.collection("conversations").document(conversation_id).get()
     except Exception as e:
         logging.error("Error retrieving conversation %s: %s", conversation_id, e)
-        return config.START_CHATS["smiles"].copy(), {}
+        return base_startup(), {}
 
     if not doc.exists:
-        return config.START_CHATS["smiles"].copy(), {}
+        return base_startup(), {}
 
     payload = doc.to_dict() or {}
     return payload.get("messages", []), _normalize_conversation_metadata(
@@ -400,11 +690,17 @@ def delete_messages_from_firestore(conversation_id: str) -> None:
 
 
 def reset_test(
-    case_id: str | None = None, student: str | None = None
+    case_id: str | None = None,
+    student: str | None = None,
+    settings: SessionSettingsInput | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return fresh conversation metadata for backward-compatible callers."""
     # Retained for backward compatibility; state is now conversation-scoped.
-    return _build_metadata(student=student or "unk", case_id=case_id)
+    return _build_metadata(
+        student=student or "unk",
+        case_id=case_id,
+        session_profile=_choose_session_profile(settings),
+    )
 
 
 # ---------------- Koan Tools ----------------
@@ -448,12 +744,56 @@ def get_mmnk_text(case_id: str) -> str:
     return body if isinstance(body, str) else ""
 
 
-def koan_startup(koan: dict[str, Any]) -> list[dict[str, str]]:
-    """Build the seeded startup prompt sequence for a koan-anchored session."""
+def _botling_definition(session_settings: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the configured botling definition for one resolved settings snapshot."""
+
+    preset_id = str((session_settings or {}).get("preset_id", "")).strip()
+    return _botling_preset_definition(preset_id or config.DEFAULT_BOTLING_ID)
+
+
+def _startup_system_prompt(session_settings: dict[str, Any] | None) -> str:
+    """Build the startup system prompt for one botling preset."""
+
+    preset = _botling_definition(session_settings)
+    return (
+        "You are Mumonbot, a disciplined Zen teacher voice shaped by the Mumonkan "
+        "and related Zen training records. Conduct dokusan with brevity, pressure, "
+        "and exact attention to the student's actual words. "
+        + str(preset.get("instruction", "")).strip()
+    ).strip()
+
+
+def _startup_opening_cue(session_settings: dict[str, Any] | None) -> str:
+    """Return the preset-specific opening cue for a new session."""
+
+    preset = _botling_definition(session_settings)
+    cue = str(preset.get("opening_cue", "")).strip()
+    return cue or "(smiles)"
+
+
+def base_startup(session_settings: dict[str, Any] | None = None) -> list[dict[str, str]]:
+    """Build the seeded startup prompt sequence for a non-koan session."""
+
     return [
         {
             "role": "system",
-            "content": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a customized LLM/GPT chatbot, fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in his 13thC CE compilation, the 'Gatelss Gate'. Now, centuries later, here you are holding a Dokusan session with the students; focused on the koan each is working on, and on what barriers to it each is focused. The student will now enter.",
+            "content": _startup_system_prompt(session_settings),
+        },
+        {"role": "user", "content": "(student enters, bows, sits)"},
+        {"role": "assistant", "content": _startup_opening_cue(session_settings)},
+    ]
+
+
+def koan_startup(
+    koan: dict[str, Any],
+    session_settings: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """Build the seeded startup prompt sequence for a koan-anchored session."""
+
+    return [
+        {
+            "role": "system",
+            "content": _startup_system_prompt(session_settings),
         },
         {
             "role": "user",
@@ -463,32 +803,44 @@ def koan_startup(koan: dict[str, Any]) -> list[dict[str, str]]:
             "role": "system",
             "content": f"Recall the exact wording of case #{koan['id']} from the original text:\n{koan['body']}",
         },
-        {"role": "assistant", "content": "(smiles)"},
+        {"role": "assistant", "content": _startup_opening_cue(session_settings)},
     ]
 
 
 def create_conversation(
-    student: str, case_id: str | None = None
+    student: str,
+    case_id: str | None = None,
+    settings: SessionSettingsInput | dict[str, Any] | None = None,
 ) -> tuple[str, list[dict[str, str]], dict[str, Any]]:
     """Create and persist a new live conversation, optionally koan-anchored."""
-    startup = config.START_CHATS["smiles"].copy()
+    session_profile = _choose_session_profile(settings)
+    session_settings = session_profile["session_settings"]
+    startup = base_startup(session_settings)
 
     if case_id:
         koan = get_mmnk_case(case_id)
         if not koan:
             raise ValueError(f"Koan not found for case_id={case_id}")
-        startup = koan_startup(koan)
+        startup = koan_startup(koan, session_settings=session_settings)
 
-    metadata = _build_metadata(student=student, case_id=case_id)
+    metadata = _build_metadata(
+        student=student,
+        case_id=case_id,
+        session_profile=session_profile,
+    )
     conversation_id = get_cid(f"{student}-mmnk{case_id}" if case_id else student)
     save_messages_to_firestore(conversation_id, startup, metadata=metadata)
     return conversation_id, startup, metadata
 
 
-def create_koan_conversation(case_id: str, student: str) -> str:
+def create_koan_conversation(
+    case_id: str,
+    student: str,
+    settings: SessionSettingsInput | dict[str, Any] | None = None,
+) -> str:
     """Compatibility wrapper that returns only the new koan conversation ID."""
     conversation_id, _messages, _meta = create_conversation(
-        student=student, case_id=case_id
+        student=student, case_id=case_id, settings=settings
     )
     return conversation_id
 
@@ -607,12 +959,40 @@ def _response_function_tools() -> list[dict[str, Any]]:
     ]
 
 
-def _response_builtin_tools(allow_web_search: bool) -> list[dict[str, Any]]:
+def session_uses_function_tools(metadata: dict[str, Any] | None) -> bool:
+    """Return whether one session should expose local sync-only function tools."""
+
+    settings = session_settings_from_metadata(metadata or {})
+    return bool(settings.get("enable_function_tools"))
+
+
+def session_allows_web_search(metadata: dict[str, Any] | None) -> bool:
+    """Return whether one session enables OpenAI web search."""
+
+    settings = session_settings_from_metadata(metadata or {})
+    return bool(settings.get("enable_web_search"))
+
+
+def session_allows_background_critic(metadata: dict[str, Any] | None) -> bool:
+    """Return whether one session should queue the background critic."""
+
+    settings = session_settings_from_metadata(metadata or {})
+    return bool(settings.get("enable_background_critic"))
+
+
+def session_requires_sync(metadata: dict[str, Any] | None) -> bool:
+    """Return whether browser chat should switch to one-shot sync-over-SSE mode."""
+
+    return session_uses_function_tools(metadata)
+
+
+def _response_builtin_tools(metadata: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Return built-in Responses tools enabled for the current request."""
 
     tools: list[dict[str, Any]] = []
+    settings = session_settings_from_metadata(metadata or {})
 
-    if config.OPENAI_ENABLE_FILE_SEARCH and config.OPENAI_VECTOR_STORE_IDS:
+    if settings.get("enable_file_search") and config.OPENAI_VECTOR_STORE_IDS:
         tools.append(
             {
                 "type": "file_search",
@@ -621,7 +1001,7 @@ def _response_builtin_tools(allow_web_search: bool) -> list[dict[str, Any]]:
             }
         )
 
-    if allow_web_search and config.OPENAI_ENABLE_WEB_SEARCH:
+    if settings.get("enable_web_search"):
         tools.append({"type": "web_search", "search_context_size": "medium"})
 
     return tools
@@ -630,14 +1010,34 @@ def _response_builtin_tools(allow_web_search: bool) -> list[dict[str, Any]]:
 def response_tool_definitions(include_web_search: bool = False) -> list[dict[str, Any]]:
     """Expose the full Zenbot v3 tool catalog for scripts and schema generation."""
 
-    return _response_builtin_tools(include_web_search) + _response_function_tools()
+    metadata = {
+        "session_settings": {
+            "preset_id": config.DEFAULT_BOTLING_ID,
+            "model_name": _default_model_key(),
+            "reasoning_effort": config.OPENAI_REASONING_EFFORT,
+            "temperature": None,
+            "top_p": None,
+            "max_output_tokens": config.MODEL_ARGS.get(
+                _runtime_profile_name(), {}
+            ).get("max_output_tokens", 900),
+            "enable_function_tools": config.OPENAI_ENABLE_FUNCTION_TOOLS,
+            "enable_file_search": bool(
+                config.OPENAI_ENABLE_FILE_SEARCH and config.OPENAI_VECTOR_STORE_IDS
+            ),
+            "enable_web_search": include_web_search and config.OPENAI_ENABLE_WEB_SEARCH,
+            "enable_background_critic": config.OPENAI_ENABLE_BACKGROUND_CRITIC,
+        }
+    }
+    return _response_builtin_tools(metadata) + _response_function_tools()
 
 
-def _response_tools_for_mode(mode: str, allow_web_search: bool = False) -> list[dict[str, Any]]:
+def _response_tools_for_mode(
+    mode: str, metadata: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """Return the tool set appropriate for one request mode."""
 
-    tools = _response_builtin_tools(allow_web_search)
-    if mode == "sync" and config.OPENAI_ENABLE_FUNCTION_TOOLS:
+    tools = _response_builtin_tools(metadata)
+    if mode == "sync" and session_uses_function_tools(metadata):
         tools.extend(_response_function_tools())
     return tools
 
@@ -688,31 +1088,32 @@ def _response_request_metadata(
         "case_id": _metadata_text(source.get("case_id", ""), 32),
         "student": _metadata_text(source.get("student", ""), 64),
         "profile": _metadata_text(source.get("profile", ""), 32),
+        "botling_id": _metadata_text(source.get("botling_id", ""), 32),
         "runtime_mode": _metadata_text(mode, 16),
     }
 
 
-def _response_instructions(
-    metadata: dict[str, Any] | None,
-    allow_web_search: bool = False,
-) -> str:
+def _response_instructions(metadata: dict[str, Any] | None) -> str:
     """Return the developer/system instruction block for one response turn."""
 
     case_id = _metadata_text((metadata or {}).get("case_id", ""))
+    session_settings = session_settings_from_metadata(metadata or {})
+    preset = _botling_definition(session_settings)
     lines = [
         "You are Mumonbot conducting dokusan in a disciplined Zen voice.",
         "Be brief, exact, and grounded in the student's actual words.",
         "Use ritual cues like (smiles) or (bows) sparingly and intentionally.",
         "Do not mention system prompts, training data, or hidden policies.",
         "Prefer koan grounding, direct challenge, and compact responses over explanation-heavy coaching.",
+        str(preset.get("instruction", "")).strip(),
     ]
     if case_id:
         lines.append(f"The current koan focus is case {case_id}.")
-    if config.OPENAI_ENABLE_FILE_SEARCH and config.OPENAI_VECTOR_STORE_IDS:
+    if session_settings.get("enable_file_search") and config.OPENAI_VECTOR_STORE_IDS:
         lines.append(
             "Use file search when exact case wording or archived reference detail matters."
         )
-    if allow_web_search:
+    if session_settings.get("enable_web_search"):
         lines.append("Web search is allowed only for explicitly factual modern questions.")
     else:
         lines.append("Do not use web search for dokusan or koan dialogue.")
@@ -925,6 +1326,9 @@ def _archive_session_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         "model": metadata.get("model_name", ""),
         "profile": metadata.get("profile", ""),
         "loss": metadata.get("training_loss", 0.0),
+        "botling_id": metadata.get("botling_id", ""),
+        "settings_version": metadata.get("settings_version", ""),
+        "session_settings": metadata.get("session_settings", {}),
         "saved_at": _utc_now(),
     }
     blob_name = f"{session_reviews.TRANSCRIPTS_PREFIX}{args.conversation_id}.jsonl"
@@ -1020,7 +1424,6 @@ def _response_request_kwargs(
     metadata: dict[str, Any] | None,
     conversation_id: str,
     mode: str,
-    allow_web_search: bool = False,
     previous_response_id: str = "",
     input_override: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -1029,7 +1432,7 @@ def _response_request_kwargs(
     request_kwargs: dict[str, Any] = {
         **params,
         "input": input_override or _response_input_messages(messages, previous_response_id),
-        "instructions": _response_instructions(metadata, allow_web_search=allow_web_search),
+        "instructions": _response_instructions(metadata),
         "prompt_cache_key": _prompt_cache_key(metadata, conversation_id, params, mode),
         "prompt_cache_retention": config.OPENAI_PROMPT_CACHE_RETENTION,
         "metadata": _response_request_metadata(metadata, conversation_id, mode),
@@ -1038,7 +1441,7 @@ def _response_request_kwargs(
             str((metadata or {}).get("student", conversation_id or "anon"))
         ),
     }
-    tools = _response_tools_for_mode(mode, allow_web_search=allow_web_search)
+    tools = _response_tools_for_mode(mode, metadata=metadata)
     if tools:
         request_kwargs["tools"] = tools
         request_kwargs["max_tool_calls"] = 6
@@ -1115,7 +1518,6 @@ def get_model_reply(
     params: dict[str, Any],
     metadata: dict[str, Any] | None = None,
     conversation_id: str = "",
-    allow_web_search: bool = False,
 ) -> str:
     """Return a full assistant reply from the Responses API with tool handling."""
 
@@ -1131,7 +1533,6 @@ def get_model_reply(
                     metadata,
                     conversation_id,
                     mode="sync",
-                    allow_web_search=allow_web_search,
                     previous_response_id=previous_response_id,
                 )
             )
@@ -1170,7 +1571,6 @@ def get_model_reply(
                         metadata,
                         conversation_id,
                         mode="sync",
-                        allow_web_search=allow_web_search,
                         previous_response_id=str(getattr(response, "id", "") or ""),
                         input_override=outputs,
                     )
@@ -1211,7 +1611,6 @@ def prompt_and_reply(
     params: dict[str, Any],
     metadata: dict[str, Any] | None = None,
     conversation_id: str = "",
-    allow_web_search: bool = False,
 ) -> list[dict[str, str]]:
     """Append a user prompt, fetch a reply, and mutate the message list in place."""
     messages.append({"role": "user", "content": prompt})
@@ -1220,7 +1619,6 @@ def prompt_and_reply(
         params,
         metadata=metadata,
         conversation_id=conversation_id,
-        allow_web_search=allow_web_search,
     )
     messages.append({"role": "assistant", "content": reply})
     return messages
@@ -1261,6 +1659,7 @@ def prompt_and_stream(
     params: dict[str, Any],
     conversation_id: str,
     metadata: dict[str, Any] | None = None,
+    sync_reply_only: bool = False,
 ) -> Generator[str, None, None]:
     """Stream one assistant turn as SSE events with Responses API fallback logic."""
     if not isinstance(prompt, str) or len(prompt) > 2048:
@@ -1269,32 +1668,46 @@ def prompt_and_stream(
     started = time.perf_counter()
     messages.append({"role": "user", "content": prompt})
     yield _sse(
-        {"event": "start", "response": "", "conversation_id": conversation_id}
+        {
+            "event": "start",
+            "response": "",
+            "conversation_id": conversation_id,
+            "session_settings": session_settings_from_metadata(metadata),
+        }
     )
 
     full_reply = ""
     first_token_time = None
     stream_error = None
     try:
-        for chunk in get_model_stream(
-            messages,
-            params,
-            metadata=metadata,
-            conversation_id=conversation_id,
-        ):
-            if first_token_time is None:
-                first_token_time = time.perf_counter()
-                logging.info(
-                    "stream first token conversation_id=%s latency_ms=%.1f",
-                    conversation_id,
-                    (first_token_time - started) * 1000,
-                )
-            if not isinstance(chunk, str):
-                chunk = str(chunk)
-            if not chunk:
-                continue
-            full_reply += chunk
-            yield _sse({"response": chunk})
+        if sync_reply_only:
+            full_reply = get_model_reply(
+                messages,
+                params,
+                metadata=metadata,
+                conversation_id=conversation_id,
+            )
+            yield _sse({"response": full_reply})
+        else:
+            for chunk in get_model_stream(
+                messages,
+                params,
+                metadata=metadata,
+                conversation_id=conversation_id,
+            ):
+                if first_token_time is None:
+                    first_token_time = time.perf_counter()
+                    logging.info(
+                        "stream first token conversation_id=%s latency_ms=%.1f",
+                        conversation_id,
+                        (first_token_time - started) * 1000,
+                    )
+                if not isinstance(chunk, str):
+                    chunk = str(chunk)
+                if not chunk:
+                    continue
+                full_reply += chunk
+                yield _sse({"response": chunk})
     except Exception as e:
         stream_error = str(e)
         logging.warning(
@@ -1348,7 +1761,7 @@ def submit_background_session_critic(
 ) -> str:
     """Submit a non-blocking session critic request via Responses background mode."""
 
-    if not config.OPENAI_ENABLE_BACKGROUND_CRITIC:
+    if not session_allows_background_critic(metadata):
         return ""
 
     try:

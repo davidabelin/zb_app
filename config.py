@@ -36,6 +36,85 @@ def _default_model_name() -> str:
     return next(iter(_default_models_in_use()), "gpt-5.4-mini")
 
 
+def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
+    """Return the first-pass named Mumonbot-ling preset registry."""
+
+    return {
+        "balanced_mumon": {
+            "label": "Balanced Mumon",
+            "description": "Default dokusan voice: compact, alert, and grounded.",
+            "instruction": (
+                "Adopt the balanced Mumon voice: brisk, grounded, and probing. "
+                "Challenge the student directly, but do not become theatrical."
+            ),
+            "opening_cue": "(smiles)",
+            "settings": {
+                "model_name": "gpt-5.4-mini",
+                "reasoning_effort": "low",
+                "max_output_tokens": 900,
+                "enable_function_tools": True,
+                "enable_file_search": False,
+                "enable_web_search": False,
+                "enable_background_critic": False,
+            },
+        },
+        "austere_abbot": {
+            "label": "Austere Abbot",
+            "description": "Sparse, disciplined replies with very little explanation.",
+            "instruction": (
+                "Adopt the austere abbot voice: sparse, severe, and economical. "
+                "Prefer a short challenge over a warm explanation."
+            ),
+            "opening_cue": "(sits upright)",
+            "settings": {
+                "model_name": "gpt-5.4-mini",
+                "reasoning_effort": "low",
+                "max_output_tokens": 500,
+                "enable_function_tools": True,
+                "enable_file_search": False,
+                "enable_web_search": False,
+                "enable_background_critic": False,
+            },
+        },
+        "fierce_barrier": {
+            "label": "Fierce Barrier",
+            "description": "Sharper, more forceful challenge for hard koan pressure.",
+            "instruction": (
+                "Adopt the fierce barrier voice: sharper, more forceful, and less "
+                "accommodating. Intensify the pressure when the student hides in ideas."
+            ),
+            "opening_cue": "(meets your gaze without speaking)",
+            "settings": {
+                "model_name": "gpt-5.4-mini",
+                "reasoning_effort": "medium",
+                "max_output_tokens": 700,
+                "enable_function_tools": True,
+                "enable_file_search": False,
+                "enable_web_search": False,
+                "enable_background_critic": False,
+            },
+        },
+        "explanatory_guide": {
+            "label": "Explanatory Guide",
+            "description": "A little more unpacking while staying inside dokusan form.",
+            "instruction": (
+                "Adopt the explanatory guide voice: remain recognizably Zen, but "
+                "allow a little more clarification when the student is genuinely stuck."
+            ),
+            "opening_cue": "(nods once)",
+            "settings": {
+                "model_name": "gpt-5.4-mini",
+                "reasoning_effort": "medium",
+                "max_output_tokens": 1200,
+                "enable_function_tools": True,
+                "enable_file_search": False,
+                "enable_web_search": False,
+                "enable_background_critic": False,
+            },
+        },
+    }
+
+
 def _csv_list(value: str | None) -> list[str]:
     """Split a comma-delimited environment variable into trimmed values."""
 
@@ -262,6 +341,12 @@ class Config:
     DEFAULT_RESPONSE_PROFILE: str = field(
         default_factory=lambda: os.getenv("DEFAULT_RESPONSE_PROFILE", "live")
     )
+    SESSION_SETTINGS_VERSION: str = field(
+        default_factory=lambda: os.getenv("SESSION_SETTINGS_VERSION", "v3.1")
+    )
+    DEFAULT_BOTLING_ID: str = field(
+        default_factory=lambda: os.getenv("DEFAULT_BOTLING_ID", "balanced_mumon")
+    )
 
     REDIS_URL: str = field(default_factory=lambda: os.getenv("REDIS_URL", ""))
     HOT_STATE_BACKEND: str = field(
@@ -272,6 +357,9 @@ class Config:
     )
 
     MODELS_IN_USE: Dict[str, str] = field(default_factory=_default_models_in_use)
+    BOTLING_PRESETS: Dict[str, Dict[str, Any]] = field(
+        default_factory=_default_botling_presets
+    )
 
     MODEL_ARGS: Dict[str, Dict[str, Any]] = field(
         default_factory=lambda: {
@@ -330,6 +418,8 @@ class Config:
 
         if self.MODEL_NAME not in self.MODELS_IN_USE:
             self.MODEL_NAME = self.OPENAI_LIVE_MODEL
+        if self.DEFAULT_BOTLING_ID not in self.BOTLING_PRESETS:
+            self.DEFAULT_BOTLING_ID = next(iter(self.BOTLING_PRESETS), "balanced_mumon")
 
     def _resolve_secret(self, secret_name: str, fallback: str) -> str:
         """Resolve one secret with Secret Manager first and env fallback second."""
@@ -350,6 +440,38 @@ class Config:
 
         prefixes = ("gpt-5", "o1", "o3", "o4")
         return not model_name.startswith(prefixes)
+
+    @staticmethod
+    def reasoning_effort_choices(model_name: str) -> list[str]:
+        """Return the supported reasoning-effort values for one model."""
+
+        if Config._supports_reasoning(model_name):
+            return ["none", "low", "medium", "high", "xhigh"]
+        return []
+
+    def tool_caps(self) -> Dict[str, bool]:
+        """Return deployment-level caps for per-session tool toggles."""
+
+        return {
+            "enable_function_tools": self.OPENAI_ENABLE_FUNCTION_TOOLS,
+            "enable_file_search": bool(
+                self.OPENAI_ENABLE_FILE_SEARCH and self.OPENAI_VECTOR_STORE_IDS
+            ),
+            "enable_web_search": self.OPENAI_ENABLE_WEB_SEARCH,
+            "enable_background_critic": self.OPENAI_ENABLE_BACKGROUND_CRITIC,
+        }
+
+    def model_capabilities(self, model_name: str) -> Dict[str, Any]:
+        """Return capability flags for one configured model key."""
+
+        resolved_model = self.MODELS_IN_USE.get(model_name, model_name)
+        return {
+            "id": model_name,
+            "label": model_name,
+            "supports_reasoning": self._supports_reasoning(resolved_model),
+            "reasoning_efforts": self.reasoning_effort_choices(resolved_model),
+            "supports_sampling_controls": self._supports_sampling_controls(resolved_model),
+        }
 
     @staticmethod
     def _normalize_reasoning_effort(effort: str | None) -> str:

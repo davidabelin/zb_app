@@ -30,12 +30,88 @@ class ConversationMessage(StrictModel):
     content: str = Field(min_length=1)
 
 
+class SessionSettingsInput(StrictModel):
+    """Partial session settings supplied when starting or continuing a session."""
+
+    preset_id: str = ""
+    model_name: str = ""
+    reasoning_effort: str = ""
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0)
+    max_output_tokens: int | None = Field(default=None, ge=1, le=4096)
+    enable_function_tools: bool | None = None
+    enable_file_search: bool | None = None
+    enable_web_search: bool | None = None
+    enable_background_critic: bool | None = None
+
+
+class ResolvedSessionSettings(StrictModel):
+    """Canonical resolved settings snapshot locked to one conversation."""
+
+    preset_id: str
+    model_name: str
+    reasoning_effort: str = ""
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0)
+    max_output_tokens: int = Field(ge=1, le=4096)
+    enable_function_tools: bool = False
+    enable_file_search: bool = False
+    enable_web_search: bool = False
+    enable_background_critic: bool = False
+
+
+class SessionPresetOption(StrictModel):
+    """One named Mumonbot-ling preset exposed in the UI/API."""
+
+    id: str
+    label: str
+    description: str
+    settings: ResolvedSessionSettings
+
+
+class SessionModelOption(StrictModel):
+    """One available model plus the controls it supports."""
+
+    id: str
+    label: str
+    supports_reasoning: bool
+    reasoning_efforts: list[str] = Field(default_factory=list)
+    supports_sampling_controls: bool
+
+
+class SessionToolCaps(StrictModel):
+    """Deployment-level capability caps for per-session tool toggles."""
+
+    enable_function_tools: bool = False
+    enable_file_search: bool = False
+    enable_web_search: bool = False
+    enable_background_critic: bool = False
+
+
+class SessionOptionsPayload(StrictModel):
+    """Canonical session-settings options payload for browser/API clients."""
+
+    settings_version: str
+    defaults: ResolvedSessionSettings
+    presets: list[SessionPresetOption] = Field(default_factory=list)
+    models: list[SessionModelOption] = Field(default_factory=list)
+    tool_caps: SessionToolCaps
+
+
 class TurnRequest(StrictModel):
     """Validated request payload for one user-facing chat turn."""
 
     message: str = Field(min_length=1, max_length=2048)
     conversation_id: str = ""
     student: str = "webmonkE"
+    settings: SessionSettingsInput | None = None
+
+
+class SessionStartRequest(StrictModel):
+    """Validated request payload for creating a new session before any turn."""
+
+    student: str = "webmonkE"
+    settings: SessionSettingsInput | None = None
 
 
 class ToolCallResult(StrictModel):
@@ -85,6 +161,9 @@ class ReviewMetadata(StrictModel):
     loss: Any | None = None
     model: str | None = None
     student: str | None = None
+    botling_id: str | None = None
+    settings_version: str | None = None
+    session_settings: dict[str, Any] | None = None
 
 
 class ReviewNavigation(StrictModel):

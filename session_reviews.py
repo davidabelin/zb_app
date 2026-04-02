@@ -198,6 +198,24 @@ def _normalize_string(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _normalize_session_settings(value: Any) -> dict[str, Any]:
+    """Normalize a stored session-settings snapshot into a JSON-safe dict."""
+
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
 def _normalize_review_row(row: dict[str, Any]) -> dict[str, Any]:
     """Normalize one manifest row into the current cloud-backed schema."""
     normalized = copy.deepcopy(row)
@@ -245,6 +263,13 @@ def _normalize_review_row(row: dict[str, Any]) -> dict[str, Any]:
     normalized["model"] = _normalize_string(normalized.get("model"))
     normalized["case_id"] = _normalize_string(normalized.get("case_id"))
     normalized["profile"] = _normalize_string(normalized.get("profile"))
+    normalized["botling_id"] = _normalize_string(normalized.get("botling_id"))
+    normalized["settings_version"] = _normalize_string(
+        normalized.get("settings_version")
+    )
+    normalized["session_settings"] = _normalize_session_settings(
+        normalized.get("session_settings")
+    )
     normalized["saved_at"] = _normalize_string(normalized.get("saved_at"))
     normalized["loss"] = normalized.get("loss", "")
     return normalized
@@ -301,6 +326,13 @@ def _manifest_row_from_transcript(
         ),
         "case_id": _normalize_string(transcript_metadata.get("case_id")),
         "profile": _normalize_string(transcript_metadata.get("profile")),
+        "botling_id": _normalize_string(transcript_metadata.get("botling_id")),
+        "settings_version": _normalize_string(
+            transcript_metadata.get("settings_version")
+        ),
+        "session_settings": _normalize_session_settings(
+            transcript_metadata.get("session_settings")
+        ),
         "saved_at": _normalize_string(transcript_metadata.get("saved_at")),
         "loss": transcript_metadata.get("loss", transcript_metadata.get("training_loss", "")),
         "review_version": DUAL_REVIEW_VERSION,
@@ -319,6 +351,16 @@ def _manifest_row_from_transcript(
                 "evaluation": previous_state.get("evaluation", ""),
             }
         )
+        if not base.get("botling_id"):
+            base["botling_id"] = _normalize_string(previous_state.get("botling_id"))
+        if not base.get("settings_version"):
+            base["settings_version"] = _normalize_string(
+                previous_state.get("settings_version")
+            )
+        if not base.get("session_settings"):
+            base["session_settings"] = _normalize_session_settings(
+                previous_state.get("session_settings")
+            )
     return _normalize_review_row(base)
 
 
@@ -512,6 +554,12 @@ def serialize_record(rows: list[dict[str, Any]], index: int) -> dict[str, Any]:
         "model": row["model"] or _normalize_string(transcript_metadata.get("model")),
         "case_id": row["case_id"] or _normalize_string(transcript_metadata.get("case_id")),
         "profile": row["profile"] or _normalize_string(transcript_metadata.get("profile")),
+        "botling_id": row["botling_id"]
+        or _normalize_string(transcript_metadata.get("botling_id")),
+        "settings_version": row["settings_version"]
+        or _normalize_string(transcript_metadata.get("settings_version")),
+        "session_settings": row["session_settings"]
+        or _normalize_session_settings(transcript_metadata.get("session_settings")),
         "saved_at": row["saved_at"] or _normalize_string(transcript_metadata.get("saved_at")),
         "loss": row["loss"] if row["loss"] != "" else transcript_metadata.get("loss", ""),
     }
@@ -559,6 +607,9 @@ def list_dashboard_rows(rows: list[dict[str, Any]], evaluation_filter: str) -> l
                 "conversation_id": normalized["conversation_id"],
                 "preview_user": normalized["preview_user"],
                 "preview_assistant": normalized["preview_assistant"],
+                "botling_id": normalized["botling_id"],
+                "model": normalized["model"],
+                "case_id": normalized["case_id"],
                 "review_zb": normalized["review_zb"] or None,
                 "review_cm": normalized["review_cm"] or None,
                 "evaluation": evaluation or "Unreviewed",

@@ -46,10 +46,10 @@ from flask import (
 from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
-from contracts import TurnRequest
+from contracts import SessionStartRequest, SessionSettingsInput, TurnRequest
 import session_reviews
 import utilities as utipy
-from utilities import ModelAPIError
+from utilities import ModelAPIError, SessionSettingsLockedError
 
 logging.basicConfig(level=utipy.config.LOG_LEVEL)
 app = Flask(__name__, static_url_path="/static")
@@ -75,6 +75,7 @@ class ChatTurnRequest:
     message: str
     conversation_id: str
     student: str
+    settings: SessionSettingsInput | None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ChatTurnRequest":
@@ -85,6 +86,7 @@ class ChatTurnRequest:
                     "message": str(data.get("message", "")).strip(),
                     "conversation_id": str(data.get("conversation_id", "")).strip(),
                     "student": str(data.get("student", "")).strip() or "webmonkE",
+                    "settings": data.get("settings"),
                 }
             )
         except ValidationError as exc:
@@ -103,6 +105,33 @@ class ChatTurnRequest:
             message=validated.message,
             conversation_id=validated.conversation_id,
             student=validated.student or "webmonkE",
+            settings=validated.settings,
+        )
+
+
+@dataclass
+class ChatStartRequest:
+    """Validated request payload for starting a conversation before the first turn."""
+
+    student: str
+    settings: SessionSettingsInput | None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], default_student: str) -> "ChatStartRequest":
+        """Validate and normalize one inbound chat-start payload."""
+
+        try:
+            validated = SessionStartRequest.model_validate(
+                {
+                    "student": str(data.get("student", "")).strip() or default_student,
+                    "settings": data.get("settings"),
+                }
+            )
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        return cls(
+            student=validated.student or default_student,
+            settings=validated.settings,
         )
 
 
@@ -222,7 +251,7 @@ def _maybe_rate_limit() -> Response | None:
 
 def _is_cors_chat_path(path: str) -> bool:
     """Return whether a route participates in cross-origin chat requests."""
-    return path in {"/chat", "/save_chat"} or path.startswith("/chat_case/")
+    return path in {"/chat", "/chat/options", "/save_chat"} or path.startswith("/chat_case/")
 
 
 def _cors_preflight_response() -> Response:
@@ -234,7 +263,7 @@ def _cors_preflight_response() -> Response:
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
 
 
@@ -336,7 +365,7 @@ def _apply_cors_headers(response: Response):
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
 
 
@@ -438,6 +467,13 @@ def chatter():
     return render_template("chatter.html")
 
 
+@app.route("/chat/options", methods=["GET"])
+def chat_options():
+    """Return the canonical browser session-settings options payload."""
+
+    return jsonify(utipy.session_options_payload()), 200
+
+
 @app.errorhandler(ModelAPIError)
 def handle_model_error(err):
     """Translate model/provider exceptions into user-facing JSON errors."""
@@ -451,6 +487,19 @@ def handle_model_error(err):
         ),
         502,
     )
+
+
+def _settings_locked_response(err: SessionSettingsLockedError, api: bool = False):
+    """Translate a settings-lock conflict into a user-facing JSON response."""
+
+    payload: dict[str, Any] = {
+        "error": "settings_locked",
+        "message": str(err),
+        "session_settings": err.current_settings,
+    }
+    if api:
+        payload["status"] = "failure"
+    return jsonify(payload), 409
 
 
 # -------- Chat Routes --------
@@ -473,10 +522,15 @@ def chat():
         if conversation_id:
             messages, metadata = utipy.get_conversation_state(conversation_id)
             if not metadata:
-                metadata = utipy.reset_test(student=payload.student)
+                metadata = utipy.reset_test(
+                    student=payload.student,
+                    settings=payload.settings,
+                )
+            utipy.ensure_locked_session_settings(metadata, payload.settings)
         else:
             conversation_id, messages, metadata = utipy.create_conversation(
-                student=payload.student
+                student=payload.student,
+                settings=payload.settings,
             )
 
         params = utipy.get_or_init_params(metadata)
@@ -498,6 +552,7 @@ def chat():
                     {
                         "response": messages[-1]["content"],
                         "conversation_id": conversation_id,
+                        "session_settings": utipy.session_settings_from_metadata(metadata),
                         "status": "success",
                     }
                 ),
@@ -513,6 +568,7 @@ def chat():
                 params=params,
                 conversation_id=conversation_id,
                 metadata=metadata,
+                sync_reply_only=utipy.session_requires_sync(metadata),
             ):
                 yield event
 
@@ -530,6 +586,8 @@ def chat():
         _set_chat_cookies(response, conversation_id)
         return response
 
+    except SessionSettingsLockedError as e:
+        return _settings_locked_response(e)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except BadRequest as e:
@@ -549,10 +607,11 @@ def chat_case(case_id: str):
             return jsonify({"error": "No case_id provided."}), 400
 
         data = utipy.get_request_data()
-        student = str(data.get("student", "")).strip() or "webmonkE"
+        payload = ChatStartRequest.from_dict(data, default_student="webmonkE")
         conversation_id, _messages, _metadata = utipy.create_conversation(
-            student=student,
+            student=payload.student,
             case_id=case_id,
+            settings=payload.settings,
         )
 
         response = make_response(
@@ -560,6 +619,7 @@ def chat_case(case_id: str):
                 {
                     "conversation_id": conversation_id,
                     "case_id": str(case_id),
+                    "session_settings": _metadata.get("session_settings", {}),
                     "status": "success",
                 }
             ),
@@ -567,6 +627,8 @@ def chat_case(case_id: str):
         )
         _set_chat_cookies(response, conversation_id, case_id=str(case_id))
         return response
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logging.exception("/chat_case error")
         return jsonify({"error": str(e)}), 500
@@ -594,6 +656,9 @@ def save_chat():
             "model": metadata.get("model_name", ""),
             "profile": metadata.get("profile", ""),
             "loss": metadata.get("training_loss", 0.0),
+            "botling_id": metadata.get("botling_id", ""),
+            "settings_version": metadata.get("settings_version", ""),
+            "session_settings": metadata.get("session_settings", {}),
             "saved_at": _utc_now(),
         }
 
@@ -627,6 +692,13 @@ def save_chat():
 
 
 # -------- External API Routes --------
+@app.route("/zb_api/chat/options", methods=["GET"])
+def zb_api_chat_options():
+    """Return the canonical authenticated session-settings options payload."""
+
+    return jsonify(utipy.session_options_payload()), 200
+
+
 @app.route("/zb_api/chat", methods=["POST"])
 def zb_api_chat():
     """Process one authenticated API chat turn without browser cookies."""
@@ -639,10 +711,15 @@ def zb_api_chat():
         if conversation_id:
             messages, metadata = utipy.get_conversation_state(conversation_id)
             if not metadata:
-                metadata = utipy.reset_test(student=payload.student)
+                metadata = utipy.reset_test(
+                    student=payload.student,
+                    settings=payload.settings,
+                )
+            utipy.ensure_locked_session_settings(metadata, payload.settings)
         else:
             conversation_id, messages, metadata = utipy.create_conversation(
-                student=payload.student
+                student=payload.student,
+                settings=payload.settings,
             )
 
         params = utipy.get_or_init_params(metadata)
@@ -662,10 +739,13 @@ def zb_api_chat():
                     "status": "success",
                     "conversation_id": conversation_id,
                     "response": messages[-1]["content"],
+                    "session_settings": utipy.session_settings_from_metadata(metadata),
                 }
             ),
             200,
         )
+    except SessionSettingsLockedError as e:
+        return _settings_locked_response(e, api=True)
     except ValueError as e:
         return (
             jsonify(
@@ -697,11 +777,12 @@ def zb_api_chat_case(case_id: str):
     conversation_id = ""
     try:
         data = utipy.get_request_data()
-        student = str(data.get("student", "")).strip() or "api-case"
+        payload = ChatStartRequest.from_dict(data, default_student="api-case")
 
         conversation_id, _messages, _metadata = utipy.create_conversation(
-            student=student,
+            student=payload.student,
             case_id=case_id,
+            settings=payload.settings,
         )
         return (
             jsonify(
@@ -709,9 +790,22 @@ def zb_api_chat_case(case_id: str):
                     "status": "success",
                     "conversation_id": conversation_id,
                     "case_id": str(case_id),
+                    "session_settings": _metadata.get("session_settings", {}),
                 }
             ),
             200,
+        )
+    except ValueError as e:
+        return (
+            jsonify(
+                {
+                    "status": "failure",
+                    "error": str(e),
+                    "conversation_id": conversation_id or None,
+                    "case_id": str(case_id),
+                }
+            ),
+            400,
         )
     except Exception as e:
         logging.exception("/zb_api/chat_case failed")
@@ -760,6 +854,9 @@ def zb_api_save_chat():
             "model": metadata.get("model_name", ""),
             "profile": metadata.get("profile", ""),
             "loss": metadata.get("training_loss", 0.0),
+            "botling_id": metadata.get("botling_id", ""),
+            "settings_version": metadata.get("settings_version", ""),
+            "session_settings": metadata.get("session_settings", {}),
             "saved_at": _utc_now(),
         }
 

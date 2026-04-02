@@ -380,6 +380,14 @@
                     <label>CM</label>
                     {{ row.review_cm or "Unreviewed" }}
                   </div>
+                  <div>
+                    <label>Botling</label>
+                    {{ row.botling_id or "default" }}
+                  </div>
+                  <div>
+                    <label>Model</label>
+                    {{ row.model or "unknown" }}{% if row.case_id %} • case {{ row.case_id }}{% endif %}
+                  </div>
                 </div>
               </a>
             </article>
