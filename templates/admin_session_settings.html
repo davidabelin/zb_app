@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Session Settings</title>
+  <style>
+    :root {
+      --bg: #f5efe4;
+      --panel: #fffaf2;
+      --ink: #1f1d1a;
+      --muted: #6d665b;
+      --line: #d7c7ae;
+      --accent: #24557a;
+      --shadow: rgba(65, 52, 32, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at top left, rgba(180, 130, 70, 0.18), transparent 28%),
+        linear-gradient(180deg, #efe4cf 0%, var(--bg) 100%);
+      color: var(--ink);
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1, h2, h3, p {
+      margin-top: 0;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code {
+      font-size: 0.94rem;
+      background: rgba(36, 85, 122, 0.08);
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px 22px;
+      box-shadow: 0 14px 40px var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 0.95rem;
+      letter-spacing: 0.03em;
+      margin-bottom: 10px;
+    }
+
+    .subtle {
+      color: var(--muted);
+    }
+
+    .nav-row,
+    .card-grid,
+    .snapshot-grid,
+    .caps-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .nav-row {
+      grid-template-columns: repeat(auto-fit, minmax(180px, max-content));
+      margin-top: 16px;
+    }
+
+    .card-grid {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-top: 16px;
+    }
+
+    .snapshot-grid,
+    .caps-grid {
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      margin-top: 14px;
+    }
+
+    .action-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 10px 14px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .action-link.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .notice,
+    .card,
+    .kv,
+    .endpoint {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+    }
+
+    .card h3,
+    .endpoint h3,
+    .kv h3 {
+      margin-bottom: 8px;
+    }
+
+    .endpoint code {
+      display: inline-block;
+      margin-bottom: 10px;
+    }
+
+    .muted-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .muted-list li + li {
+      margin-top: 8px;
+    }
+
+    .preset-list {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .preset-list li + li {
+      margin-top: 10px;
+    }
+
+    @media (max-width: 720px) {
+      main {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <div class="eyebrow">Administrative Placeholder</div>
+      <h1>Session Settings</h1>
+      <p class="subtle">
+        Public <code>/chatter</code> is back to being a plain dokusan surface. This page is the placeholder home for future admin-only session controls, preset editors, and runtime-selection policy.
+      </p>
+      <div class="nav-row">
+        <a class="action-link primary" href="{{ url_for('admin_conversations') }}">Session Review Queue</a>
+        <a class="action-link" href="{{ url_for('review_page') }}">Open Review Detail</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Current Public Defaults</h2>
+      <p class="subtle">
+        These values come from the live session-options payload today. They are shown here read-only until the admin controls are implemented.
+      </p>
+      <div class="snapshot-grid">
+        {% for key, value in options.defaults.items() %}
+          <div class="kv">
+            <h3>{{ key }}</h3>
+            <code>{{ value }}</code>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="caps-grid">
+        {% for key, value in options.tool_caps.items() %}
+          <div class="kv">
+            <h3>{{ key }}</h3>
+            <code>{{ value }}</code>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Available Presets</h2>
+      <p class="subtle">
+        The runtime still knows about these preset bundles. The editing surface has not been moved here yet.
+      </p>
+      <ul class="preset-list">
+        {% for preset in options.presets %}
+          <li>
+            <strong>{{ preset.label }}</strong>
+            <br>
+            <code>{{ preset.id }}</code>
+            <br>
+            <span class="subtle">{{ preset.description }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Planned Admin Endpoints</h2>
+      <p class="subtle">
+        These are suggestive placeholders only. They document the likely control surfaces without claiming the backing routes exist yet.
+      </p>
+      <div class="card-grid">
+        {% for endpoint in planned_endpoints %}
+          <div class="endpoint">
+            <code>{{ endpoint.path }}</code>
+            <h3>{{ endpoint.label }}</h3>
+            <p class="subtle">{{ endpoint.description }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Next Step</h2>
+      <div class="notice">
+        <p>The next implementation pass can add real admin controls for:</p>
+        <ul class="muted-list">
+          <li>public dokusan default selection and randomization policy</li>
+          <li>Mumonbot-ling preset management</li>
+          <li>model family rotation across GPT-4.1 fine-tunes and Responses-based agent variants</li>
+          <li>tool toggles and background-critic policy</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

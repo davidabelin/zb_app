@@ -380,6 +380,7 @@ def inject_runtime_config() -> dict[str, Any]:
     """Expose chat runtime settings to Jinja templates."""
     return {
         "chat_api_base_url": (utipy.config.CHAT_API_BASE_URL or "").rstrip("/"),
+        "public_session_options": utipy.session_options_payload(),
         "streaming_enabled": utipy.config.STREAMING,
         "is_local": utipy.config.LOCAL,
     }
@@ -1397,6 +1398,40 @@ def _parse_session_jsonl(path: Path) -> tuple[dict[str, Any], list[dict[str, str
 def admin_review():
     """Redirect the older admin review entrypoint into the cloud dashboard."""
     return redirect(url_for("admin_conversations", evaluation="needs_cm_review"))
+
+
+@app.route("/admin/session_settings")
+def admin_session_settings():
+    """Render the admin-only placeholder for future session-settings controls."""
+
+    options = utipy.session_options_payload()
+    planned_endpoints = [
+        {
+            "path": "/admin/session_settings",
+            "label": "Session Settings Overview",
+            "description": "This placeholder page for reviewing current defaults and future control areas.",
+        },
+        {
+            "path": "/admin/session_settings/presets",
+            "label": "Preset Management",
+            "description": "Future editor for Mumonbot-ling presets, instruction bundles, and prompt variants.",
+        },
+        {
+            "path": "/admin/session_settings/public_runtime",
+            "label": "Public Dokusan Runtime",
+            "description": "Future controls for public-session defaults, rotation, and random assignment policy.",
+        },
+        {
+            "path": "/admin/session_settings/tools",
+            "label": "Tooling And Critic Controls",
+            "description": "Future controls for function tools, search tools, and background review behavior.",
+        },
+    ]
+    return render_template(
+        "admin_session_settings.html",
+        options=options,
+        planned_endpoints=planned_endpoints,
+    )
 
 
 @app.route("/review")

@@ -10,59 +10,6 @@
   <header class="chat-header">
       <h2>Chat with ZM Mumonbot</h2>
       <i>(Or one of the other <b>ZM Zenbot</b> varieties now in training...)</i>
-      <section id="sessionSettingsPanel" class="session-settings-panel" data-locked="false">
-          <div class="session-settings-topline">
-              <div>
-                  <h3>Session Setup</h3>
-                  <div id="sessionSettingsStatus" class="session-settings-status">Loading session options...</div>
-              </div>
-              <div id="sessionSettingsSummary" class="session-settings-summary">Preparing defaults...</div>
-          </div>
-          <div class="session-settings-grid">
-              <label class="session-field">
-                  <span>Mumonbot-ling</span>
-                  <select id="sessionPreset"></select>
-              </label>
-              <label class="session-field">
-                  <span>Model</span>
-                  <select id="sessionModel"></select>
-              </label>
-              <label id="sessionReasoningWrap" class="session-field">
-                  <span>Reasoning</span>
-                  <select id="sessionReasoning"></select>
-              </label>
-              <label id="sessionTemperatureWrap" class="session-field">
-                  <span>Temperature</span>
-                  <input id="sessionTemperature" type="number" min="0" max="2" step="0.1" placeholder="default">
-              </label>
-              <label id="sessionTopPWrap" class="session-field">
-                  <span>Top P</span>
-                  <input id="sessionTopP" type="number" min="0.1" max="1" step="0.05" placeholder="default">
-              </label>
-              <label class="session-field">
-                  <span>Max Output Tokens</span>
-                  <input id="sessionMaxTokens" type="number" min="1" max="4096" step="1">
-              </label>
-          </div>
-          <div class="session-settings-toggles">
-              <label class="session-toggle">
-                  <input id="sessionEnableFunctionTools" type="checkbox">
-                  <span>Enable local function tools</span>
-              </label>
-              <label class="session-toggle">
-                  <input id="sessionEnableFileSearch" type="checkbox">
-                  <span>Enable file search</span>
-              </label>
-              <label class="session-toggle">
-                  <input id="sessionEnableWebSearch" type="checkbox">
-                  <span>Enable web search</span>
-              </label>
-              <label class="session-toggle">
-                  <input id="sessionEnableBackgroundCritic" type="checkbox">
-                  <span>Enable background critic on save</span>
-              </label>
-          </div>
-      </section>
       <div id="chatPrefacePanel" class="chat-preface-panel" hidden>
           <div id="chatPreface"></div> <!-- Koan text goes here and stays through chat -->
       </div>

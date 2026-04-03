@@ -69,3 +69,28 @@ def test_chat_preflight_rejects_unknown_origin(monkeypatch):
 
     assert response.status_code == 204
     assert "Access-Control-Allow-Origin" not in response.headers
+
+
+def test_chatter_hides_session_settings_panel_in_non_streaming_mode(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "STREAMING", False)
+
+    client = main.app.test_client()
+    response = client.get("/chatter")
+
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Session Setup" not in body
+    assert 'id="sessionSettingsPanel"' not in body
+    assert "window.PUBLIC_SESSION_OPTIONS" in body
+
+
+def test_chatter_hides_session_settings_panel_in_streaming_mode(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "STREAMING", True)
+
+    client = main.app.test_client()
+    response = client.get("/chatter")
+
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Session Setup" not in body
+    assert 'id="sessionSettingsPanel"' not in body

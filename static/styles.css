@@ -159,6 +159,34 @@
     text-align: left;
 }
 
+  .koan-session-status {
+    margin-top: 0.85em;
+    padding: 0.65em 0.8em;
+    border-radius: 6px;
+    border: 1px solid #a6b69c;
+    background: #f3f8ec;
+    color: #1f3422;
+    max-width: 48rem;
+  }
+
+  .koan-session-status[data-tone="pending"] {
+    border-color: #c7a24f;
+    background: #fff7df;
+    color: #674b07;
+  }
+
+  .koan-session-status[data-tone="success"] {
+    border-color: #7cab8a;
+    background: #edf8ef;
+    color: #1f4b2b;
+  }
+
+  .koan-session-status[data-tone="error"] {
+    border-color: #c98989;
+    background: #fff0f0;
+    color: #7a1f1f;
+  }
+
   /* Container that spans full height if you want a "full page" chat */
 .chat-container {
   display: flex;

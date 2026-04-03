@@ -69,3 +69,18 @@ def test_admin_conversations_shows_review_dashboard(monkeypatch, fake_bucket):
     assert "Backfill Review Manifest" not in body
     assert "Download + delete all." not in body
     assert "Delete all from cloud." not in body
+    assert "Session Settings" in body
+
+
+def test_admin_session_settings_placeholder_page(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
+
+    client = main.app.test_client()
+    response = client.get("/admin/session_settings")
+
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Session Settings" in body
+    assert "Public <code>/chatter</code> is back to being a plain dokusan surface." in body
+    assert "/admin/session_settings/presets" in body

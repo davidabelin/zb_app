@@ -5,7 +5,7 @@
  * - koan listing and case pages backed by `/static/mmnk.json`
  * - the main chatter UI backed by `/chat`, `/chat_case/<id>`, and `/save_chat`
  * - browser session state mirrored between cookies and localStorage
- * - the v3.1 expert-facing session settings panel
+ * - session defaults and locked snapshots supplied by the backend
  */
 
 const CHAT_API_BASE = (window.CHAT_API_BASE_URL || "").replace(/\/$/, "");
@@ -13,6 +13,11 @@ const SESSION_SETTINGS_STORAGE_KEY = "zenbot.session_settings";
 const ACTIVE_SESSION_SETTINGS_STORAGE_KEY = "zenbot.active_session_settings";
 
 let chatOptionsPromise = null;
+
+function embeddedChatOptions() {
+  const options = window.PUBLIC_SESSION_OPTIONS;
+  return options && typeof options === "object" ? options : null;
+}
 
 function apiUrl(path) {
   if (!CHAT_API_BASE) return path;
@@ -182,6 +187,10 @@ async function fetchJson(url, options = {}) {
 }
 
 async function getChatOptions() {
+  const embedded = embeddedChatOptions();
+  if (embedded) {
+    return embedded;
+  }
   if (!chatOptionsPromise) {
     chatOptionsPromise = fetchJson(apiUrl("/chat/options"), {
       method: "GET",
@@ -278,6 +287,10 @@ function getSessionSettingsElements() {
     enableWebSearch: document.getElementById("sessionEnableWebSearch"),
     enableBackgroundCritic: document.getElementById("sessionEnableBackgroundCritic"),
   };
+}
+
+function hasSessionSettingsPanel() {
+  return Boolean(document.getElementById("sessionSettingsPanel"));
 }
 
 function sessionSettingsInputElements(elements) {
@@ -610,7 +623,9 @@ function persistRememberedPanelSettings(options) {
 function adoptLockedSessionSettings(settings, options) {
   const resolved = sanitizeSessionSettings(settings, options);
   setActiveSessionSettings(resolved);
-  setRememberedSessionSettings(resolved);
+  if (hasSessionSettingsPanel()) {
+    setRememberedSessionSettings(resolved);
+  }
   setPanelToLockedSnapshot(resolved, options);
 }
 
@@ -851,38 +866,62 @@ function initGGCasePage() {
 
       const discussBtn = document.createElement("button");
       discussBtn.textContent = "Bring to a Dokusan Session";
+      const sessionStatus = document.createElement("div");
+      sessionStatus.className = "koan-session-status";
+      sessionStatus.hidden = true;
+
+      const setSessionStatus = (text, tone = "neutral") => {
+        if (!text) {
+          sessionStatus.hidden = true;
+          sessionStatus.textContent = "";
+          delete sessionStatus.dataset.tone;
+          return;
+        }
+        sessionStatus.hidden = false;
+        sessionStatus.dataset.tone = tone;
+        sessionStatus.textContent = text;
+      };
+
       discussBtn.addEventListener("click", async () => {
+        discussBtn.disabled = true;
+        setSessionStatus("Opening dokusan session...", "pending");
         try {
           const options = await getChatOptions();
-          const settings = sanitizeSessionSettings(
-            getRememberedSessionSettings() || options.defaults || {},
-            options
-          );
+          const settings = sanitizeSessionSettings(options.defaults || {}, options);
           const response = await fetch(apiUrl(`/chat_case/${koan.id}`), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ case_id: caseId, settings }),
             credentials: "include",
           });
+          if (!response.ok) {
+            await parseErrorResponse(response, options);
+          }
           const res = await response.json();
-          if (!response.ok || res.error) {
-            throw new Error(res?.message || res?.error || `HTTP ${response.status}`);
+          if (res.error) {
+            throw new Error(res?.message || res?.error || "Unable to start dokusan session.");
           }
 
           setSessionValue("conversation_id", res.conversation_id);
           setSessionValue("case_id", res.case_id);
           if (res.session_settings) {
-            setActiveSessionSettings(res.session_settings);
-            setRememberedSessionSettings(res.session_settings);
+            adoptLockedSessionSettings(res.session_settings, options);
           }
+          setSessionStatus("Dokusan session ready. Entering the sanzen room...", "success");
           window.location.href = "/chatter";
         } catch (err) {
           console.error("Error starting Koan chat:", err);
+          setSessionStatus(
+            `Unable to start dokusan session: ${err?.message || String(err)}`,
+            "error"
+          );
+          discussBtn.disabled = false;
         }
       });
 
       container.appendChild(document.createElement("br"));
       container.appendChild(discussBtn);
+      container.appendChild(sessionStatus);
     })
     .catch((error) => {
       console.error("Error loading JSON:", error);

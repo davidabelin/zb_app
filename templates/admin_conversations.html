@@ -328,6 +328,7 @@
         {% if review_rows %}
           <a class="action-link" href="{{ url_for('review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
         {% endif %}
+        <a class="action-link" href="{{ url_for('admin_session_settings') }}">Session Settings</a>
         <form class="inline" method="post" action="{{ url_for('admin_logout') }}">
           <button class="action-button" type="submit">Log out</button>
         </form>
