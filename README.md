@@ -65,6 +65,15 @@ The tool catalog can be exported with:
 python scripts/export_openai_tool_manifest.py
 ```
 
+Inspect the live botling presets, model capabilities, and resolved session
+settings from the shell with:
+
+```cmd
+python scripts/inspect_botlings.py --help
+python scripts/inspect_botlings.py
+python scripts/inspect_botlings.py --preset fierce_barrier --model gpt-5.4 --reasoning-effort medium
+```
+
 The default vector-store sync helper is:
 
 ```cmd

@@ -23,7 +23,6 @@ import os
 
 from models import MODELS_IN_USE
 
-
 def _default_models_in_use() -> Dict[str, str]:
     """Return the active model registry with a modern base-model fallback."""
 
@@ -37,21 +36,21 @@ def _default_model_name() -> str:
 
 
 def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
-    """Return the first-pass named Mumonbot-ling preset registry."""
+    """Return the first-pass named Mumonbot-ling preset registry. """
 
     return {
         "balanced_mumon": {
-            "label": "Balanced Mumon",
-            "description": "Default dokusan voice: compact, alert, and grounded.",
+            "label": "Mumon",
+            "description": "You are an LLM chatbot post-trained and fine-tuned on the classic commentaries by Zen Master Mumon Ekai's on the canonical Chinese koans, as collected in the 13thC compilation 'The Gateless Gate', or *Mumonkan*.",
             "instruction": (
-                "Adopt the balanced Mumon voice: brisk, grounded, and probing. "
-                "Challenge the student directly, but do not become theatrical."
+                "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen."
+                "Now, as if centuries have passed while you were sitting zazen, here you are holding a Dokusan session with your students at the Zendo."
             ),
             "opening_cue": "(smiles)",
             "settings": {
-                "model_name": "gpt-5.4-mini",
+                "model_name": _default_model_name(), #"gpt-5.4-mini",
                 "reasoning_effort": "low",
-                "max_output_tokens": 900,
+                "max_output_tokens": 1000,
                 "enable_function_tools": True,
                 "enable_file_search": False,
                 "enable_web_search": False,
@@ -67,9 +66,9 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             ),
             "opening_cue": "(sits upright)",
             "settings": {
-                "model_name": "gpt-5.4-mini",
+                "model_name": _default_model_name(), #"gpt-5.4-mini",
                 "reasoning_effort": "low",
-                "max_output_tokens": 500,
+                "max_output_tokens": 1000, #700,
                 "enable_function_tools": True,
                 "enable_file_search": False,
                 "enable_web_search": False,
@@ -80,14 +79,13 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             "label": "Fierce Barrier",
             "description": "Sharper, more forceful challenge for hard koan pressure.",
             "instruction": (
-                "Adopt the fierce barrier voice: sharper, more forceful, and less "
-                "accommodating. Intensify the pressure when the student hides in ideas."
+                "Adopt the fierce barrier voice: sharper, more forceful, and less accommodating. Intensify the pressure if the student tries to cling to preconceived ideas."
             ),
             "opening_cue": "(meets your gaze without speaking)",
             "settings": {
-                "model_name": "gpt-5.4-mini",
+                "model_name": _default_model_name(), #"gpt-5.4-mini",
                 "reasoning_effort": "medium",
-                "max_output_tokens": 700,
+                "max_output_tokens": 1000, #700,
                 "enable_function_tools": True,
                 "enable_file_search": False,
                 "enable_web_search": False,
@@ -95,15 +93,15 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             },
         },
         "explanatory_guide": {
-            "label": "Explanatory Guide",
-            "description": "A little more unpacking while staying inside dokusan form.",
+            "label": "Mumonbotlinger",
+            "description": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a custom-made chatbot fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in a 13thC compilation. Now, centuries later, here you are holding a Dokusan session with the students; centering yourself on each koan they bring to you, and on the barriers they bring with them to it.",
             "instruction": (
-                "Adopt the explanatory guide voice: remain recognizably Zen, but "
-                "allow a little more clarification when the student is genuinely stuck."
+                "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen."
+                "Now, as if centuries have passed while you were sitting zazen, here you are holding a Dokusan session with your students at the Zendo."
             ),
             "opening_cue": "(nods once)",
             "settings": {
-                "model_name": "gpt-5.4-mini",
+                "model_name": _default_model_name(), #"gpt-5.4-mini",
                 "reasoning_effort": "medium",
                 "max_output_tokens": 1200,
                 "enable_function_tools": True,

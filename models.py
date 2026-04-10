@@ -10,15 +10,15 @@ from __future__ import annotations
 
 
 MODELS_IN_USE = {
-    "gpt-5.4-mini": "gpt-5.4-mini",
-    "gpt-5.4": "gpt-5.4",
-    "gpt-4.1": "gpt-4.1",
+    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
+    "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
+    #"gpt-5.4-mini": "gpt-5.4-mini",
+    #"gpt-5.4": "gpt-5.4",
+    #"gpt-4.1": "gpt-4.1",
 }
 
 # Legacy finetunes are retained for reference and offline evaluation.
 LEGACY_FINETUNES = {
-    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
-    "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
     "mmnk_ble824": "ft:gpt-4o-mini-2024-07-18:chatbot-tuners:mmnk-ble824:A7q3grXA",
     "mmnk_ble5053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble5053:ATHGiQEV",
     "mmnk_ble8053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble8053:AV7mu6NG",
