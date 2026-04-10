@@ -1,9 +1,9 @@
 # ZB App
 
-Current app/repo release: `v3.0.0`
+Current app/repo release: `v3.2.0`
 
 `zb_app` is the web, API, and operator surface for Zenbot. In v3 it is a
-single Cloud Run application with an OpenAI-native runtime underneath:
+single App Engine application with an OpenAI-native runtime underneath:
 
 - browser chat and reference pages
 - authenticated `zb_api` routes used by GPT Actions and other clients
@@ -24,12 +24,12 @@ single Cloud Run application with an OpenAI-native runtime underneath:
 
 ## Runtime Topology
 
-The v3 runtime is Cloud Run-only:
+The v3.2 runtime is App Engine-only:
 
-- one public Cloud Run service serves browser routes, SSE chat, admin pages,
-  and authenticated API routes
-- if a browser shell is still served from another origin during migration,
-  allow it with `CHAT_ALLOWED_ORIGINS`
+- one public App Engine service serves browser routes, SSE chat, admin pages,
+  and authenticated API routes from the same host
+- `CHAT_ALLOWED_ORIGINS` remains available only for explicit extra browser
+  callers; it is no longer used for a split Zenbot shell/API topology
 - active conversation state uses Redis/Memorystore when `REDIS_URL` is set,
   then falls back to Firestore, then local memory for development
 - archived transcripts and generated review/training artifacts stay in GCS
@@ -43,8 +43,8 @@ Responses API rather than Chat Completions.
 
 Implemented v3 runtime pieces:
 
-- deterministic live model defaults: `gpt-5.4-mini` for chat, `gpt-5.4` for
-  critic/judging, `gpt-4.1` reserved for post-training work
+- deterministic live botling defaults sourced from `models.py`
+- `gpt-5.4` for critic/judging, `gpt-4.1` reserved for post-training work
 - prompt caching via stable `prompt_cache_key` values
 - provider-side conversation continuation via `previous_response_id`
 - optional File Search through configured vector stores
@@ -115,7 +115,6 @@ python scripts/sync_openai_vector_store.py --create
 - `REDIS_URL`
 - `SESSION_TTL_SECONDS`
 - `STREAMING_ENABLED`
-- `CHAT_API_BASE_URL`
 - `WEB_APP_ORIGIN`
 - `CHAT_ALLOWED_ORIGINS`
 
@@ -142,7 +141,7 @@ python scripts/sync_openai_vector_store.py --create
 Use the simple scripts in `scripts\`:
 
 1. First time only: `scripts\one_time_only_DELETE_ME.bat`
-2. Code deploy: `scripts\deploy.bat`
+2. Code deploy to App Engine: `scripts\deploy.bat`
 3. Docs/settings/search-context update: `scripts\update.bat`
 4. Rotate secrets only: `scripts\rotate_keys.bat`
 5. Same as update, explicit name: `scripts\refresh_context.bat`

@@ -1,6 +1,4 @@
-# Archived App Engine reference file.
-# Zenbot v3 deploys the browser shell and API together on Cloud Run, so this
-# file is no longer part of the active production path.
+# Canonical App Engine deploy for the full Zenbot web, API, and admin surface.
 runtime: python314
 entrypoint: gunicorn --workers 2 --threads 4 --timeout 120 -b :$PORT main:app
 
@@ -9,9 +7,8 @@ handlers:
     static_dir: static
 
 env_variables:
-  # Project and cross-service routing.
+  # Project and browser origin settings.
   GOOGLE_CLOUD_PROJECT: zenbot-434517
-  CHAT_API_BASE_URL: https://zb-chat-api-txk2gvimpq-uc.a.run.app
   # Secret indirection names; values are resolved at runtime from Secret Manager.
   OPENAI_API_KEY_SECRET_NAME: zb-openai-api-key
   FLASK_SECRET_KEY_SECRET_NAME: zb-flask-secret-key

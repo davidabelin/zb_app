@@ -14,14 +14,13 @@ maintainer guidance, see:
 scripts\rotate_keys.bat
 ```
 
-## 2) Deploy the Cloud Run Service
+## 2) Deploy the App Engine Service
 
 ```cmd
 scripts\deploy.bat
 ```
 
-The script deploys the single public service, resolves its URL, and then syncs
-`WEB_APP_ORIGIN` and `CHAT_API_BASE_URL` to that same host.
+The script deploys `app.yaml` to the single public App Engine service.
 
 ## 3) Optional: Refresh Docs/Search Context
 

@@ -1,3 +1,5 @@
+import pytest
+
 import main
 import utilities
 
@@ -27,6 +29,14 @@ def test_resolve_session_settings_accepts_sampling_controls_for_active_finetune(
     assert settings["model_name"] == utilities.config.MODEL_NAME
     assert settings["temperature"] == 0.4
     assert settings["top_p"] == 0.8
+
+
+def test_config_rejects_unregistered_openai_live_model():
+    with pytest.raises(ValueError, match="OPENAI_LIVE_MODEL"):
+        utilities.Config(
+            MODELS_IN_USE={"set03-bs2lr05e7": "ft:active-model"},
+            OPENAI_LIVE_MODEL="gpt-5.4-mini",
+        )
 
 
 def test_session_settings_from_legacy_metadata_backfills_snapshot():

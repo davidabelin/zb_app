@@ -8,7 +8,6 @@
  * - session defaults and locked snapshots supplied by the backend
  */
 
-const CHAT_API_BASE = (window.CHAT_API_BASE_URL || "").replace(/\/$/, "");
 const SESSION_SETTINGS_STORAGE_KEY = "zenbot.session_settings";
 const ACTIVE_SESSION_SETTINGS_STORAGE_KEY = "zenbot.active_session_settings";
 
@@ -17,11 +16,6 @@ let chatOptionsPromise = null;
 function embeddedChatOptions() {
   const options = window.PUBLIC_SESSION_OPTIONS;
   return options && typeof options === "object" ? options : null;
-}
-
-function apiUrl(path) {
-  if (!CHAT_API_BASE) return path;
-  return `${CHAT_API_BASE}${path}`;
 }
 
 function showLoadingSpinner() {
@@ -192,7 +186,7 @@ async function getChatOptions() {
     return embedded;
   }
   if (!chatOptionsPromise) {
-    chatOptionsPromise = fetchJson(apiUrl("/chat/options"), {
+    chatOptionsPromise = fetchJson("/chat/options", {
       method: "GET",
       credentials: "include",
     });
@@ -888,7 +882,7 @@ function initGGCasePage() {
         try {
           const options = await getChatOptions();
           const settings = sanitizeSessionSettings(options.defaults || {}, options);
-          const response = await fetch(apiUrl(`/chat_case/${koan.id}`), {
+          const response = await fetch(`/chat_case/${koan.id}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ case_id: caseId, settings }),
@@ -1104,7 +1098,7 @@ async function startChat(prompt) {
 
     thinkingNode = appendThinkingIndicator();
 
-    const response = await fetch(apiUrl("/chat"), {
+    const response = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1180,7 +1174,7 @@ async function saveChat() {
 
   try {
     showLoadingSpinner();
-    const response = await fetch(apiUrl("/save_chat"), {
+    const response = await fetch("/save_chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

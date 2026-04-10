@@ -9,8 +9,8 @@ Key precedence rules:
 1. In local development, read `.env` and `config/.env` if python-dotenv exists.
 2. In managed runtimes, do not load dotenv files.
 3. For secrets, prefer Secret Manager and fall back to environment values.
-4. Keep model/runtime defaults deterministic; do not randomize production model
-   or profile selection.
+4. Keep model/runtime defaults deterministic and fail closed onto registered live
+   botlings only; do not randomize production model or profile selection.
 """
 
 from __future__ import annotations
@@ -24,16 +24,26 @@ import os
 from models import MODELS_IN_USE
 
 
-def _default_models_in_use() -> Dict[str, str]:
-    """Return the active model registry with a modern base-model fallback."""
+def _first_model_name() -> str:
+    """Return the first configured live model key or fail closed."""
 
-    return dict(MODELS_IN_USE) if MODELS_IN_USE else {"gpt-5.4-mini": "gpt-5.4-mini"}
+    if not MODELS_IN_USE:
+        raise RuntimeError("MODELS_IN_USE must contain at least one live botling.")
+    return next(iter(MODELS_IN_USE))
+
+
+def _default_models_in_use() -> Dict[str, str]:
+    """Return the active live-model registry without a base-model fallback."""
+
+    if not MODELS_IN_USE:
+        raise RuntimeError("MODELS_IN_USE must contain at least one live botling.")
+    return dict(MODELS_IN_USE)
 
 
 def _default_model_name() -> str:
     """Return the default active model key."""
 
-    return next(iter(_default_models_in_use()), "gpt-5.4-mini")
+    return _first_model_name()
 
 
 def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
@@ -239,9 +249,6 @@ class Config:
     )
 
     GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
-    CHAT_API_BASE_URL: str = field(
-        default_factory=lambda: os.getenv("CHAT_API_BASE_URL", "")
-    )
     WEB_APP_ORIGIN: str = field(
         default_factory=lambda: os.getenv(
             "WEB_APP_ORIGIN", "https://zenbot-434517.uw.r.appspot.com"
@@ -294,7 +301,7 @@ class Config:
     LOG_LEVEL: int = logging.INFO
 
     OPENAI_LIVE_MODEL: str = field(
-        default_factory=lambda: os.getenv("OPENAI_LIVE_MODEL", "gpt-5.4-mini")
+        default_factory=lambda: os.getenv("OPENAI_LIVE_MODEL", _default_model_name())
     )
     OPENAI_JUDGE_MODEL: str = field(
         default_factory=lambda: os.getenv("OPENAI_JUDGE_MODEL", "gpt-5.4")
@@ -415,10 +422,32 @@ class Config:
         if not self.HOT_STATE_BACKEND:
             self.HOT_STATE_BACKEND = "redis" if self.REDIS_URL else "firestore"
 
-        if self.MODEL_NAME not in self.MODELS_IN_USE:
+        if not self.MODELS_IN_USE:
+            raise ValueError("MODELS_IN_USE must contain at least one live botling.")
+        if self.OPENAI_LIVE_MODEL not in self.MODELS_IN_USE:
+            raise ValueError(
+                "OPENAI_LIVE_MODEL must reference a key from MODELS_IN_USE; "
+                f"got {self.OPENAI_LIVE_MODEL!r}."
+            )
+        if not self.MODEL_NAME:
             self.MODEL_NAME = self.OPENAI_LIVE_MODEL
+        elif self.MODEL_NAME not in self.MODELS_IN_USE:
+            raise ValueError(
+                "MODEL_NAME must reference a key from MODELS_IN_USE; "
+                f"got {self.MODEL_NAME!r}."
+            )
         if self.DEFAULT_BOTLING_ID not in self.BOTLING_PRESETS:
-            self.DEFAULT_BOTLING_ID = next(iter(self.BOTLING_PRESETS), "balanced_mumon")
+            self.DEFAULT_BOTLING_ID = next(iter(self.BOTLING_PRESETS), "")
+        if not self.DEFAULT_BOTLING_ID:
+            raise ValueError("BOTLING_PRESETS must define at least one preset.")
+        for preset_id, preset in self.BOTLING_PRESETS.items():
+            settings = preset.get("settings", {}) if isinstance(preset, dict) else {}
+            model_name = str(settings.get("model_name", "")).strip()
+            if model_name and model_name not in self.MODELS_IN_USE:
+                raise ValueError(
+                    "Preset settings must reference keys from MODELS_IN_USE; "
+                    f"preset {preset_id!r} uses {model_name!r}."
+                )
 
     def _resolve_secret(self, secret_name: str, fallback: str) -> str:
         """Resolve one secret with Secret Manager first and env fallback second."""
@@ -487,7 +516,12 @@ class Config:
         """Build a Responses-API parameter dict for a named profile."""
 
         selected_name = model_name or self.MODEL_NAME or self.OPENAI_LIVE_MODEL
-        resolved_model = self.MODELS_IN_USE.get(selected_name, selected_name)
+        if selected_name not in self.MODELS_IN_USE:
+            raise ValueError(
+                "Selected live model must reference a key from MODELS_IN_USE; "
+                f"got {selected_name!r}."
+            )
+        resolved_model = self.MODELS_IN_USE[selected_name]
         profile_config = self.MODEL_ARGS.get(
             profile, self.MODEL_ARGS.get(self.DEFAULT_RESPONSE_PROFILE, {})
         )

@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.2.0 - 2026-04-10
+
+App Engine-only runtime cleanup for `zb_app`.
+
+- removed the active Cloud Run bootstrap and same-repo Cloud Run entrypoint shim
+- collapsed the browser chat bootstrap to same-origin `/chat`, `/chat_case/*`, and `/save_chat`
+- made `app.yaml` the canonical Zenbot deploy manifest and repointed `scripts\deploy.bat` to App Engine
+- updated maintainer docs, runbooks, and schemas to treat App Engine as the only active serving path
+- removed Zenbot-specific Cloud Run assumptions from shared operator tooling
+- formalized the app/repo release marker as `v3.2.0`
+
 ## v3.0.0 - 2026-03-28
 
 OpenAI-native runtime rebuild for `zb_app`.

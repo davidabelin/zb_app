@@ -88,6 +88,7 @@ class SessionSettingsLockedError(ValueError):
     """Raised when a request tries to mutate settings for an active conversation."""
 
     def __init__(self, current_settings: dict[str, Any]):
+        """Capture the locked session snapshot for the caller."""
         super().__init__("Session settings are locked for this conversation.")
         self.current_settings = current_settings
 
@@ -236,11 +237,11 @@ def _botling_preset_definition(preset_id: str) -> dict[str, Any]:
 
 
 def _default_model_key() -> str:
-    """Return the current default model key."""
+    """Return the configured default model key from the active live registry."""
 
     model_key = config.MODEL_NAME
     if model_key not in config.MODELS_IN_USE:
-        return next(iter(config.MODELS_IN_USE), config.OPENAI_LIVE_MODEL)
+        return next(iter(config.MODELS_IN_USE))
     return model_key
 
 
@@ -249,7 +250,6 @@ def _params_from_session_settings(
 ) -> dict[str, Any]:
     """Translate one resolved session-settings snapshot into Responses params."""
 
-    profile = _runtime_profile_name(profile_name)
     settings = ResolvedSessionSettings.model_validate(session_settings).model_dump(
         mode="json"
     )
@@ -383,7 +383,8 @@ def _legacy_session_settings(
 ) -> dict[str, Any]:
     """Backfill a synthetic v3.1 session-settings snapshot for legacy metadata."""
 
-    params = metadata.get("params") if isinstance(metadata.get("params"), dict) else {}
+    raw_params = metadata.get("params")
+    params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
     snapshot: dict[str, Any] = {
         "preset_id": str(metadata.get("botling_id", "")).strip() or config.DEFAULT_BOTLING_ID,
         "model_name": model_name or _default_model_key(),

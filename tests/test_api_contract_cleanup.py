@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
+import yaml  # type: ignore[import]
 
 import main
 import utilities

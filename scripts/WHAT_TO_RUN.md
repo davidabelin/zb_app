@@ -10,7 +10,7 @@ Run:
 scripts\deploy.bat
 ```
 
-Use this for code changes.
+Use this for App Engine code changes.
 
 ## Update docs/settings/search context
 

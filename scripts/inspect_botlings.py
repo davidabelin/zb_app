@@ -61,11 +61,11 @@ def _runtime_profile_name(config: Any, profile_name: str | None) -> str:
 
 
 def _default_model_key(config: Any) -> str:
-    """Return the configured default model key with a safe fallback."""
+    """Return the configured default model key from the active live registry."""
 
     model_key = config.MODEL_NAME
     if model_key not in config.MODELS_IN_USE:
-        return next(iter(config.MODELS_IN_USE), config.OPENAI_LIVE_MODEL)
+        return next(iter(config.MODELS_IN_USE))
     return model_key
 
 

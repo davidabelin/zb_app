@@ -106,7 +106,7 @@ Additional checks worth keeping:
 ### Chat works locally but not in cloud
 
 - inspect secret names and active secret versions
-- confirm the Cloud Run service has the expected env vars
+- confirm the App Engine service has the expected env vars
 - confirm Redis/Firestore/GCS clients initialize for the target project
 
 ### Streaming regressed badly

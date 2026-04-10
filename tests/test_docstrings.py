@@ -1,4 +1,4 @@
-"""Prevent the v2.0.0 documentation sweep from drifting immediately."""
+"""Keep core module docstrings present and current as the runtime evolves."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ CORE_MODULES = [
     "utilities.py",
     "config.py",
     "models.py",
-    "chat_api.py",
 ]
 
 

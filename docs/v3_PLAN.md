@@ -1,4 +1,9 @@
-# Zenbot v3.0.0 OpenAI-Native SDK Plan
+# Historical Zenbot v3.0.0 OpenAI-Native SDK Plan
+
+This document is retained as historical planning context only.
+
+It is superseded by the live v3.2.0 App Engine-only runtime. Do not use this
+file for current deployment, topology, or operator guidance.
 
 ## Summary
 - Reframe v3.0.0 as a Cloud Run-only, OpenAI-native rebuild: keep the current public Zenbot routes, but replace the hybrid App Engine + Cloud Run runtime and the `chat.completions.create` hot path with the current OpenAI Python SDK and the Responses API.

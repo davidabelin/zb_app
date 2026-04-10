@@ -6,12 +6,7 @@ def test_chat_preflight_allows_same_project_app_engine_origin(monkeypatch):
     monkeypatch.setattr(
         main.utipy.config,
         "WEB_APP_ORIGIN",
-        "https://zb-chat-api-txk2gvimpq-uc.a.run.app",
-    )
-    monkeypatch.setattr(
-        main.utipy.config,
-        "CHAT_API_BASE_URL",
-        "https://zb-chat-api-txk2gvimpq-uc.a.run.app",
+        "https://zenbot-434517.uw.r.appspot.com",
     )
     monkeypatch.setattr(main.utipy.config, "CHAT_ALLOWED_ORIGINS", [])
 
@@ -82,6 +77,7 @@ def test_chatter_hides_session_settings_panel_in_non_streaming_mode(monkeypatch)
     assert "Session Setup" not in body
     assert 'id="sessionSettingsPanel"' not in body
     assert "window.PUBLIC_SESSION_OPTIONS" in body
+    assert "window.CHAT_API_BASE_URL" not in body
 
 
 def test_chatter_hides_session_settings_panel_in_streaming_mode(monkeypatch):
@@ -94,3 +90,4 @@ def test_chatter_hides_session_settings_panel_in_streaming_mode(monkeypatch):
     assert response.status_code == 200
     assert "Session Setup" not in body
     assert 'id="sessionSettingsPanel"' not in body
+    assert "window.CHAT_API_BASE_URL" not in body

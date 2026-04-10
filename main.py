@@ -1,4 +1,4 @@
-"""Primary Flask application for the Zenbot web shell and authenticated API.
+"""Primary Flask application for the Zenbot App Engine web shell and API.
 
 This module is the orchestration layer for ``zb_app``. It wires together:
 
@@ -6,7 +6,7 @@ This module is the orchestration layer for ``zb_app``. It wires together:
 - authenticated JSON API routes used by GPT Actions and external tools
 - streaming and non-streaming chat flows backed by ``utilities.py``
 - admin and review tooling for archives and training data curation
-- hybrid deployment behavior split between App Engine and Cloud Run
+- single-surface App Engine deployment for browser, API, and admin flows
 
 The code here is intentionally thin where possible: storage, model access,
 memory logbook handling, and koan helpers live in ``utilities.py``; runtime
@@ -157,7 +157,6 @@ def _configured_chat_origins() -> set[str]:
 
     origins = {
         _normalize_origin(utipy.config.WEB_APP_ORIGIN),
-        _normalize_origin(utipy.config.CHAT_API_BASE_URL),
         "http://localhost:8080",
         "http://127.0.0.1:8080",
     }
@@ -379,7 +378,6 @@ def _apply_cors_headers(response: Response):
 def inject_runtime_config() -> dict[str, Any]:
     """Expose chat runtime settings to Jinja templates."""
     return {
-        "chat_api_base_url": (utipy.config.CHAT_API_BASE_URL or "").rstrip("/"),
         "public_session_options": utipy.session_options_payload(),
         "streaming_enabled": utipy.config.STREAMING,
         "is_local": utipy.config.LOCAL,
@@ -892,7 +890,7 @@ def zb_api_chat():
             400,
             conversation_id=conversation_id or None,
         )
-    except Exception as e:
+    except Exception:
         logging.exception("/zb_api/chat failed")
         return _api_failure(
             "internal_server_error",
@@ -928,7 +926,7 @@ def zb_api_chat_case(case_id: str):
             conversation_id=conversation_id or None,
             case_id=str(case_id),
         )
-    except Exception as e:
+    except Exception:
         logging.exception("/zb_api/chat_case failed")
         return _api_failure(
             "internal_server_error",
@@ -1003,7 +1001,7 @@ def zb_api_save_chat():
         return _api_success(**payload)
     except RuntimeError as e:
         return _api_storage_unavailable(str(e), conversation_id=locals().get("conversation_id", None))
-    except Exception as e:
+    except Exception:
         logging.exception("/zb_api/save_chat failed")
         return _api_failure(
             "internal_server_error",
@@ -1144,7 +1142,7 @@ def zb_api_update_memory_logbook():
             )
         except RuntimeError as e:
             return _api_storage_unavailable(str(e))
-        except Exception as e:
+        except Exception:
             return _api_failure(
                 "internal_server_error",
                 "Unexpected server-side failure while updating the memory logbook.",
@@ -1164,7 +1162,7 @@ def zb_api_update_memory_logbook():
             return _memory_mutation_response("logbook replaced via POST", normalized)
         except RuntimeError as e:
             return _api_storage_unavailable(str(e))
-        except Exception as e:
+        except Exception:
             return _api_failure(
                 "internal_server_error",
                 "Unexpected server-side failure while replacing the memory logbook.",
@@ -1180,7 +1178,7 @@ def zb_api_update_memory_logbook():
             )
         except RuntimeError as e:
             return _api_storage_unavailable(str(e))
-        except Exception as e:
+        except Exception:
             return _api_failure(
                 "internal_server_error",
                 "Unexpected server-side failure while updating the memory logbook.",
@@ -1208,7 +1206,7 @@ def append_memory_logbook_entry_legacy():
         )
     except RuntimeError as e:
         return _api_storage_unavailable(str(e))
-    except Exception as e:
+    except Exception:
         return _api_failure(
             "internal_server_error",
             "Unexpected server-side failure while updating the memory logbook.",
