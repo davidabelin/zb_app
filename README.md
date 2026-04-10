@@ -71,7 +71,7 @@ settings from the shell with:
 ```cmd
 python scripts/inspect_botlings.py --help
 python scripts/inspect_botlings.py
-python scripts/inspect_botlings.py --preset fierce_barrier --model gpt-5.4 --reasoning-effort medium
+python scripts/inspect_botlings.py --preset fierce_barrier --model set03-bs2lr05e7 --reasoning-effort medium
 ```
 
 The default vector-store sync helper is:

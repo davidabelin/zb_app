@@ -264,12 +264,15 @@ def main() -> int:
     parser.add_argument(
         "--model",
         default="",
-        help="Model key override, for example gpt-5.4-mini or gpt-5.4.",
+        help=(
+            "Model key override, for example set03-bs2lr05e7 or "
+            "set03a-bs5lr05e5."
+        ),
     )
     parser.add_argument(
         "--profile",
         default="live",
-        help="Runtime response profile used for fallback values.",
+        help="Runtime response profile used for default values.",
     )
     parser.add_argument(
         "--reasoning-effort",
