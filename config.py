@@ -23,6 +23,7 @@ import os
 
 from models import MODELS_IN_USE
 
+
 def _default_models_in_use() -> Dict[str, str]:
     """Return the active model registry with a modern base-model fallback."""
 
@@ -48,7 +49,7 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             ),
             "opening_cue": "(smiles)",
             "settings": {
-                "model_name": _default_model_name(), #"gpt-5.4-mini",
+                "model_name": _default_model_name(),
                 "reasoning_effort": "low",
                 "max_output_tokens": 1000,
                 "enable_function_tools": True,
@@ -66,9 +67,9 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             ),
             "opening_cue": "(sits upright)",
             "settings": {
-                "model_name": _default_model_name(), #"gpt-5.4-mini",
+                "model_name": _default_model_name(),
                 "reasoning_effort": "low",
-                "max_output_tokens": 1000, #700,
+                "max_output_tokens": 1000,
                 "enable_function_tools": True,
                 "enable_file_search": False,
                 "enable_web_search": False,
@@ -83,9 +84,9 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             ),
             "opening_cue": "(meets your gaze without speaking)",
             "settings": {
-                "model_name": _default_model_name(), #"gpt-5.4-mini",
+                "model_name": _default_model_name(),
                 "reasoning_effort": "medium",
-                "max_output_tokens": 1000, #700,
+                "max_output_tokens": 1000,
                 "enable_function_tools": True,
                 "enable_file_search": False,
                 "enable_web_search": False,
@@ -101,7 +102,7 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             ),
             "opening_cue": "(nods once)",
             "settings": {
-                "model_name": _default_model_name(), #"gpt-5.4-mini",
+                "model_name": _default_model_name(),
                 "reasoning_effort": "medium",
                 "max_output_tokens": 1200,
                 "enable_function_tools": True,

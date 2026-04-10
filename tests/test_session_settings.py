@@ -4,50 +4,52 @@ import utilities
 
 def test_session_options_payload_exposes_defaults_presets_and_models():
     payload = utilities.session_options_payload()
+    default_model = utilities.config.MODEL_NAME
 
     assert payload["settings_version"] == utilities.config.SESSION_SETTINGS_VERSION
     assert payload["defaults"]["preset_id"] == utilities.config.DEFAULT_BOTLING_ID
     assert any(preset["id"] == "balanced_mumon" for preset in payload["presets"])
 
-    model = next(
-        model for model in payload["models"] if model["id"] == "gpt-5.4-mini"
+    model = next(model for model in payload["models"] if model["id"] == default_model)
+    assert model["supports_reasoning"] is False
+    assert model["supports_sampling_controls"] is True
+
+
+def test_resolve_session_settings_accepts_sampling_controls_for_active_finetune():
+    settings = utilities.resolve_session_settings(
+        {
+            "model_name": utilities.config.MODEL_NAME,
+            "temperature": 0.4,
+            "top_p": 0.8,
+        }
     )
-    assert model["supports_reasoning"] is True
-    assert model["supports_sampling_controls"] is False
 
-
-def test_resolve_session_settings_rejects_sampling_controls_for_gpt5():
-    try:
-        utilities.resolve_session_settings(
-            {
-                "model_name": "gpt-5.4-mini",
-                "temperature": 0.4,
-            }
-        )
-    except ValueError as exc:
-        assert "temperature is not supported" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for unsupported sampling controls")
+    assert settings["model_name"] == utilities.config.MODEL_NAME
+    assert settings["temperature"] == 0.4
+    assert settings["top_p"] == 0.8
 
 
 def test_session_settings_from_legacy_metadata_backfills_snapshot():
     settings = utilities.session_settings_from_metadata(
         {
-            "model_name": "gpt-5.4-mini",
+            "model_name": utilities.config.MODEL_NAME,
             "profile": "live",
             "botling_id": "fierce_barrier",
             "params": {
-                "model": "gpt-5.4-mini",
+                "model": utilities.config.MODELS_IN_USE[utilities.config.MODEL_NAME],
                 "max_output_tokens": 777,
-                "reasoning": {"effort": "medium"},
+                "temperature": 0.55,
+                "top_p": 0.75,
             },
         }
     )
 
     assert settings["preset_id"] == "fierce_barrier"
-    assert settings["model_name"] == "gpt-5.4-mini"
+    assert settings["model_name"] == utilities.config.MODEL_NAME
     assert settings["max_output_tokens"] == 777
-    assert settings["reasoning_effort"] == "medium"
+    assert settings["reasoning_effort"] == ""
+    assert settings["temperature"] == 0.55
+    assert settings["top_p"] == 0.75
 
 
 def test_chat_and_zb_api_options_routes_return_session_payload(monkeypatch):

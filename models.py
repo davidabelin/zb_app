@@ -9,12 +9,10 @@ training-pipeline work.
 from __future__ import annotations
 
 
+# Active live list. Keep this small while evaluating fresh botlings.
 MODELS_IN_USE = {
     "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
     "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
-    #"gpt-5.4-mini": "gpt-5.4-mini",
-    #"gpt-5.4": "gpt-5.4",
-    #"gpt-4.1": "gpt-4.1",
 }
 
 # Legacy finetunes are retained for reference and offline evaluation.

@@ -135,7 +135,7 @@ def test_zb_api_save_chat_returns_normalized_success(monkeypatch, fake_bucket):
             {
                 "student": "api",
                 "case_id": "",
-                "model_name": "gpt-5.4-mini",
+                "model_name": utilities.config.MODEL_NAME,
                 "profile": "live",
                 "training_loss": 0.0,
                 "botling_id": "balanced_mumon",
