@@ -17,6 +17,8 @@ Admin/review workflow and operator-maintenance release for `zb_app`.
   and random review sampling, with matching `action_schemas.yaml` updates
 - refreshed operator docs, smoke-test commands, stale public/admin copy,
   `trainset04` notes, and the rolling project to-do list
+- rebuilt the public Entrance Hall and `/chatter` sanzen-room layout, with the
+  previous splash preserved at `/legacy-splash`
 - pinned the OpenAI/httpx transport stack used by Python 3.14 local runtimes
 - formalized the app/repo release marker as `v3.2.3`
 

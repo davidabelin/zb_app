@@ -555,6 +555,12 @@ def home():
     return render_template("index.html")
 
 
+@app.route("/legacy-splash")
+def legacy_splash():
+    """Render the previous public splash page for reference."""
+    return render_template("legacy_splash.html")
+
+
 @app.route("/privacy")
 def privacy():
     """Render the privacy-policy page."""

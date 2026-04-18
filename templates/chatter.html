@@ -1,34 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Zenbot Dokusan{% endblock %}
+{% block title %}Zenbot Sanzen Room{% endblock %}
 {% block content %}
 <!--
   Non-streaming chat entrypoint. `static/scripts.js` binds this page to `/chat`
   and `/save_chat`, reads/writes `conversation_id` and `case_id`, and injects
   koan preface text when the browser session is case-anchored.
 -->
-<div class="chat-container">
-  <!-- Header at top -->
-  <header class="chat-header">
-      <h2>Chat with ZM Mumonbot</h2>
-      <i>(Or one of the other <b>ZM Zenbot</b> varieties now in training...)</i>
-      <div id="chatPrefacePanel" class="chat-preface-panel" hidden>
-          <div id="chatPreface"></div> <!-- Koan text goes here and stays through chat -->
-      </div>
-  </header>
-
-  <!-- Scrollable chat messages in the middle -->
-  <section id="chatResults" class="chat-messages"></section>
-
-  <!-- Input area pinned at bottom -->
-  <section class="chat-input-area">
-      <textarea id="chatInput" rows="3" placeholder="Speak..."></textarea>
-      <div class="chat-buttons">
-          <button id="chatSend">Send</button>  <button id="chatSave">Save</button>
-          <button id="chatEnd" class="button-danger">Reset</button>
-      </div>
-      <div class="chat-help">
-        <small>Enter to send • Shift+Enter for a newline • Use <code>(bows)</code> to end a dokusan</small>
-      </div>
-  </section>
-</div>
+{% set streaming_enabled = false %}
+{% include "_chatter_workspace.html" %}
 {% endblock %}

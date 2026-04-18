@@ -1,64 +1,68 @@
 {% extends "base.html" %}
-{% block title %}Zenbot Dokusan{% endblock %}
+{% block title %}Zenbot Zendo Entrance Hall{% endblock %}
 {% block content %}
-    <div class="container">
-        <header>
-            <h1>Zenbot Dokusan</h1>
-            <h2>Koan Work with a Chatbot Emulation of <b>Zen Master <i>Mumon Ekai</i></b></h2>
-            <p>(An LLM/GPT chatbot fine-tuned on Mumon's 13th-century commentaries on the classic koans collected in the <i>Gateless Gate</i>)</p>
-        </header>
-        <main>
-            <section>
-                <h3>Dokusan Session with ZM Mumonbot</h3>
-                <ul>
-                    <p><li><a href="{{ url_for('chatter') }}">Enter the <i>sanzen</i> room to begin...</a></li></p>
-                    <i>Or, choose a koan from the sources below to work on with ZM <s>Zenbot</s> <b>Mumonbot</b>.</i>
-                </ul>
-            </section>
-            <section>
-                <h2><u>Original Sources</u></h2>
-                <p>Zenbot was trained to respond 'like' Mumon's original commentary and verse when given text 'like' these 48 (+1) classic canonical cases in the 'Gateless Gate' collection.</p>
-                <ul>
-                    <li><a href="{{ url_for('gg') }}">List of cases in <i>The Gateless Gate</i></a></li>
-                    <li><a href="{{ url_for('display_pdf') }}">List of cases in <i>Blue Cliff Record</i></a></li>
-                </ul>
-            </section>
-            <section>
-                <h3>Blue Cliff Record Commentary Materials</h3>
-                <p>Zenbot now keeps extracted Blue Cliff Record source materials and generated persona-training artifacts for future Zenbotling work based on...
-                <ul>
-                    <li><i>Setcho</i> (original collector of the koans in the BCR; composed the verses and some comments; c. before 1000CE)</li>
-                    <li><i>Engo</i> (wrote the introductions to Setcho's collection; c. 1100CE)</li>
-                    <li><i>Hakuin</i> (Rinzai School; commentary on koans, and on Setcho's verse; c 1700CE)</li>
-                    <li><i>Tenkei</i> (Soto School; commentary on koans, and on Setcho's verse; c. 1700CE)</li>
-                </ul>
-                Mumon's 13th century <i>Gateless Gate</i> contains 49 cases with commentary and verse. Five cases in his collection are also found among the 100 cases of the <i>Blue Cliff Record</i> anthology.
-                </p>
-            </section>
-            <section>
-                <p>Zenbot also has a 'Guidebot' to guide new students through Koan Work, explain Rinzai Zen Practice, add important historical and cultural context, etc.
-                Dokusan sessions with Zenbot can be 'channeled' in-chat by the Guidebot, with assistance provided in the shared context of that specific experience.</p>
-                <ul>
-                    <li><a href="https://chatgpt.com/g/g-9w9FN2RE6-zenbot">Chat with the 'Zen-Customized Guidebot' <b>ZenbotOG</b> at ChatGPT.com</a></li>
-                    <li><i>'Never post-trained = Not a Zen Master.'</i></li>
-                </ul>
-                <br>
-            </section>
-            <section>
-                <br>
-                <h3>Data Administration</h3>
-                <s><i>(may require login credentials)</i></s>
-                Archive of saved dokusan session transcripts:
-               <ul>
-                    <li><a href="{{ url_for('admin_conversations') }}">Open the cloud-backed review dashboard.</a></li>
-                    <li><a href="{{ url_for('admin_review') }}">Jump to the unreviewed review queue.</a></li>
-                    <li><a href="https://x-checker-1721430104958.wm.r.appspot.com/"><s>Call XCbot -- ask to <i>factcheck a dog's buddha-nature!</i> ;)</s> Feature is clunky or not available.</a></li>
-               </ul>
-            </section>
-        </main>
+<main class="entrance-hall">
+  <section class="entrance-hero" aria-labelledby="entrance-title">
+    <img class="entrance-hero-image" src="{{ url_for('static', filename='images/zenbot_hall.png') }}" alt="Mumonbot seated in a zendo-like server hall">
+    <div class="entrance-hero-shade" aria-hidden="true"></div>
+    <div class="entrance-hero-content">
+      <div class="entrance-kicker">Dokusan at the threshold</div>
+      <h1 id="entrance-title">Zenbot Zendo Entrance Hall</h1>
+      <p>
+        A quiet public entry to Mumonbot, koan sources, and the working sanzen
+        room. The full guide and site map will grow here; for now, enter simply.
+      </p>
+      <div class="entrance-actions" aria-label="Primary paths">
+        <a class="entrance-button primary" href="{{ url_for('chatter') }}">Enter the Sanzen Room</a>
+        <a class="entrance-button" href="{{ url_for('gg') }}">Browse Gateless Gate</a>
+      </div>
     </div>
-{% endblock %}
-{% block footer %}
-    <p><a href="{{ url_for('privacy') }}">Standard-Issue <b>Privacy Policy</b> as per app-hosting and ChatGPT service requirements.</a></p>
-    <br>
+  </section>
+
+  <section class="entrance-band entrance-map" aria-labelledby="entrance-map-title">
+    <div class="section-heading">
+      <span>Site map seed</span>
+      <h2 id="entrance-map-title">Current Paths</h2>
+    </div>
+    <nav class="entrance-link-grid" aria-label="Zenbot public site map">
+      <a href="{{ url_for('chatter') }}">
+        <strong>Sanzen Room</strong>
+        <span>Begin or continue a dokusan conversation.</span>
+      </a>
+      <a href="{{ url_for('gg') }}">
+        <strong>Gateless Gate</strong>
+        <span>Read Mumonkan cases and bring one into chat.</span>
+      </a>
+      <a href="{{ url_for('display_pdf') }}">
+        <strong>Blue Cliff Record</strong>
+        <span>Open the current BCR commentary materials.</span>
+      </a>
+      <a href="{{ url_for('legacy_splash') }}">
+        <strong>Legacy Splash</strong>
+        <span>View the previous public landing page.</span>
+      </a>
+    </nav>
+  </section>
+
+  <section class="entrance-band entrance-guide" aria-labelledby="entrance-guide-title">
+    <div class="section-heading">
+      <span>Resource guide placeholder</span>
+      <h2 id="entrance-guide-title">For Later Expansion</h2>
+    </div>
+    <div class="entrance-guide-grid">
+      <div>
+        <h3>Introductory Narrative</h3>
+        <p>Short orientation text will explain what dokusan is, what Zenbot can and cannot do, and how to approach koan work here.</p>
+      </div>
+      <div>
+        <h3>Source Guide</h3>
+        <p>A concise guide will connect Mumon, Setcho, Hakuin, Tenkei, and the current botling work without crowding this threshold.</p>
+      </div>
+      <div>
+        <h3>Practice Notes</h3>
+        <p>Future notes can name useful gestures, save/reset behavior, and how to move between a koan case and the sanzen room.</p>
+      </div>
+    </div>
+  </section>
+</main>
 {% endblock %}

@@ -1,0 +1,118 @@
+<main class="zendo-workspace" aria-labelledby="zendo-title">
+  <section class="zendo-room-panel zendo-reference-panel" aria-label="Koan and reference panel">
+    <div class="room-object scroll-object" aria-hidden="true"></div>
+    <div class="panel-heading">
+      <span>Koan seat</span>
+      <h2>Case Context</h2>
+    </div>
+    <div id="chatPrefacePanel" class="chat-preface-panel" hidden>
+      <div id="chatPreface"></div>
+    </div>
+    <div class="empty-koan-note">
+      Choose a case from <a href="{{ url_for('gg') }}">The Gateless Gate</a>, or enter without a case and let the exchange find its own barrier.
+    </div>
+    <nav class="zendo-small-links" aria-label="Reference links">
+      <a href="{{ url_for('gg') }}">Mumonkan cases</a>
+      <a href="{{ url_for('display_pdf') }}">BCR notes</a>
+      <a href="{{ url_for('home') }}">Entrance hall</a>
+    </nav>
+  </section>
+
+  <section class="zendo-chat-panel" aria-labelledby="zendo-title">
+    <header class="chat-header zendo-chat-header">
+      <div>
+        <span class="entrance-kicker">Sanzen room</span>
+        <h1 id="zendo-title">Chat with ZM Mumonbot</h1>
+      </div>
+      <p>
+        Speak plainly. Parenthetical gestures such as <code>(bows)</code> are welcome.
+      </p>
+      {% if streaming_enabled %}
+        <div class="chat-streaming-note"><i>Streaming enabled.</i></div>
+      {% endif %}
+    </header>
+
+    <section id="chatResults" class="chat-messages" aria-live="polite"></section>
+
+    <section class="chat-input-area" aria-label="Dokusan message input">
+      <textarea id="chatInput" rows="5" placeholder="Speak..."></textarea>
+      <div class="chat-buttons">
+        <button id="chatSend" type="button">Send</button>
+        <button id="chatSave" type="button">Save</button>
+        <button id="chatEnd" type="button" class="button-danger">Reset</button>
+      </div>
+      <div class="chat-help">
+        <small>Enter to send • Shift+Enter for a newline • Save archives the session</small>
+      </div>
+    </section>
+  </section>
+
+  <aside class="zendo-room-panel zendo-setup-panel" aria-label="Session setup and room notes">
+    <div class="room-object bowl-object" aria-hidden="true"></div>
+    <section id="sessionSettingsPanel" class="session-settings-panel" data-locked="false">
+      <div class="session-settings-topline">
+        <div>
+          <h2>Session Setup</h2>
+          <div id="sessionSettingsStatus" class="session-settings-status"></div>
+        </div>
+        <div id="sessionSettingsSummary" class="session-settings-summary"></div>
+      </div>
+      <div class="session-settings-grid">
+        <label class="session-field">
+          <span>Botling</span>
+          <select id="sessionPreset"></select>
+        </label>
+        <label class="session-field">
+          <span>Model</span>
+          <select id="sessionModel"></select>
+        </label>
+        <label id="sessionReasoningWrap" class="session-field">
+          <span>Reasoning</span>
+          <select id="sessionReasoning"></select>
+        </label>
+        <label id="sessionTemperatureWrap" class="session-field">
+          <span>Temperature</span>
+          <input id="sessionTemperature" type="number" min="0" max="2" step="0.1">
+        </label>
+        <label id="sessionTopPWrap" class="session-field">
+          <span>Top P</span>
+          <input id="sessionTopP" type="number" min="0.01" max="1" step="0.01">
+        </label>
+        <label class="session-field">
+          <span>Max Tokens</span>
+          <input id="sessionMaxTokens" type="number" min="1" max="4096" step="1">
+        </label>
+      </div>
+      <div class="session-settings-toggles">
+        <label class="session-toggle">
+          <input id="sessionEnableFunctionTools" type="checkbox">
+          <span>Local tools</span>
+        </label>
+        <label class="session-toggle">
+          <input id="sessionEnableFileSearch" type="checkbox">
+          <span>File search</span>
+        </label>
+        <label class="session-toggle">
+          <input id="sessionEnableWebSearch" type="checkbox">
+          <span>Web search</span>
+        </label>
+        <label class="session-toggle">
+          <input id="sessionEnableBackgroundCritic" type="checkbox">
+          <span>Background critic</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="zendo-notes">
+      <div class="panel-heading">
+        <span>Room notes</span>
+        <h2>Working Form</h2>
+      </div>
+      <ul>
+        <li>Settings lock after the first turn.</li>
+        <li>Save when the dokusan is complete.</li>
+        <li>Reset clears the current local session.</li>
+      </ul>
+    </section>
+  </aside>
+</main>

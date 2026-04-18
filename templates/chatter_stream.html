@@ -1,32 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Zenbot Dokusan{% endblock %}
+{% block title %}Zenbot Sanzen Room{% endblock %}
 {% block content %}
 <!--
   Streaming chat entrypoint. This template shares the same DOM contract as the
   non-streaming chatter page, but the browser expects `/chat` to return
   Server-Sent Events and progressively renders the assistant reply.
 -->
-<div class="chat-container">
-  <header class="chat-header">
-      <h2>Chat with ZM Mumonbot</h2>
-      <i>(Or one of the other <b>ZM Zenbot</b> varieties now in training...)</i>
-      <div id="chatPrefacePanel" class="chat-preface-panel" hidden>
-          <div id="chatPreface"></div> <!-- Koan text goes here and stays through chat -->
-      </div>
-      <div class="chat-streaming-note"><i>Streaming enabled.</i></div>
-  </header>
-
-  <section id="chatResults" class="chat-messages"></section>
-
-  <section class="chat-input-area">
-      <textarea id="chatInput" rows="3" placeholder="Speak..."></textarea>
-      <div class="chat-buttons">
-          <button id="chatSend">Send</button>  <button id="chatSave">Save</button>
-          <button id="chatEnd" class="button-danger">Reset</button>
-      </div>
-      <div class="chat-help">
-        <small>Enter to send • Shift+Enter for a newline • Streaming enabled</small>
-      </div>
-  </section>
-</div>
+{% set streaming_enabled = true %}
+{% include "_chatter_workspace.html" %}
 {% endblock %}
