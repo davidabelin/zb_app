@@ -498,6 +498,55 @@ def _parse_bounded_int_arg(
     return value
 
 
+def _parse_int_query_arg(
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """Parse one integer query parameter with explicit inclusive bounds."""
+    raw_value = request.args.get(name, str(default)).strip()
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"Query parameter '{name}' must be an integer.") from exc
+    if value < minimum or value > maximum:
+        raise ValueError(
+            f"Query parameter '{name}' must be between {minimum} and {maximum}."
+        )
+    return value
+
+
+def _parse_exclude_indices_arg() -> set[int]:
+    """Parse optional comma-separated non-negative review indices."""
+    raw_value = request.args.get("exclude_indices", "").strip()
+    if not raw_value:
+        return set()
+
+    excluded: set[int] = set()
+    for item in raw_value.split(","):
+        text = item.strip()
+        if not text:
+            raise ValueError(
+                "Query parameter 'exclude_indices' must be a comma-separated "
+                "list of non-negative integers."
+            )
+        try:
+            index = int(text)
+        except ValueError as exc:
+            raise ValueError(
+                "Query parameter 'exclude_indices' must be a comma-separated "
+                "list of non-negative integers."
+            ) from exc
+        if index < 0:
+            raise ValueError(
+                "Query parameter 'exclude_indices' must be a comma-separated "
+                "list of non-negative integers."
+            )
+        excluded.add(index)
+    return excluded
+
+
 # -------- Static/Web Routes --------
 @app.route("/")
 def home():
@@ -1587,6 +1636,80 @@ def api_session_evaluations_record(index: int):
     )
 
 
+@app.get("/zb_api/session-evaluations/needs-zb-review")
+def api_session_evaluations_needs_zb_review():
+    """List compact summaries for sessions still awaiting ZB review."""
+    _require_admin_auth()
+    try:
+        rows = _load_review_state_for_api()
+        offset = _parse_int_query_arg("offset", 0, 0, 1_000_000)
+        limit = _parse_int_query_arg("limit", 25, 1, 100)
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except ValueError as exc:
+        return _api_failure("bad_request", str(exc), 400)
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/needs-zb-review failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while listing ZB review records.",
+            500,
+        )
+
+    matching_indices = session_reviews.indices_needing_reviewer(rows, "ZB")
+    page_indices = matching_indices[offset : offset + limit]
+    return _api_success(
+        reviewer="ZB",
+        total_matching=len(matching_indices),
+        offset=offset,
+        limit=limit,
+        has_more=offset + limit < len(matching_indices),
+        records=session_reviews.serialize_review_list_items(rows, page_indices),
+    )
+
+
+@app.get("/zb_api/session-evaluations/random-zb-review")
+def api_session_evaluations_random_zb_review():
+    """Return one random full record that still awaits ZB review."""
+    _require_admin_auth()
+    try:
+        rows = _load_review_state_for_api()
+        exclude_indices = _parse_exclude_indices_arg()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except ValueError as exc:
+        return _api_failure("bad_request", str(exc), 400)
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/random-zb-review failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while selecting a ZB review record.",
+            500,
+        )
+
+    candidate_indices = session_reviews.indices_needing_reviewer(rows, "ZB")
+    available_count = len(
+        [index for index in candidate_indices if index not in exclude_indices]
+    )
+    selected_indices = session_reviews.random_review_indices(
+        rows,
+        1,
+        candidate_indices=candidate_indices,
+        exclude_indices=exclude_indices,
+    )
+    selected_index = selected_indices[0] if selected_indices else None
+    return _api_success(
+        reviewer="ZB",
+        available_count=available_count,
+        selected_index=selected_index,
+        record=(
+            session_reviews.serialize_record(rows, selected_index)
+            if selected_index is not None
+            else None
+        ),
+    )
+
+
 @app.post("/zb_api/session-evaluations/record/<int:index>/decision")
 def api_session_evaluations_decision(index: int):
     """Apply a JSON review decision for the requested reviewer and record."""
@@ -1650,6 +1773,42 @@ def api_session_evaluations_decision(index: int):
     return _api_success(
         record=session_reviews.serialize_record(rows, index),
         next_unreviewed_index=session_reviews.next_unreviewed_after(rows, index),
+    )
+
+
+@app.get("/zb_api/session-evaluations/random-sample")
+def api_session_evaluations_random_sample():
+    """Return compact summaries for a random unique sample of review rows."""
+    _require_admin_auth()
+    try:
+        rows = _load_review_state_for_api()
+        count = _parse_int_query_arg("count", 3, 1, 25)
+        exclude_indices = _parse_exclude_indices_arg()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except ValueError as exc:
+        return _api_failure("bad_request", str(exc), 400)
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/random-sample failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while sampling review records.",
+            500,
+        )
+
+    available_count = len(
+        [index for index in range(len(rows)) if index not in exclude_indices]
+    )
+    selected_indices = session_reviews.random_review_indices(
+        rows,
+        count,
+        exclude_indices=exclude_indices,
+    )
+    return _api_success(
+        requested_count=count,
+        sampled_count=len(selected_indices),
+        available_count=available_count,
+        records=session_reviews.serialize_review_list_items(rows, selected_indices),
     )
 
 

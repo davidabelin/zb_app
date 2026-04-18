@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import random
 from pathlib import Path
 from typing import Any
 
@@ -499,6 +500,16 @@ def next_index_needing_reviewer_after(
     return first_index_needing_reviewer(rows, reviewer_code)
 
 
+def indices_needing_reviewer(rows: list[dict[str, Any]], reviewer: str) -> list[int]:
+    """Return all row indices that still need one reviewer's decision."""
+    reviewer_code = normalize_reviewer(reviewer)
+    return [
+        index
+        for index, row in enumerate(rows)
+        if needs_reviewer(row, reviewer_code)
+    ]
+
+
 def status_label(row: dict[str, Any]) -> str:
     """Return the browser-friendly status label for one review row."""
     normalized = _normalize_review_row(row)
@@ -507,6 +518,62 @@ def status_label(row: dict[str, Any]) -> str:
     if normalized["review_zb"] or normalized["review_cm"]:
         return "Awaiting Other Review"
     return "Unreviewed"
+
+
+def serialize_review_list_item(rows: list[dict[str, Any]], index: int) -> dict[str, Any]:
+    """Serialize one compact review row summary without loading transcript text."""
+    if index < 0 or index >= len(rows):
+        raise IndexError(index)
+
+    normalized = _normalize_review_row(rows[index])
+    return {
+        "index": index,
+        "display_number": index + 1,
+        "conversation_id": normalized["conversation_id"],
+        "evaluation": normalized["evaluation"] or None,
+        "status_label": status_label(normalized),
+        "status_class": status_class(normalized),
+        "review_version": normalized["review_version"],
+        "review_zb": normalized["review_zb"] or None,
+        "review_cm": normalized["review_cm"] or None,
+        "preview_user": normalized["preview_user"],
+        "preview_assistant": normalized["preview_assistant"],
+        "message_count": normalized["message_count"],
+        "student": normalized["student"] or None,
+        "model": normalized["model"] or None,
+        "case_id": normalized["case_id"] or None,
+        "profile": normalized["profile"] or None,
+        "botling_id": normalized["botling_id"] or None,
+        "saved_at": normalized["saved_at"] or None,
+    }
+
+
+def serialize_review_list_items(
+    rows: list[dict[str, Any]], indices: list[int]
+) -> list[dict[str, Any]]:
+    """Serialize compact review row summaries for selected indices."""
+    return [serialize_review_list_item(rows, index) for index in indices]
+
+
+def random_review_indices(
+    rows: list[dict[str, Any]],
+    count: int,
+    candidate_indices: list[int] | None = None,
+    exclude_indices: set[int] | None = None,
+) -> list[int]:
+    """Return unique random review indices without mutating review state."""
+    candidates = (
+        candidate_indices if candidate_indices is not None else list(range(len(rows)))
+    )
+    excluded = exclude_indices or set()
+    available = [
+        index
+        for index in candidates
+        if 0 <= index < len(rows) and index not in excluded
+    ]
+    if not available or count <= 0:
+        return []
+    return random.sample(available, min(count, len(available)))
 
 
 def status_class(row: dict[str, Any]) -> str:

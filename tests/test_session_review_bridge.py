@@ -43,6 +43,25 @@ def _archive_review_record(fake_bucket, conversation_id="bridge-test-001"):
     return messages
 
 
+def _seed_review_records(fake_bucket, count=4):
+    for index in range(count):
+        _archive_review_record(
+            fake_bucket,
+            conversation_id=f"review-api-{index + 1:03}",
+        )
+
+    rows = session_reviews.load_review_state()
+    if len(rows) > 0:
+        rows[0] = session_reviews.apply_reviewer_decision(rows[0], "ZB", "Use")
+    if len(rows) > 1:
+        rows[1] = session_reviews.apply_reviewer_decision(rows[1], "CM", "Alter")
+    if len(rows) > 2:
+        rows[2] = session_reviews.apply_reviewer_decision(rows[2], "ZB", "Reject")
+        rows[2] = session_reviews.apply_reviewer_decision(rows[2], "CM", "Reject")
+    session_reviews.save_review_state(rows)
+    return session_reviews.load_review_state()
+
+
 def test_admin_review_redirects_to_cloud_review_dashboard(monkeypatch):
     monkeypatch.setattr(main.utipy.config, "LOCAL", True)
     monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
@@ -118,6 +137,154 @@ def test_review_page_and_api_use_cloud_review_manifest(monkeypatch, fake_bucket)
     assert record["metadata"]["botling_id"] == "fierce_barrier"
     assert record["metadata"]["settings_version"] == "v3.1"
     assert record["metadata"]["session_settings"]["preset_id"] == "fierce_barrier"
+
+
+def test_needs_zb_review_lists_summary_records_with_pagination(
+    monkeypatch, fake_bucket
+):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    _seed_review_records(fake_bucket)
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+
+    response = client.get(
+        "/zb_api/session-evaluations/needs-zb-review?limit=1",
+        headers=headers,
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["reviewer"] == "ZB"
+    assert payload["total_matching"] == 2
+    assert payload["offset"] == 0
+    assert payload["limit"] == 1
+    assert payload["has_more"] is True
+    assert len(payload["records"]) == 1
+    assert payload["records"][0]["review_zb"] is None
+    assert "messages" not in payload["records"][0]
+
+    second_page = client.get(
+        "/zb_api/session-evaluations/needs-zb-review?offset=1&limit=1",
+        headers=headers,
+    ).get_json()
+    assert second_page["has_more"] is False
+    assert len(second_page["records"]) == 1
+    assert second_page["records"][0]["index"] != payload["records"][0]["index"]
+
+
+def test_random_zb_review_returns_full_record_and_respects_exclusions(
+    monkeypatch, fake_bucket
+):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    rows = _seed_review_records(fake_bucket)
+    candidates = session_reviews.indices_needing_reviewer(rows, "ZB")
+    selected_index = candidates[0]
+    excluded = ",".join(str(index) for index in candidates[1:])
+
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+    response = client.get(
+        f"/zb_api/session-evaluations/random-zb-review?exclude_indices={excluded}",
+        headers=headers,
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["reviewer"] == "ZB"
+    assert payload["available_count"] == 1
+    assert payload["selected_index"] == selected_index
+    assert payload["record"]["index"] == selected_index
+    assert payload["record"]["review_zb"] is None
+    assert payload["record"]["messages"]
+
+
+def test_random_zb_review_returns_null_when_no_candidates(
+    monkeypatch, fake_bucket
+):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    rows = _seed_review_records(fake_bucket, count=2)
+    for index, row in enumerate(rows):
+        rows[index] = session_reviews.apply_reviewer_decision(row, "ZB", "Use")
+    session_reviews.save_review_state(rows)
+
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+    response = client.get(
+        "/zb_api/session-evaluations/random-zb-review",
+        headers=headers,
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["available_count"] == 0
+    assert payload["selected_index"] is None
+    assert payload["record"] is None
+
+
+def test_random_sample_returns_unique_summary_records_and_respects_exclusions(
+    monkeypatch, fake_bucket
+):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    _seed_review_records(fake_bucket, count=5)
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+    response = client.get(
+        "/zb_api/session-evaluations/random-sample?count=3&exclude_indices=0,1",
+        headers=headers,
+    )
+    payload = response.get_json()
+    returned_indices = [record["index"] for record in payload["records"]]
+
+    assert response.status_code == 200
+    assert payload["requested_count"] == 3
+    assert payload["sampled_count"] == 3
+    assert payload["available_count"] == 3
+    assert len(returned_indices) == len(set(returned_indices))
+    assert not ({0, 1} & set(returned_indices))
+    assert all("messages" not in record for record in payload["records"])
+
+
+def test_review_random_query_validation_returns_bad_request(
+    monkeypatch, fake_bucket
+):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    _seed_review_records(fake_bucket, count=1)
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+
+    bad_count = client.get(
+        "/zb_api/session-evaluations/random-sample?count=26",
+        headers=headers,
+    )
+    bad_exclude = client.get(
+        "/zb_api/session-evaluations/random-zb-review?exclude_indices=1,nope",
+        headers=headers,
+    )
+    bad_offset = client.get(
+        "/zb_api/session-evaluations/needs-zb-review?offset=-1",
+        headers=headers,
+    )
+
+    for response in (bad_count, bad_exclude, bad_offset):
+        payload = response.get_json()
+        assert response.status_code == 400
+        assert payload["status"] == "failure"
+        assert payload["error"] == "bad_request"
 
 
 def test_browser_decision_leaves_cm_queue_after_save(monkeypatch, fake_bucket):
