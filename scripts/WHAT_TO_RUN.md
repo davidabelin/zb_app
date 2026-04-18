@@ -48,3 +48,24 @@ Run:
 ```cmd
 scripts\get_token.bat
 ```
+
+## Smoke-test active routes
+
+After a local change, run the focused tests that exercise public rendering,
+admin/review rendering, and GPT-facing API contracts:
+
+```cmd
+python -m pytest tests/test_session_settings.py -q
+python -m pytest tests/test_admin_archives.py -q
+python -m pytest tests/test_session_review_bridge.py -q
+python -m pytest tests/test_api_contract_cleanup.py -q
+```
+
+For a manual browser check, start Flask locally and visit:
+
+```text
+/
+/chatter
+/admin/conversations
+/review
+```

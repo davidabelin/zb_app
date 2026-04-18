@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.2.3 - 2026-04-17
+
+Admin/review workflow and operator-maintenance release for `zb_app`.
+
+- added compact backend status cards to `/admin/conversations` for archive
+  storage, review manifest, memory logbook, vector-store configuration, and
+  hot-state backend
+- expanded review dashboard filters for Need ZB Review, Not Yet Touched,
+  Awaiting Other Review, CM Reviewed, and ZB Reviewed while preserving the
+  existing final-evaluation filters
+- added local-only admin controls to download the full memory logbook JSON and
+  run local/remote dokusan sync across archived sessions, review manifest
+  metadata, review status, and local review/training artifacts
+- added GPT-facing review API helpers for ZB-needed lists, random ZB review,
+  and random review sampling, with matching `action_schemas.yaml` updates
+- refreshed operator docs, smoke-test commands, stale public/admin copy,
+  `trainset04` notes, and the rolling project to-do list
+- pinned the OpenAI/httpx transport stack used by Python 3.14 local runtimes
+- formalized the app/repo release marker as `v3.2.3`
+
 ## v3.2.0 - 2026-04-10
 
 App Engine-only runtime cleanup for `zb_app`.

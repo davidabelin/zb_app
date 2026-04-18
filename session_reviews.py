@@ -586,21 +586,38 @@ def status_class(row: dict[str, Any]) -> str:
     return "Unreviewed"
 
 
+def review_filter_matches(row: dict[str, Any], desired: str) -> bool:
+    """Return whether one normalized review row belongs to a dashboard filter."""
+    normalized = _normalize_review_row(row)
+    evaluation = normalized["evaluation"]
+    has_zb = bool(normalized["review_zb"])
+    has_cm = bool(normalized["review_cm"])
+    if desired == "all":
+        return True
+    if desired == "needs_cm_review":
+        return not has_cm
+    if desired == "needs_zb_review":
+        return not has_zb
+    if desired == "unreviewed":
+        return evaluation == ""
+    if desired == "not_started":
+        return evaluation == "" and not has_zb and not has_cm
+    if desired == "awaiting_other_review":
+        return evaluation == "" and (has_zb or has_cm)
+    if desired == "cm_reviewed":
+        return has_cm
+    if desired == "zb_reviewed":
+        return has_zb
+    return evaluation == desired
+
+
 def find_next_matching_index(
     rows: list[dict[str, Any]], after: int, desired: str
 ) -> int | None:
     """Find the next record matching one requested evaluation state."""
-    def matches(row: dict[str, Any]) -> bool:
-        evaluation = normalize_evaluation(row.get("evaluation", ""))
-        if desired == "all":
-            return True
-        if desired == "unreviewed":
-            return evaluation == ""
-        return evaluation == desired
-
     start = max(-1, after)
     for index in range(start + 1, len(rows)):
-        if matches(rows[index]):
+        if review_filter_matches(rows[index], desired):
             return index
     return None
 
@@ -658,15 +675,7 @@ def list_dashboard_rows(rows: list[dict[str, Any]], evaluation_filter: str) -> l
     for index, row in enumerate(rows):
         normalized = _normalize_review_row(row)
         evaluation = normalized["evaluation"]
-        if evaluation_filter == "all":
-            matches = True
-        elif evaluation_filter == "needs_cm_review":
-            matches = not normalized["review_cm"]
-        elif evaluation_filter == "unreviewed":
-            matches = evaluation == ""
-        else:
-            matches = evaluation == evaluation_filter
-        if not matches:
+        if not review_filter_matches(normalized, evaluation_filter):
             continue
         results.append(
             {

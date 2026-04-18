@@ -2,7 +2,7 @@
 
 This document is retained as historical planning context only.
 
-It is superseded by the live v3.2.0 App Engine-only runtime. Do not use this
+It is superseded by the live v3.2.3 App Engine-only runtime. Do not use this
 file for current deployment, topology, or operator guidance.
 
 ## Summary

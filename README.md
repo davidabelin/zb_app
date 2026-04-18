@@ -1,6 +1,6 @@
 # ZB App
 
-Current app/repo release: `v3.2.0`
+Current app/repo release: `v3.2.3`
 
 `zb_app` is the web, API, and operator surface for Zenbot. In v3 it is a
 single App Engine application with an OpenAI-native runtime underneath:

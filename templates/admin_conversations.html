@@ -87,6 +87,46 @@
       min-width: min(520px, 100%);
     }
 
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .status-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px 14px;
+    }
+
+    .status-card.ok {
+      border-color: rgba(45, 106, 79, 0.36);
+    }
+
+    .status-card.warn {
+      border-color: rgba(155, 44, 44, 0.28);
+    }
+
+    .status-card label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.84rem;
+      margin-bottom: 5px;
+    }
+
+    .status-state {
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .status-detail {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+
     .pill,
     .filter-pill,
     .action-link,
@@ -299,6 +339,16 @@
           Preserved legacy local reviews: {{ request.args.get("preserved_legacy", "0") }}.
           Sessions-to-train rows: {{ request.args.get("train_rows", "0") }}.
         </div>
+      {% elif status == "synced" %}
+        <div class="notice">
+          Local/remote sync complete.
+          Cloud archive download: {{ "yes" if request.args.get("downloaded") == "1" else "no" }}.
+          Review manifest rows: {{ request.args.get("rows", "0") }} from {{ request.args.get("scanned", "0") }} transcript(s).
+          Local review records kept: {{ request.args.get("records_kept", "0") }} of {{ request.args.get("records_scanned", "0") }} scanned.
+          Duplicates moved: {{ request.args.get("duplicates_moved", "0") }}.
+          Decisions preserved: {{ request.args.get("decisions_preserved", "0") }}.
+          Generated rows: {{ request.args.get("generated_rows", "0") }}.
+        </div>
       {% elif request.args.get("saved_conversation_id") %}
         <div class="notice">
           Saved {{ request.args.get("saved_reviewer", "") }} {{ request.args.get("saved_evaluation", "") }}
@@ -312,9 +362,24 @@
         </div>
       {% endif %}
 
+      <div class="status-grid" aria-label="Backend status">
+        {% for item in backend_status %}
+          <div class="status-card {{ item.class }}">
+            <label>{{ item.label }}</label>
+            <div class="status-state">{{ item.state }}</div>
+            <div class="status-detail">{{ item.detail }}</div>
+          </div>
+        {% endfor %}
+      </div>
+
       <div class="filter-row">
         <a class="filter-pill{% if evaluation == 'needs_cm_review' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='needs_cm_review') }}">Need CM Review</a>
+        <a class="filter-pill{% if evaluation == 'needs_zb_review' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='needs_zb_review') }}">Need ZB Review</a>
         <a class="filter-pill{% if evaluation == 'unreviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='unreviewed') }}">Awaiting Final</a>
+        <a class="filter-pill{% if evaluation == 'not_started' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='not_started') }}">Not Yet Touched</a>
+        <a class="filter-pill{% if evaluation == 'awaiting_other_review' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='awaiting_other_review') }}">Awaiting Other Review</a>
+        <a class="filter-pill{% if evaluation == 'cm_reviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='cm_reviewed') }}">CM Reviewed</a>
+        <a class="filter-pill{% if evaluation == 'zb_reviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='zb_reviewed') }}">ZB Reviewed</a>
         <a class="filter-pill{% if evaluation == 'Use' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Use') }}">Use</a>
         <a class="filter-pill{% if evaluation == 'Alter' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Alter') }}">Alter</a>
         <a class="filter-pill{% if evaluation == 'Reject' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Reject') }}">Reject</a>
@@ -329,6 +394,13 @@
           <a class="action-link" href="{{ url_for('review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
         {% endif %}
         <a class="action-link" href="{{ url_for('admin_session_settings') }}">Session Settings</a>
+        {% if is_local %}
+          <a class="action-link" href="{{ url_for('admin_memory_logbook_download') }}">Download Memory Logbook</a>
+          <form class="inline" method="post" action="{{ url_for('download_chats') }}">
+            <input type="hidden" name="action" value="sync_local_remote">
+            <button class="action-button primary" type="submit">Sync Local/Remote Sessions</button>
+          </form>
+        {% endif %}
         <form class="inline" method="post" action="{{ url_for('admin_logout') }}">
           <button class="action-button" type="submit">Log out</button>
         </form>
@@ -352,8 +424,18 @@
         <div>
           {% if evaluation == "needs_cm_review" %}
             <h2>Sessions Needing CM Review</h2>
+          {% elif evaluation == "needs_zb_review" %}
+            <h2>Sessions Needing ZB Review</h2>
           {% elif evaluation == "unreviewed" %}
             <h2>Sessions Awaiting Final Review</h2>
+          {% elif evaluation == "not_started" %}
+            <h2>Sessions Not Yet Touched</h2>
+          {% elif evaluation == "awaiting_other_review" %}
+            <h2>Sessions Awaiting Other Review</h2>
+          {% elif evaluation == "cm_reviewed" %}
+            <h2>Sessions With CM Review</h2>
+          {% elif evaluation == "zb_reviewed" %}
+            <h2>Sessions With ZB Review</h2>
           {% elif evaluation == "all" %}
             <h2>All Sessions</h2>
           {% else %}

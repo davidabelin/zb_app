@@ -8,7 +8,7 @@ set "PROJECT_ID=%~1"
 if not defined PROJECT_ID set "PROJECT_ID=zenbot-434517"
 
 echo.
-echo Zenbot v3.2.0 App Engine deploy
+echo Zenbot v3.2.3 App Engine deploy
 echo Run this for normal Zenbot code deploys.
 echo   project: %PROJECT_ID%
 echo   manifest: app.yaml

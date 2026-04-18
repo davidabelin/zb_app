@@ -47,6 +47,7 @@ from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
 from contracts import SessionStartRequest, SessionSettingsInput, TurnRequest
+import review_sync
 import session_reviews
 import utilities as utipy
 from utilities import ModelAPIError, SessionSettingsLockedError
@@ -1348,12 +1349,123 @@ def _load_review_state_or_abort() -> list[dict[str, Any]]:
 def _normalize_review_filter(value: str) -> str:
     """Validate the requested admin/API review filter."""
     desired = str(value or "needs_cm_review").strip() or "needs_cm_review"
-    if desired not in {"all", "needs_cm_review", "unreviewed", "Use", "Alter", "Reject"}:
+    allowed = {
+        "all",
+        "needs_cm_review",
+        "needs_zb_review",
+        "unreviewed",
+        "not_started",
+        "awaiting_other_review",
+        "cm_reviewed",
+        "zb_reviewed",
+        "Use",
+        "Alter",
+        "Reject",
+    }
+    if desired not in allowed:
         abort(
             400,
-            description="evaluation must be all, needs_cm_review, unreviewed, Use, Alter, or Reject",
+            description=(
+                "evaluation must be all, needs_cm_review, needs_zb_review, "
+                "unreviewed, not_started, awaiting_other_review, cm_reviewed, "
+                "zb_reviewed, Use, Alter, or Reject"
+            ),
         )
     return desired
+
+
+def _admin_backend_status(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Return compact backend health rows for the admin review dashboard."""
+    storage = session_reviews.storage_metadata()
+    statuses: list[dict[str, str]] = []
+
+    if utipy.BUCKET:
+        statuses.append(
+            {
+                "label": "Archive Storage",
+                "state": "Available",
+                "class": "ok",
+                "detail": (
+                    f"Bucket {storage['bucket']} / prefix "
+                    f"{storage['transcripts_prefix']}"
+                ),
+            }
+        )
+    else:
+        statuses.append(
+            {
+                "label": "Archive Storage",
+                "state": "Unavailable",
+                "class": "warn",
+                "detail": "No configured Cloud Storage bucket client.",
+            }
+        )
+
+    statuses.append(
+        {
+            "label": "Review Manifest",
+            "state": "Loaded",
+            "class": "ok",
+            "detail": (
+                f"{len(rows)} row(s) in {storage['review_index_blob']}; "
+                f"export {storage['sessions_to_train_blob']}"
+            ),
+        }
+    )
+
+    try:
+        memories = utipy.load_memory_logbook()
+    except Exception as exc:
+        statuses.append(
+            {
+                "label": "Memory Logbook",
+                "state": "Unavailable",
+                "class": "warn",
+                "detail": str(exc),
+            }
+        )
+    else:
+        statuses.append(
+            {
+                "label": "Memory Logbook",
+                "state": "Loaded",
+                "class": "ok",
+                "detail": f"{len(memories)} normalized entries from {utipy.MEMORY_LOGBOOK}",
+            }
+        )
+
+    vector_ids = list(utipy.config.OPENAI_VECTOR_STORE_IDS or [])
+    if utipy.config.OPENAI_ENABLE_FILE_SEARCH and vector_ids:
+        vector_state = "Enabled"
+        vector_class = "ok"
+        vector_detail = f"{len(vector_ids)} configured vector store id(s)."
+    elif vector_ids:
+        vector_state = "Configured"
+        vector_class = "warn"
+        vector_detail = "Vector store IDs exist, but File Search is disabled."
+    else:
+        vector_state = "Not configured"
+        vector_class = "warn"
+        vector_detail = "No vector store IDs configured for File Search."
+    statuses.append(
+        {
+            "label": "Vector Store",
+            "state": vector_state,
+            "class": vector_class,
+            "detail": vector_detail,
+        }
+    )
+
+    hot_state_backend = utipy.config.HOT_STATE_BACKEND or "unset"
+    statuses.append(
+        {
+            "label": "Hot-State Backend",
+            "state": hot_state_backend,
+            "class": "ok" if hot_state_backend != "unset" else "warn",
+            "detail": "Configured runtime conversation-state backend.",
+        }
+    )
+    return statuses
 
 
 def _load_review_rows() -> tuple[list[dict[str, str]], list[str]]:
@@ -1930,7 +2042,26 @@ def admin_conversations():
             rows, session_reviews.FORM_REVIEWER_DEFAULT
         ),
         storage=session_reviews.storage_metadata(),
+        backend_status=_admin_backend_status(rows),
     )
+
+
+@app.get("/admin/memory_logbook/download")
+def admin_memory_logbook_download():
+    """Download the full normalized memory logbook from a local admin server."""
+    _require_admin_auth()
+    if not utipy.config.LOCAL:
+        abort(403, description="Memory logbook download is only available locally")
+    try:
+        memories = utipy.load_memory_logbook()
+    except RuntimeError as exc:
+        abort(503, description=str(exc))
+    payload = json.dumps(memories, ensure_ascii=False, indent=2) + "\n"
+    response = Response(payload, mimetype="application/json")
+    response.headers["Content-Disposition"] = (
+        'attachment; filename="memory_logbook.json"'
+    )
+    return response
 
 
 @app.route("/admin/conversations/<conversation_id>")
@@ -1963,9 +2094,30 @@ def admin_conversation_detail(conversation_id: str):
 def download_chats():
     """Run non-destructive review maintenance from the admin dashboard."""
     action = str(request.form.get("action", "backfill_review")).strip() or "backfill_review"
-    allowed_actions = {"backfill_review"}
+    allowed_actions = {"backfill_review", "sync_local_remote"}
     if action not in allowed_actions:
         abort(400, description="Unsupported archive maintenance action")
+
+    if action == "sync_local_remote":
+        if not utipy.config.LOCAL:
+            abort(403, description="Local/remote sync is only available locally")
+        downloaded = utipy.download_all()
+        backfill_summary = session_reviews.backfill_review_state(_repo_root())
+        sync_summary = review_sync.sync_review_queue(_repo_root())
+        return _admin_conversations_response(
+            "synced",
+            downloaded="1" if downloaded else "0",
+            scanned=backfill_summary["transcripts_scanned"],
+            rows=backfill_summary["review_rows"],
+            preserved_existing=backfill_summary["preserved_existing_reviews"],
+            preserved_legacy=backfill_summary["preserved_legacy_reviews"],
+            train_rows=backfill_summary["sessions_to_train_rows"],
+            records_scanned=sync_summary["records_scanned"],
+            records_kept=sync_summary["records_kept"],
+            duplicates_moved=sync_summary["duplicates_moved"],
+            decisions_preserved=sync_summary["decisions_preserved"],
+            generated_rows=sync_summary["generated_rows"],
+        )
 
     summary = session_reviews.backfill_review_state(_repo_root())
     return _admin_conversations_response(
