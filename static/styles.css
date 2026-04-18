@@ -97,7 +97,6 @@
   button:hover {
     background-color: #206830;
     color: #fefea0;
-    font-size: 0.95em;
     transform: scale(1.05);
   }
 
@@ -108,7 +107,6 @@
   .button-danger:hover{
     background-color: #5f1717;
     color: #fff;
-    font-size: 0.95em;
     transform: scale(1.05);
   }
   /* ========== Links ========== */
@@ -199,7 +197,7 @@
   overflow: hidden;
 }
 
-/* TO DO Header area does not scroll; it’s “fixed” in the flex flow. */
+/* Header area stays fixed in the flex flow while messages scroll. */
 .chat-header {
   flex: 0 0 auto;
   display: flex;

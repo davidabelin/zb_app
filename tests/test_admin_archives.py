@@ -82,5 +82,6 @@ def test_admin_session_settings_placeholder_page(monkeypatch):
     body = response.get_data(as_text=True)
     assert response.status_code == 200
     assert "Session Settings" in body
-    assert "Public <code>/chatter</code> is back to being a plain dokusan surface." in body
+    assert "Read-Only Administrative Overview" in body
+    assert "This page shows the public dokusan defaults" in body
     assert "/admin/session_settings/presets" in body

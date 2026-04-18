@@ -102,6 +102,10 @@ python scripts/sync_openai_vector_store.py --create
    python main.py
    ```
 
+Run app commands from this `zb_app` directory. It is the active Git root for
+the deployed Flask/App Engine service; the parent `zenbot` directory contains
+project notes, training data, and historical assets.
+
 ## Key Env Vars
 
 - `OPENAI_API_KEY_SECRET_NAME`
@@ -138,14 +142,13 @@ python scripts/sync_openai_vector_store.py --create
 
 ## Deploying v3
 
-Use the simple scripts in `scripts\`:
+From the `zb_app` directory, use the scripts that exist in `scripts\`:
 
-1. First time only: `scripts\one_time_only_DELETE_ME.bat`
-2. Code deploy to App Engine: `scripts\deploy.bat`
-3. Docs/settings/search-context update: `scripts\update.bat`
+1. Code deploy to App Engine: `scripts\deploy.bat`
+2. Docs/settings/search-context update: `scripts\update_context.bat`
+3. First-time search-context creation: `scripts\update_context.bat --create`
 4. Rotate secrets only: `scripts\rotate_keys.bat`
-5. Same as update, explicit name: `scripts\refresh_context.bat`
-6. Print the admin/API token: `scripts\get_token.bat`
+5. Print the admin/API token: `scripts\get_token.bat`
 
 If you want the short explanation, read `scripts\WHAT_TO_RUN.md`.
 

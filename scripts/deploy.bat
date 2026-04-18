@@ -25,7 +25,7 @@ if errorlevel 1 goto :error
 echo.
 echo Deploy complete.
 echo Optional next steps:
-echo   scripts\refresh_context.bat     only if docs/search context changed
+echo   scripts\update_context.bat      only if docs/search context changed
 echo   scripts\get_token.bat           if you need the admin/API token
 echo   python -m pytest -q
 echo   python -m flake8

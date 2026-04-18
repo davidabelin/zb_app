@@ -1407,7 +1407,7 @@ def admin_session_settings():
         {
             "path": "/admin/session_settings",
             "label": "Session Settings Overview",
-            "description": "This placeholder page for reviewing current defaults and future control areas.",
+            "description": "Read-only overview of current public defaults and future control areas.",
         },
         {
             "path": "/admin/session_settings/presets",

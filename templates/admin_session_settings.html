@@ -167,10 +167,10 @@
 <body>
   <main>
     <section class="panel">
-      <div class="eyebrow">Administrative Placeholder</div>
+      <div class="eyebrow">Read-Only Administrative Overview</div>
       <h1>Session Settings</h1>
       <p class="subtle">
-        Public <code>/chatter</code> is back to being a plain dokusan surface. This page is the placeholder home for future admin-only session controls, preset editors, and runtime-selection policy.
+        This page shows the public dokusan defaults, tool availability, and configured botling presets. Editing controls have not moved here yet.
       </p>
       <div class="nav-row">
         <a class="action-link primary" href="{{ url_for('admin_conversations') }}">Session Review Queue</a>
@@ -181,7 +181,7 @@
     <section class="panel">
       <h2>Current Public Defaults</h2>
       <p class="subtle">
-        These values come from the live session-options payload today. They are shown here read-only until the admin controls are implemented.
+        These values come from the live session-options payload and are shown read-only.
       </p>
       <div class="snapshot-grid">
         {% for key, value in options.defaults.items() %}
@@ -204,7 +204,7 @@
     <section class="panel">
       <h2>Available Presets</h2>
       <p class="subtle">
-        The runtime still knows about these preset bundles. The editing surface has not been moved here yet.
+        The runtime exposes these preset bundles to session startup. This page does not edit them.
       </p>
       <ul class="preset-list">
         {% for preset in options.presets %}

@@ -1,6 +1,8 @@
 # What To Run
 
-Use the stupid-simple script names in `scripts\`.
+Run these commands from the `zb_app` directory, which is the active Git root
+for the deployed app. The parent `zenbot` folder holds project notes, training
+data, and historical assets.
 
 ## Normal deploy
 
@@ -17,7 +19,7 @@ Use this for App Engine code changes.
 Run:
 
 ```cmd
-scripts\update.bat
+scripts\update_context.bat
 ```
 
 This is not a code deploy. It refreshes docs/search context and related runtime
@@ -31,20 +33,12 @@ Run:
 scripts\rotate_keys.bat
 ```
 
-## Refresh docs/search context
-
-Run:
-
-```cmd
-scripts\refresh_context.bat
-```
-
-`update.bat` and `refresh_context.bat` now mean the same thing.
+## Create search context
 
 If you do not already have a search-context store, use:
 
 ```cmd
-scripts\refresh_context.bat --create
+scripts\update_context.bat --create
 ```
 
 ## Print the admin/API token
