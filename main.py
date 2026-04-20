@@ -75,6 +75,7 @@ class ChatTurnRequest:
     """
     message: str
     conversation_id: str
+    case_id: str
     student: str
     settings: SessionSettingsInput | None
 
@@ -86,6 +87,7 @@ class ChatTurnRequest:
                 {
                     "message": str(data.get("message", "")).strip(),
                     "conversation_id": str(data.get("conversation_id", "")).strip(),
+                    "case_id": str(data.get("case_id", "")).strip(),
                     "student": str(data.get("student", "")).strip() or "webmonkE",
                     "settings": data.get("settings"),
                 }
@@ -105,6 +107,7 @@ class ChatTurnRequest:
         return cls(
             message=validated.message,
             conversation_id=validated.conversation_id,
+            case_id=validated.case_id,
             student=validated.student or "webmonkE",
             settings=validated.settings,
         )
@@ -257,7 +260,7 @@ def _is_cors_chat_path(path: str) -> bool:
 def _is_api_json_path(path: str) -> bool:
     """Return whether a route should emit GPT-facing JSON error envelopes."""
 
-    return path.startswith("/zb_api/") or path == "/appendMemoryLogbookEntry"
+    return path.startswith("/zb_api/")
 
 
 def _cors_preflight_response() -> Response:
@@ -343,7 +346,7 @@ def _request_guards():
         return rate_limit_response
 
     path = request.path
-    if path.startswith("/zb_api/") or path == "/appendMemoryLogbookEntry":
+    if path.startswith("/zb_api/"):
         if utipy.config.ZB_API_STRICT_AUTH:
             _require_api_auth()
 
@@ -716,8 +719,10 @@ def chat():
         data = utipy.get_request_data()
         payload = ChatTurnRequest.from_dict(data)
 
-        conversation_id = payload.conversation_id or request.cookies.get(
-            "conversation_id", ""
+        conversation_id = (
+            payload.conversation_id
+            if "conversation_id" in data
+            else request.cookies.get("conversation_id", "")
         )
         if conversation_id:
             messages, metadata = utipy.get_conversation_state(conversation_id)
@@ -730,6 +735,7 @@ def chat():
         else:
             conversation_id, messages, metadata = utipy.create_conversation(
                 student=payload.student,
+                case_id=payload.case_id or None,
                 settings=payload.settings,
             )
 
@@ -758,7 +764,7 @@ def chat():
                 ),
                 200,
             )
-            _set_chat_cookies(response, conversation_id)
+            _set_chat_cookies(response, conversation_id, case_id=payload.case_id)
             return response
 
         def stream() -> Any:
@@ -783,7 +789,7 @@ def chat():
             )
 
         response.call_on_close(persist_after_stream)
-        _set_chat_cookies(response, conversation_id)
+        _set_chat_cookies(response, conversation_id, case_id=payload.case_id)
         return response
 
     except SessionSettingsLockedError as e:
@@ -1069,19 +1075,48 @@ def zb_api_save_chat():
 
 @app.route("/zb_api/conversations/list", methods=["GET"])
 def zb_api_conversations_list():
-    """List archived conversation identifiers stored in Cloud Storage."""
+    """List archived conversation identifiers and lightweight metadata."""
     storage_failure = _api_archive_storage_guard(
         "Archive storage is unavailable or unconfigured."
     )
     if storage_failure is not None:
         return storage_failure
     try:
-        files = utipy.list_conversation_files_in_gcs()
+        offset = _parse_int_query_arg("offset", 0, 0, 1_000_000)
+        limit = _parse_int_query_arg("limit", 25, 1, 100)
+        case_id = str(request.args.get("case_id", "")).strip()
+        student = str(request.args.get("student", "")).strip().lower()
+        start_date = str(request.args.get("start_date", "")).strip()
+        end_date = str(request.args.get("end_date", "")).strip()
+        records = utipy.list_conversation_records_in_gcs()
+    except ValueError as exc:
+        return _api_failure("bad_request", str(exc), 400)
     except Exception as exc:
         logging.exception("/zb_api/conversations/list failed")
         return _api_storage_unavailable(str(exc))
-    conversation_ids = [f.split("/")[-1].replace(".jsonl", "") for f in files]
-    return _api_success(conversation_ids=conversation_ids)
+
+    filtered: list[dict[str, Any]] = []
+    for record in records:
+        saved_at = str(record.get("saved_at", ""))
+        if case_id and str(record.get("case_id", "")) != case_id:
+            continue
+        if student and student not in str(record.get("student", "")).lower():
+            continue
+        if start_date and saved_at[:10] < start_date:
+            continue
+        if end_date and saved_at[:10] > end_date:
+            continue
+        filtered.append(record)
+
+    page = filtered[offset : offset + limit]
+    return _api_success(
+        conversation_ids=[str(record["conversation_id"]) for record in page],
+        records=page,
+        total_matching=len(filtered),
+        offset=offset,
+        limit=limit,
+        has_more=offset + limit < len(filtered),
+    )
 
 
 @app.route("/zb_api/conversations/<conversation_id>", methods=["GET"])
@@ -1122,19 +1157,29 @@ def zb_api_load_memory_logbook():
     """Return a compact newest-first memory index for GPT-side selection."""
     try:
         limit = _parse_bounded_int_arg("limit", default=12, minimum=1, maximum=25)
+        end_index_raw = request.args.get("end_index", "").strip()
+        end_index = int(end_index_raw) if end_index_raw else None
     except ValueError as exc:
         return _api_failure("bad_request", str(exc), 400)
 
     try:
-        summaries, total_count = utipy.load_memory_logbook_summaries(limit=limit)
+        page = utipy.load_memory_logbook_summary_page(
+            limit=limit,
+            end_index=end_index,
+        )
     except RuntimeError as exc:
         return _api_storage_unavailable(str(exc))
+    except ValueError as exc:
+        return _api_failure("bad_request", str(exc), 400)
     return _api_success(
-        summaries=summaries,
-        returned_count=len(summaries),
-        total_count=total_count,
+        summaries=page["summaries"],
+        returned_count=page["returned_count"],
+        total_count=page["total_count"],
         limit=limit,
-        has_more=total_count > len(summaries),
+        start_index=page["start_index"],
+        end_index=page["end_index"],
+        next_end_index=page["next_end_index"],
+        has_more=page["has_more"],
     )
 
 
@@ -1156,19 +1201,6 @@ def zb_api_load_memory_entry(serial_number: str):
     return _api_success(
         serial_number=str(serial_number),
         memory=memory,
-    )
-
-
-@app.route("/zb_api/load_memory_logbook_full", methods=["GET"])
-def zb_api_load_memory_logbook_full():
-    """Return the full canonical memory logbook for internal/admin use."""
-    try:
-        memories = utipy.load_memory_logbook()
-    except RuntimeError as exc:
-        return _api_storage_unavailable(str(exc))
-    return _api_success(
-        memories=memories,
-        count=len(memories),
     )
 
 
@@ -1248,28 +1280,6 @@ def zb_api_update_memory_logbook():
     )
 
 
-@app.route("/appendMemoryLogbookEntry", methods=["POST"])
-def append_memory_logbook_entry_legacy():
-    """Append one memory entry via the legacy compatibility endpoint."""
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _api_failure("bad_request", "Invalid or missing JSON body.", 400)
-    try:
-        updated = utipy.update_logbook(data)
-        saved_entry = updated[-1] if updated else utipy.normalize_memory_entry(data)
-        return _memory_mutation_response(
-            "entry appended (legacy endpoint)", updated, entry=saved_entry
-        )
-    except RuntimeError as e:
-        return _api_storage_unavailable(str(e))
-    except Exception:
-        return _api_failure(
-            "internal_server_error",
-            "Unexpected server-side failure while updating the memory logbook.",
-            500,
-        )
-
-
 @app.route("/zb_api/get_random_koan", methods=["GET"])
 def zb_api_get_random_koan():
     """Return one random koan case as a flattened JSON payload."""
@@ -1292,6 +1302,46 @@ def zb_api_get_random_koan():
 
     payload = dict(koan)
     return _api_success(**payload)
+
+
+@app.route("/zb_api/koans/by-title", methods=["GET"])
+def zb_api_get_koan_by_title():
+    """Return one koan by exact title, or by unambiguous title substring."""
+    title = str(request.args.get("title", "")).strip()
+    if not title:
+        return _api_failure("bad_request", "Query parameter 'title' is required.", 400)
+
+    try:
+        result = utipy.get_mmnk_case_by_title(title)
+    except ValueError as exc:
+        return _api_failure(
+            "ambiguous_koan_title",
+            str(exc),
+            400,
+            candidates=utipy.find_mmnk_case_title_candidates(title),
+        )
+    if not result:
+        return _api_failure(
+            "koan_not_found",
+            "No koan case matched that title.",
+            404,
+            title=title,
+        )
+    return _api_success(**dict(result))
+
+
+@app.route("/zb_api/koans/<case_id>", methods=["GET"])
+def zb_api_get_koan_by_id(case_id: str):
+    """Return one koan case by ID."""
+    koan = utipy.get_mmnk_case(case_id)
+    if not koan:
+        return _api_failure(
+            "koan_not_found",
+            "Koan case not found.",
+            404,
+            case_id=str(case_id),
+        )
+    return _api_success(**dict(koan))
 
 
 # -------- Source Text Pages --------
@@ -1677,6 +1727,7 @@ def set_decision(index: int):
     )
     saved_redirect_args = {
         "saved_conversation_id": saved_row.get("conversation_id", ""),
+        "saved_index": index,
         "saved_reviewer": reviewer,
         "saved_evaluation": evaluation,
         "saved_status": session_reviews.status_label(saved_row),

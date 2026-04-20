@@ -47,11 +47,17 @@ def _default_paths(repo_root: Path) -> list[Path]:
     return [
         repo_root / "zb_app" / "static" / "mmnk.json",
         repo_root / "zb_app" / "README.md",
-        repo_root / "zb_app" / "docs" / "ARCHITECTURE.md",
-        repo_root / "zb_app" / "docs" / "DEVELOPER_GUIDE.md",
+        repo_root / "project" / "docs" / "ARCHITECTURE.md",
+        repo_root / "project" / "docs" / "DEVELOPER_GUIDE.md",
+        repo_root / "project" / "docs" / "UI_POLISH_PLAN_alpha.md",
+        repo_root / "zenbot_knowledge" / "solutions.md",
+        repo_root / "zenbot_knowledge" / "initialization.md",
+        repo_root / "zenbot_knowledge" / "customization_instructions.md",
         repo_root / "zenbot_knowledge" / "action_schemas.yaml",
+        repo_root / "zenbot_knowledge" / "openai_response_tools.json",
         repo_root / "project" / "rolling_to_do_list.md",
         repo_root / "training" / "trainset04" / "readme_set04.md",
+        repo_root / "training" / "generated" / "trainset_ready_v2" / "report.json",
     ]
 
 

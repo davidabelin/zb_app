@@ -696,6 +696,56 @@ footer a,
     radial-gradient(circle at top right, rgba(183, 138, 58, 0.22), transparent 36%);
 }
 
+.gg-page {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 32px;
+}
+
+.gg-header {
+  margin: 0 0 18px;
+  padding: 18px 20px;
+  background: var(--z-green);
+  border-bottom: 3px solid var(--z-gold);
+}
+
+.gg-header h1,
+.gg-header h2 {
+  margin: 0;
+  color: #fff8e8;
+}
+
+.gg-panel {
+  padding: 18px 20px;
+  border: 1px solid var(--z-line);
+  border-radius: 8px;
+  background: rgba(255, 250, 241, 0.88);
+}
+
+.gg-case-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+  padding: 0;
+  margin: 14px 0 0;
+}
+
+.gg-case-grid li {
+  min-width: 0;
+}
+
+.gg-case-page .koan-title {
+  font-size: 1.35rem;
+}
+
+.gg-case-page .koan-body,
+.gg-case-page .koan-comment,
+.gg-case-page .koan-verse {
+  max-width: 76rem;
+  font-size: 1.06rem;
+  line-height: 1.72;
+}
+
 .zendo-room-panel,
 .zendo-chat-panel {
   border: 1px solid var(--z-line);
@@ -931,6 +981,21 @@ footer a,
   }
 }
 
+@media (min-width: 1081px) {
+  .zendo-workspace {
+    height: calc(100vh - 106px);
+  }
+
+  .zendo-chat-panel {
+    min-height: 0;
+    max-height: 100%;
+  }
+
+  .chat-messages {
+    min-height: 0;
+  }
+}
+
 @media (max-width: 680px) {
   .entrance-hero {
     min-height: 78vh;
@@ -953,6 +1018,15 @@ footer a,
   .zendo-workspace {
     padding: 10px;
     gap: 10px;
+  }
+
+  .gg-page {
+    width: min(100% - 20px, 1120px);
+    padding: 12px 0 20px;
+  }
+
+  .gg-case-grid {
+    grid-template-columns: 1fr;
   }
 
   .chat-messages {

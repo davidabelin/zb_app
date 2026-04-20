@@ -103,6 +103,31 @@ def test_chat_rejects_mid_session_settings_change(monkeypatch):
     ]
 
 
+def test_chat_first_turn_can_create_case_session_with_selected_settings(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "STREAMING", False)
+    monkeypatch.setattr(main.utipy, "DB", None)
+    monkeypatch.setattr(main.utipy, "_LOCAL_CONVERSATIONS", {})
+    monkeypatch.setattr(main.utipy, "get_model_reply", lambda *args, **kwargs: "ok")
+
+    client = main.app.test_client()
+    response = client.post(
+        "/chat",
+        json={
+            "message": "What is the barrier?",
+            "conversation_id": "",
+            "case_id": "1",
+            "settings": {"preset_id": "austere_abbot"},
+        },
+    )
+    payload = response.get_json()
+    messages, metadata = main.utipy.get_conversation_state(payload["conversation_id"])
+
+    assert response.status_code == 200
+    assert payload["session_settings"]["preset_id"] == "austere_abbot"
+    assert metadata["case_id"] == "1"
+    assert any("Joshu's Dog" in message["content"] for message in messages)
+
+
 def test_streaming_chat_emits_session_settings_in_start_event(monkeypatch):
     monkeypatch.setattr(main.utipy, "DB", None)
     monkeypatch.setattr(main.utipy, "_LOCAL_CONVERSATIONS", {})

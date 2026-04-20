@@ -279,6 +279,7 @@
           Saved {{ request.args.get("saved_reviewer", "") }} {{ request.args.get("saved_evaluation", "") }}
           for <strong>{{ request.args.get("saved_conversation_id") }}</strong>.
           Current status: <strong>{{ request.args.get("saved_status", "Awaiting Other Review") }}</strong>.
+          <a href="{{ url_for('review_page', index=request.args.get('saved_index', record.index), evaluation=dashboard_filter) }}">Reopen saved record.</a>
           Final Use/Alter/Reject counts only change after both reviewer decisions are present.
         </div>
       {% endif %}

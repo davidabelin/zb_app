@@ -103,6 +103,7 @@ class TurnRequest(StrictModel):
 
     message: str = Field(min_length=1, max_length=2048)
     conversation_id: str = ""
+    case_id: str = ""
     student: str = "webmonkE"
     settings: SessionSettingsInput | None = None
 

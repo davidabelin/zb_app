@@ -129,3 +129,36 @@ def test_chatter_renders_workspace_and_session_settings_in_streaming_mode(monkey
     assert 'id="chatInput"' in body
     assert "Streaming enabled" in body
     assert "window.CHAT_API_BASE_URL" not in body
+
+
+def test_gateless_gate_pages_render_scoped_layout_hooks():
+    client = main.app.test_client()
+
+    list_response = client.get("/gg")
+    case_response = client.get("/gg/49")
+
+    assert list_response.status_code == 200
+    assert 'class="gg-page"' in list_response.get_data(as_text=True)
+    assert 'id="caseList"' in list_response.get_data(as_text=True)
+    assert case_response.status_code == 200
+    assert 'class="gg-page gg-case-page"' in case_response.get_data(as_text=True)
+    assert 'id="koan-container"' in case_response.get_data(as_text=True)
+
+
+def test_public_case_button_defers_server_session_creation():
+    script = main.app.test_client().get("/static/scripts.js").get_data(as_text=True)
+
+    assert 'ul.className = "gg-case-grid"' in script
+    case_handler_start = script.index('discussBtn.addEventListener("click"')
+    case_handler_end = script.index("container.appendChild(document.createElement", case_handler_start)
+    case_handler = script[case_handler_start:case_handler_end]
+    assert "/chat_case/" not in case_handler
+    assert 'clearSessionValue("conversation_id")' in case_handler
+    assert 'setSessionValue("case_id", String(koan.id))' in case_handler
+
+
+def test_chat_error_restores_unsent_prompt_in_browser_script():
+    script = main.app.test_client().get("/static/scripts.js").get_data(as_text=True)
+
+    assert 'case_id: getSessionValue("case_id") || ""' in script
+    assert "chatInput.value = prompt" in script

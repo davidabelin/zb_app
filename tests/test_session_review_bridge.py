@@ -346,6 +346,7 @@ def test_browser_review_page_confirms_saved_pending_reject(monkeypatch, fake_buc
     assert response.status_code == 200
     assert "Saved CM Reject" in body
     assert "browser-reject-001" in body
+    assert "Reopen saved record." in body
     assert "Final Use/Alter/Reject counts only change after both reviewer decisions are present." in body
     assert "Awaiting Other Review" in body
 

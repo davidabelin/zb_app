@@ -796,6 +796,7 @@ function initGGList() {
       if (!tocDiv) return;
       tocDiv.innerHTML = "";
       const ul = document.createElement("ul");
+      ul.className = "gg-case-grid";
       data.cases.forEach((koan) => {
         const li = document.createElement("li");
         const a = document.createElement("a");
@@ -880,28 +881,10 @@ function initGGCasePage() {
         discussBtn.disabled = true;
         setSessionStatus("Opening dokusan session...", "pending");
         try {
-          const options = await getChatOptions();
-          const settings = sanitizeSessionSettings(options.defaults || {}, options);
-          const response = await fetch(`/chat_case/${koan.id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ case_id: caseId, settings }),
-            credentials: "include",
-          });
-          if (!response.ok) {
-            await parseErrorResponse(response, options);
-          }
-          const res = await response.json();
-          if (res.error) {
-            throw new Error(res?.message || res?.error || "Unable to start dokusan session.");
-          }
-
-          setSessionValue("conversation_id", res.conversation_id);
-          setSessionValue("case_id", res.case_id);
-          if (res.session_settings) {
-            adoptLockedSessionSettings(res.session_settings, options);
-          }
-          setSessionStatus("Dokusan session ready. Entering the sanzen room...", "success");
+          clearSessionValue("conversation_id");
+          clearActiveSessionSettings();
+          setSessionValue("case_id", String(koan.id));
+          setSessionStatus("Case selected. Entering the sanzen room...", "success");
           window.location.href = "/chatter";
         } catch (err) {
           console.error("Error starting Koan chat:", err);
@@ -1104,6 +1087,7 @@ async function startChat(prompt) {
       body: JSON.stringify({
         message: prompt,
         conversation_id: getSessionValue("conversation_id") || "",
+        case_id: getSessionValue("case_id") || "",
         settings: requestSettings,
       }),
       credentials: "include",
@@ -1141,6 +1125,9 @@ async function startChat(prompt) {
     }
   } catch (error) {
     removeThinkingIndicator(thinkingNode);
+    if (chatInput && !chatInput.value) {
+      chatInput.value = prompt;
+    }
     appendChatMessage("System", `Error: ${error?.message || String(error)}`);
     handleError(error, "chatPreface", "Error starting chat.");
   } finally {

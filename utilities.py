@@ -725,6 +725,38 @@ def get_mmnk_case(case_id: str) -> Optional[dict[str, Any]]:
         return None
 
 
+def find_mmnk_case_title_candidates(title: str) -> list[dict[str, Any]]:
+    """Return compact case-title candidates matching an exact or substring query."""
+    query = str(title or "").strip().lower()
+    if not query:
+        return []
+    candidates: list[dict[str, Any]] = []
+    for case in _load_mmnk_cases():
+        case_title = str(case.get("title", "")).strip()
+        if query in case_title.lower():
+            candidates.append({"id": case.get("id"), "title": case_title})
+    return candidates
+
+
+def get_mmnk_case_by_title(title: str) -> Optional[dict[str, Any]]:
+    """Return one koan by exact title, then by unambiguous title substring."""
+    query = str(title or "").strip().lower()
+    if not query:
+        return None
+
+    cases = _load_mmnk_cases()
+    exact = [case for case in cases if str(case.get("title", "")).strip().lower() == query]
+    if exact:
+        return exact[0]
+
+    partial = [case for case in cases if query in str(case.get("title", "")).strip().lower()]
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        raise ValueError("More than one koan title matched that query.")
+    return None
+
+
 def get_random_koan_case_id() -> str:
     """Return a random koan case ID, falling back to a numeric range if needed."""
     try:
@@ -1979,6 +2011,77 @@ def list_conversation_files_in_gcs() -> list[str]:
     ]
 
 
+def _conversation_record_from_blob(blob: Any) -> dict[str, Any]:
+    """Build one lightweight archived-conversation record from a JSONL blob."""
+    conversation_id = blob.name.split("/")[-1].replace(".jsonl", "")
+    metadata: dict[str, Any] = {}
+    messages: list[dict[str, Any]] = []
+    try:
+        lines = blob.download_as_string().decode("utf-8").splitlines()
+    except Exception:
+        lines = []
+
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except Exception:
+            continue
+        if (
+            isinstance(item, dict)
+            and item.get("role") in {"system", "user", "assistant"}
+            and isinstance(item.get("content"), str)
+        ):
+            messages.append(item)
+        elif isinstance(item, dict) and not metadata:
+            metadata = dict(item)
+
+    first_user = next(
+        (str(message.get("content", "")) for message in messages if message.get("role") == "user"),
+        "",
+    )
+    first_assistant = next(
+        (
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "assistant"
+        ),
+        "",
+    )
+    title = first_user.strip().replace("\n", " ")[:96]
+    return {
+        "conversation_id": str(metadata.get("conversation_id") or conversation_id),
+        "title": title,
+        "date": str(metadata.get("saved_at") or metadata.get("created_at") or "")[:10],
+        "saved_at": str(metadata.get("saved_at") or metadata.get("created_at") or ""),
+        "case_id": str(metadata.get("case_id", "")).strip(),
+        "koan": str(metadata.get("case_id", "")).strip(),
+        "student": str(metadata.get("student", "")).strip(),
+        "model": str(metadata.get("model") or metadata.get("model_name") or "").strip(),
+        "message_count": len(messages),
+        "preview_user": first_user.strip().replace("\n", " ")[:180],
+        "preview_assistant": first_assistant.strip().replace("\n", " ")[:180],
+    }
+
+
+def list_conversation_records_in_gcs() -> list[dict[str, Any]]:
+    """Return lightweight records for archived JSONL conversations."""
+    if not BUCKET:
+        return []
+    records = [
+        _conversation_record_from_blob(blob)
+        for blob in BUCKET.list_blobs(prefix="zbchats/")
+        if blob.name.endswith(".jsonl")
+    ]
+    records.sort(
+        key=lambda record: (
+            str(record.get("saved_at", "")),
+            str(record.get("conversation_id", "")),
+        ),
+        reverse=True,
+    )
+    return records
+
+
 def get_conversation_from_gcs(conversation_id: str) -> list[dict[str, Any]] | None:
     """Return one archived conversation transcript from GCS by ID."""
     if not BUCKET:
@@ -2350,13 +2453,48 @@ def load_memory_logbook() -> list[dict[str, Any]]:
     return normalize_logbook_entries(_parse_logbook_payload(payload or ""))
 
 
+def load_memory_logbook_summary_page(
+    limit: int = 12,
+    end_index: int | None = None,
+) -> dict[str, Any]:
+    """Return a bounded newest-first memory summary page ending at `end_index`."""
+    normalized = load_memory_logbook()
+    total_count = len(normalized)
+    limit = max(0, int(limit))
+    if total_count == 0:
+        return {
+            "summaries": [],
+            "returned_count": 0,
+            "total_count": 0,
+            "start_index": None,
+            "end_index": None,
+            "next_end_index": None,
+            "has_more": False,
+        }
+
+    effective_end = total_count - 1 if end_index is None else int(end_index)
+    if effective_end < 0 or effective_end >= total_count:
+        raise ValueError(
+            f"Query parameter 'end_index' must be between 0 and {total_count - 1}."
+        )
+    start_index = max(0, effective_end - limit + 1)
+    window = normalized[start_index : effective_end + 1]
+    summaries = [summarize_memory_entry(entry) for entry in reversed(window)]
+    return {
+        "summaries": summaries,
+        "returned_count": len(summaries),
+        "total_count": total_count,
+        "start_index": start_index,
+        "end_index": effective_end,
+        "next_end_index": start_index - 1 if start_index > 0 else None,
+        "has_more": start_index > 0,
+    }
+
+
 def load_memory_logbook_summaries(limit: int = 12) -> tuple[list[dict[str, Any]], int]:
     """Return newest-first summary rows for GPT-side memory selection."""
-    normalized = list(reversed(load_memory_logbook()))
-    total_count = len(normalized)
-    if limit < 0:
-        limit = 0
-    return [summarize_memory_entry(entry) for entry in normalized[:limit]], total_count
+    page = load_memory_logbook_summary_page(limit=limit)
+    return page["summaries"], page["total_count"]
 
 
 def get_memory_logbook_entry(serial_number: str) -> dict[str, Any] | None:

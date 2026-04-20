@@ -22,7 +22,7 @@ def _normalized_api_rule_paths() -> set[str]:
     paths: set[str] = set()
     for rule in main.app.url_map.iter_rules():
         path = rule.rule
-        if not (path.startswith("/zb_api/") or path == "/appendMemoryLogbookEntry"):
+        if not path.startswith("/zb_api/"):
             continue
         normalized = re.sub(r"<(?:[^:>]+:)?([^>]+)>", r"{\1}", path)
         paths.add(normalized)
@@ -178,6 +178,14 @@ def test_archive_and_review_routes_return_503_when_storage_unavailable(monkeypat
         assert payload["error"] == "storage_unavailable"
 
 
+def test_deprecated_memory_routes_are_removed(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "ZB_API_STRICT_AUTH", False)
+    client = main.app.test_client()
+
+    assert client.get("/zb_api/load_memory_logbook_full").status_code == 404
+    assert client.post("/appendMemoryLogbookEntry", json={}).status_code == 404
+
+
 def test_standardized_not_found_for_conversation_and_memory_entry(monkeypatch, fake_bucket):
     monkeypatch.setattr(main.utipy.config, "ZB_API_STRICT_AUTH", False)
     monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
@@ -213,10 +221,87 @@ def test_action_schema_exposes_v31_chat_settings_contract():
     components = schema["components"]["schemas"]
 
     assert "/zb_api/chat/options" in paths
-    assert "/zb_api/load_memory_logbook_full" in paths
+    assert "/zb_api/load_memory_logbook_full" not in paths
+    assert "/appendMemoryLogbookEntry" not in paths
+    assert "/zb_api/koans/{case_id}" in paths
+    assert "/zb_api/koans/by-title" in paths
     assert "settings" in components["ChatTurnRequest"]["properties"]
+    assert "case_id" in components["ChatTurnRequest"]["properties"]
     assert "409" in paths["/zb_api/chat"]["post"]["responses"]
     assert "session_settings" in components["ChatTurnResponse"]["properties"]
     assert "conversation_status" in components["ChatTurnResponse"]["properties"]
     assert "requested_conversation_id" in components["ChatTurnResponse"]["properties"]
     assert "archived" in components["SaveChatResponse"]["properties"]
+
+
+def test_koan_lookup_api_by_id_and_title(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "ZB_API_STRICT_AUTH", False)
+    client = main.app.test_client()
+
+    by_id = client.get("/zb_api/koans/1")
+    by_title = client.get("/zb_api/koans/by-title?title=joshu%27s%20dog")
+    missing = client.get("/zb_api/koans/999")
+
+    assert by_id.status_code == 200
+    assert by_id.get_json()["title"] == "Joshu's Dog"
+    assert by_title.status_code == 200
+    assert by_title.get_json()["id"] == 1
+    assert missing.status_code == 404
+    assert missing.get_json()["error"] == "koan_not_found"
+
+
+def test_memory_logbook_supports_end_index_pagination(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "ZB_API_STRICT_AUTH", False)
+    monkeypatch.setattr(
+        main.utipy,
+        "load_memory_logbook",
+        lambda: [
+            {"serial_number": "001", "title": "one"},
+            {"serial_number": "002", "title": "two"},
+            {"serial_number": "003", "title": "three"},
+            {"serial_number": "004", "title": "four"},
+        ],
+    )
+    monkeypatch.setattr(
+        utilities,
+        "load_memory_logbook",
+        main.utipy.load_memory_logbook,
+    )
+    client = main.app.test_client()
+
+    response = client.get("/zb_api/load_memory_logbook?limit=2&end_index=2")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert [item["serial_number"] for item in payload["summaries"]] == ["003", "002"]
+    assert payload["start_index"] == 1
+    assert payload["end_index"] == 2
+    assert payload["next_end_index"] == 0
+    assert payload["has_more"] is True
+
+    bad = client.get("/zb_api/load_memory_logbook?end_index=9")
+    assert bad.status_code == 400
+
+
+def test_conversation_list_filters_and_paginates(monkeypatch, fake_bucket):
+    monkeypatch.setattr(main.utipy.config, "ZB_API_STRICT_AUTH", False)
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+    monkeypatch.setattr(utilities, "BUCKET", fake_bucket)
+    fake_bucket.blob("zbchats/one.jsonl").upload_from_string(
+        '{"conversation_id":"one","student":"Ada","case_id":"1","saved_at":"2026-04-19T01:00:00Z","model":"m"}\n'
+        '{"role":"user","content":"first"}\n{"role":"assistant","content":"reply"}'
+    )
+    fake_bucket.blob("zbchats/two.jsonl").upload_from_string(
+        '{"conversation_id":"two","student":"Bo","case_id":"2","saved_at":"2026-04-20T01:00:00Z","model":"m"}\n'
+        '{"role":"user","content":"second"}\n{"role":"assistant","content":"reply"}'
+    )
+    client = main.app.test_client()
+
+    response = client.get("/zb_api/conversations/list?case_id=2&limit=1")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["conversation_ids"] == ["two"]
+    assert payload["total_matching"] == 1
+    assert payload["records"][0]["student"] == "Bo"
+    assert payload["records"][0]["date"] == "2026-04-20"
