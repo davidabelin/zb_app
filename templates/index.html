@@ -5,6 +5,9 @@
   <section class="entrance-hero" aria-labelledby="entrance-title">
     <img class="entrance-hero-image" src="{{ url_for('static', filename='images/zenbot_hall.png') }}" alt="Mumonbot seated in a zendo-like server hall">
     <div class="entrance-hero-shade" aria-hidden="true"></div>
+    <div class="entrance-flourish entrance-bamboo" aria-hidden="true"></div>
+    <div class="entrance-flourish entrance-lotus" aria-hidden="true"></div>
+    <div class="entrance-flourish entrance-bowl" aria-hidden="true"></div>
     <div class="entrance-hero-content">
       <div class="entrance-kicker">Dokusan at the threshold</div>
       <h1 id="entrance-title">Zenbot Zendo Entrance Hall</h1>
@@ -15,6 +18,7 @@
       <div class="entrance-actions" aria-label="Primary paths">
         <a class="entrance-button primary" href="{{ url_for('chatter') }}">Enter the Sanzen Room</a>
         <a class="entrance-button" href="{{ url_for('gg') }}">Browse Gateless Gate</a>
+        <a class="entrance-button" href="{{ url_for('admin_conversations') }}">Administrative Area</a>
       </div>
     </div>
   </section>
@@ -40,6 +44,10 @@
       <a href="{{ url_for('legacy_splash') }}">
         <strong>Legacy Splash</strong>
         <span>View the previous public landing page.</span>
+      </a>
+      <a href="{{ url_for('admin_conversations') }}">
+        <strong>Administrative Area</strong>
+        <span>Open the protected review dashboard and session tools.</span>
       </a>
     </nav>
   </section>

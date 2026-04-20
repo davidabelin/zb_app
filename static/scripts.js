@@ -128,7 +128,11 @@ function renderMarkdownSafe(markdownText) {
   if (typeof marked === "undefined") {
     return escapeHtml(markdownText);
   }
-  return marked.parse(escapeHtml(markdownText));
+  const escaped = escapeHtml(markdownText);
+  if (typeof marked.parseInline === "function") {
+    return marked.parseInline(escaped);
+  }
+  return marked.parse(escaped);
 }
 
 function appendThinkingIndicator() {
@@ -152,6 +156,21 @@ function setPrefacePanelVisibility(visible) {
   const prefacePanel = document.getElementById("chatPrefacePanel");
   if (!prefacePanel) return;
   prefacePanel.hidden = !visible;
+}
+
+function setCaseContextNote(koan) {
+  const note = document.getElementById("caseContextNote");
+  if (!note) return;
+
+  if (!koan) {
+    note.innerHTML =
+      'Choose a case from <a href="/gg">The Gateless Gate</a>, or enter without a case and let the exchange find its own barrier.';
+    return;
+  }
+
+  const title = String(koan.title || "").trim();
+  const id = String(koan.id || "").trim();
+  note.textContent = `You have chosen Case #${id}${title ? `, "${title},"` : ""} for this session.`;
 }
 
 function removeThinkingIndicator(node) {
@@ -717,9 +736,9 @@ function appendChatMessage(sender, message) {
   try {
     const text = String(message ?? "");
     const htmlContent = renderMarkdownSafe(text);
-    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong><br>${htmlContent}`;
+    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong> ${htmlContent}`;
   } catch (error) {
-    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}</strong> caused error:<br>${escapeHtml(error?.message || String(error))}`;
+    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}</strong> caused error: ${escapeHtml(error?.message || String(error))}`;
   } finally {
     chatResults.appendChild(messageDiv);
     chatResults.scrollTop = chatResults.scrollHeight;
@@ -746,6 +765,7 @@ function renderKoanPreface(koan) {
   koanDiv.appendChild(bodyDiv);
   preface.appendChild(koanDiv);
   setPrefacePanelVisibility(true);
+  setCaseContextNote(koan);
 }
 
 async function loadKoanPreface(caseId) {
@@ -770,6 +790,7 @@ function clearChatDom() {
   if (chatInput) chatInput.value = "";
   if (chatPreface) chatPreface.innerHTML = "";
   setPrefacePanelVisibility(false);
+  setCaseContextNote(null);
 }
 
 async function resetChatUi() {
@@ -972,16 +993,19 @@ async function parseErrorResponse(response, options) {
 
 async function handleStreamResponse(response, thinkingNode, options) {
   const chatResults = document.getElementById("chatResults");
-  const messageDiv = document.createElement("div");
-  messageDiv.className = "zenbot-message";
-  messageDiv.innerHTML =
-    '<strong>Mumonbot:</strong><br><span class="message-content"></span>';
-  const contentEl = messageDiv.querySelector(".message-content");
+  let messageDiv = null;
+  let contentEl = null;
 
-  if (chatResults) {
+  const ensureResponseMessage = () => {
+    if (messageDiv || !chatResults) return;
+    messageDiv = document.createElement("div");
+    messageDiv.className = "zenbot-message";
+    messageDiv.innerHTML =
+      '<strong>Mumonbot:</strong> <span class="message-content"></span>';
+    contentEl = messageDiv.querySelector(".message-content");
     chatResults.appendChild(messageDiv);
     chatResults.scrollTop = chatResults.scrollHeight;
-  }
+  };
 
   let buffer = "";
   let fullText = "";
@@ -998,7 +1022,6 @@ async function handleStreamResponse(response, thinkingNode, options) {
         adoptLockedSessionSettings(data.session_settings, options);
       }
       setSaveButtonState();
-      removeThinkingIndicator(thinkingNode);
       return;
     }
 
@@ -1015,6 +1038,7 @@ async function handleStreamResponse(response, thinkingNode, options) {
 
     if (typeof chunk === "string" && chunk) {
       removeThinkingIndicator(thinkingNode);
+      ensureResponseMessage();
       if (data?.event === "fallback") {
         fullText = chunk;
       } else {

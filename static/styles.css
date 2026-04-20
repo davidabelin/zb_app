@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Sahitya:wght@400;700&display=swap");
+
 /* ========== Spinner Styles ========== */
 .spinner {
     border: 6px solid #caffdc;
@@ -417,7 +419,7 @@
 
   .zenbot-thinking-label {
     font-style: italic;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
   }
 
   .zenbot-thinking-breath {
@@ -499,7 +501,7 @@
   --z-slate: #314452;
   --z-line: #cdbb9e;
   --z-shadow: rgba(32, 29, 24, 0.16);
-  --z-font: "Palatino Linotype", "Book Antiqua", "Yu Mincho", "Noto Serif", Georgia, serif;
+  --z-font: "Sahitya", "Noto Serif Devanagari", "Nirmala UI", "Palatino Linotype", "Book Antiqua", Georgia, serif;
 }
 
 body {
@@ -515,6 +517,12 @@ body > .container {
   max-width: none;
   width: 100%;
   padding: 0;
+}
+
+body > .container > section:not([class]) {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 48px 0;
 }
 
 footer {
@@ -573,10 +581,115 @@ footer a,
 
 .entrance-hero-content {
   position: relative;
+  z-index: 2;
   width: min(760px, calc(100% - 32px));
   margin: 0 auto 8vh;
   color: #fff8e8;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.42);
+}
+
+.entrance-flourish {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.72;
+}
+
+.entrance-bamboo {
+  right: clamp(18px, 4vw, 70px);
+  bottom: 4vh;
+  width: 120px;
+  height: 270px;
+  background:
+    linear-gradient(90deg, transparent 13%, rgba(176, 203, 136, 0.72) 14% 18%, transparent 19%),
+    linear-gradient(90deg, transparent 47%, rgba(151, 181, 113, 0.78) 48% 53%, transparent 54%),
+    linear-gradient(90deg, transparent 78%, rgba(198, 218, 153, 0.68) 79% 83%, transparent 84%);
+}
+
+.entrance-bamboo::before,
+.entrance-bamboo::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px 0;
+  background: rgba(178, 205, 137, 0.58);
+  transform-origin: left center;
+}
+
+.entrance-bamboo::before {
+  width: 78px;
+  height: 20px;
+  right: 30px;
+  top: 72px;
+  transform: rotate(-24deg);
+  box-shadow: -12px 54px 0 rgba(198, 218, 153, 0.44);
+}
+
+.entrance-bamboo::after {
+  width: 70px;
+  height: 18px;
+  left: 48px;
+  top: 130px;
+  transform: rotate(30deg) scaleX(-1);
+  box-shadow: 18px 58px 0 rgba(151, 181, 113, 0.42);
+}
+
+.entrance-lotus {
+  left: clamp(24px, 5vw, 90px);
+  bottom: 5vh;
+  width: 170px;
+  height: 72px;
+}
+
+.entrance-lotus::before,
+.entrance-lotus::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  margin: auto;
+  border-radius: 70% 70% 18% 18%;
+  background:
+    radial-gradient(ellipse at center bottom, rgba(255, 248, 232, 0.26), transparent 52%),
+    linear-gradient(120deg, rgba(246, 210, 178, 0.56), rgba(187, 92, 68, 0.42));
+  border: 1px solid rgba(255, 248, 232, 0.2);
+}
+
+.entrance-lotus::before {
+  width: 56px;
+  height: 66px;
+  transform: translateX(0) rotate(0deg);
+  box-shadow:
+    -48px 10px 0 -4px rgba(205, 126, 106, 0.36),
+    48px 10px 0 -4px rgba(205, 126, 106, 0.36);
+}
+
+.entrance-lotus::after {
+  width: 52px;
+  height: 58px;
+  transform: translateX(-28px) rotate(-24deg);
+  box-shadow: 58px 22px 0 -2px rgba(246, 210, 178, 0.42);
+}
+
+.entrance-bowl {
+  right: clamp(168px, 16vw, 320px);
+  bottom: 7vh;
+  width: 132px;
+  height: 50px;
+  border: 2px solid rgba(232, 204, 151, 0.48);
+  border-top-color: rgba(255, 248, 232, 0.62);
+  border-radius: 12px 12px 60px 60px;
+  background: linear-gradient(180deg, rgba(48, 68, 82, 0.4), rgba(21, 34, 29, 0.72));
+}
+
+.entrance-bowl::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: -9px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 248, 232, 0.36);
+  background: rgba(255, 248, 232, 0.1);
 }
 
 .entrance-kicker,
@@ -585,7 +698,7 @@ footer a,
   display: block;
   color: var(--z-gold);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -688,9 +801,10 @@ footer a,
 .zendo-workspace {
   min-height: calc(100vh - 106px);
   display: grid;
-  grid-template-columns: minmax(220px, 0.75fr) minmax(420px, 1.45fr) minmax(260px, 0.9fr);
-  gap: 14px;
-  padding: 16px;
+  grid-template-columns: minmax(170px, 0.5fr) minmax(560px, 1.7fr) minmax(340px, 1.05fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px 20px;
   background:
     linear-gradient(180deg, rgba(255, 249, 238, 0.86), rgba(232, 220, 196, 0.92)),
     radial-gradient(circle at top right, rgba(183, 138, 58, 0.22), transparent 36%);
@@ -756,8 +870,19 @@ footer a,
 
 .zendo-room-panel {
   position: relative;
-  padding: 18px;
+  padding: 16px;
   overflow: hidden;
+}
+
+.zendo-reference-panel {
+  font-size: 0.95rem;
+}
+
+.zendo-setup-panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .zendo-room-panel::before {
@@ -825,7 +950,7 @@ footer a,
 
 .zendo-chat-header {
   margin: 0;
-  padding: 18px 20px;
+  padding: 14px 18px 12px;
   background: linear-gradient(135deg, var(--z-green-dark), var(--z-slate));
   border-bottom: 3px solid var(--z-gold);
   color: #fff8e8;
@@ -833,18 +958,23 @@ footer a,
 }
 
 .zendo-chat-header h1 {
-  margin: 4px 0 6px;
-  font-size: clamp(1.6rem, 3vw, 2.6rem);
+  margin: 3px 0 4px;
+  font-size: clamp(1.35rem, 1.8vw, 2rem);
+  line-height: 1.08;
 }
 
 .zendo-chat-header p {
   margin: 0;
   max-width: 54rem;
   color: #f3e7cf;
+  font-size: 0.98rem;
+  line-height: 1.35;
 }
 
 .chat-streaming-note {
   color: #f4d28f;
+  font-size: 0.95rem;
+  line-height: 1.2;
 }
 
 .chat-preface-panel {
@@ -856,51 +986,100 @@ footer a,
 }
 
 .chat-messages {
-  flex: 1 1 auto;
-  min-height: 360px;
-  padding: 20px;
+  flex: 1 1 0;
+  min-height: 430px;
+  padding: 10px 14px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0)),
     rgba(250, 244, 232, 0.62);
+  border-top: 1px solid rgba(205, 187, 158, 0.48);
+  border-bottom: 1px solid rgba(205, 187, 158, 0.48);
+  scrollbar-gutter: stable;
 }
 
 .chat-input-area {
-  padding: 16px 18px 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  grid-template-rows: auto auto;
+  align-items: stretch;
+  gap: 8px 12px;
+  padding: 10px 16px 12px;
   border-top: 1px solid var(--z-line);
   background: rgba(236, 224, 201, 0.9);
 }
 
 .chat-input-area textarea {
-  min-height: 132px;
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  min-height: 88px;
+  height: 88px;
+  max-height: 24vh;
   border: 1px solid var(--z-line);
   border-radius: 8px;
   background: #fffdf7;
   color: var(--z-ink);
   font-family: var(--z-font);
-  line-height: 1.5;
+  line-height: 1.35;
   box-shadow: inset 0 1px 4px rgba(32, 29, 24, 0.08);
 }
 
+.chat-buttons {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(3, 1fr);
+  gap: 6px;
+  justify-items: stretch;
+}
+
 .chat-buttons button {
-  min-width: 82px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 6px;
   background: var(--z-green);
   color: #fff8e8;
+}
+
+.chat-buttons button:hover {
+  transform: none;
 }
 
 .chat-buttons .button-danger {
   background: var(--z-lacquer);
 }
 
+.chat-help {
+  grid-column: 1;
+  grid-row: 2;
+  line-height: 1.25;
+}
+
 .user-message,
 .zenbot-message {
   width: fit-content;
-  max-width: min(86%, 760px);
-  padding: 12px 14px;
-  margin: 0 0 12px;
-  border-radius: 8px;
-  line-height: 1.48;
-  box-shadow: 0 6px 18px rgba(32, 29, 24, 0.08);
+  max-width: min(76%, 700px);
+  padding: 6px 8px;
+  margin: 0 0 6px;
+  border-radius: 6px;
+  line-height: 1.28;
+  box-shadow: 0 3px 10px rgba(32, 29, 24, 0.06);
   font-family: var(--z-font);
+  font-size: 1rem;
+}
+
+.user-message p,
+.zenbot-message p {
+  display: inline;
+  margin: 0;
+}
+
+.user-message strong,
+.zenbot-message strong {
+  font-size: 0.95em;
 }
 
 .user-message {
@@ -923,6 +1102,7 @@ footer a,
   border-color: rgba(183, 138, 58, 0.55);
   background: rgba(255, 250, 241, 0.86);
   box-shadow: none;
+  padding: 14px;
 }
 
 .session-settings-topline h2 {
@@ -932,27 +1112,53 @@ footer a,
 
 .session-settings-summary {
   max-width: none;
+  margin-top: 8px;
+  padding: 8px 10px;
   background: rgba(246, 239, 225, 0.84);
+  font-size: 0.9rem;
+  line-height: 1.32;
+}
+
+.session-settings-status {
+  line-height: 1.35;
+}
+
+.session-settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin-top: 12px;
 }
 
 .session-field {
   color: var(--z-ink);
+  gap: 3px;
+  font-size: 0.9rem;
 }
 
 .session-field input,
 .session-field select {
-  min-height: 40px;
+  min-height: 36px;
+  padding: 6px 8px;
   border-color: var(--z-line);
   background: #fffdf7;
 }
 
+.session-settings-toggles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .session-toggle {
+  min-height: 36px;
+  padding: 7px 9px;
   background: rgba(255, 253, 247, 0.78);
   border-color: var(--z-line);
+  font-size: 0.9rem;
 }
 
 .zendo-notes {
-  margin-top: 20px;
+  margin-top: 14px;
 }
 
 .zendo-notes ul {
@@ -962,7 +1168,7 @@ footer a,
 }
 
 .zendo-notes li {
-  padding: 8px 0;
+  padding: 6px 0;
   border-top: 1px solid rgba(205, 187, 158, 0.7);
 }
 
@@ -976,6 +1182,11 @@ footer a,
     min-width: 0;
   }
 
+  .zendo-setup-panel {
+    max-height: none;
+    overflow: visible;
+  }
+
   .zendo-chat-panel {
     min-height: 68vh;
   }
@@ -983,9 +1194,11 @@ footer a,
 
 @media (min-width: 1081px) {
   .zendo-workspace {
-    height: calc(100vh - 106px);
+    height: calc(100vh - 92px);
+    min-height: 0;
   }
 
+  .zendo-room-panel,
   .zendo-chat-panel {
     min-height: 0;
     max-height: 100%;
@@ -1032,6 +1245,35 @@ footer a,
   .chat-messages {
     min-height: 300px;
     padding: 12px;
+  }
+
+  .chat-input-area {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-input-area textarea,
+  .chat-buttons,
+  .chat-help {
+    grid-column: 1;
+  }
+
+  .chat-input-area textarea {
+    grid-row: 1;
+  }
+
+  .chat-buttons {
+    grid-row: 2;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+
+  .chat-help {
+    grid-row: 3;
+  }
+
+  .session-settings-grid,
+  .session-settings-toggles {
+    grid-template-columns: 1fr;
   }
 
   .user-message,
