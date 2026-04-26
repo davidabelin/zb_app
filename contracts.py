@@ -219,6 +219,7 @@ class LoadCaseContextArgs(StrictModel):
 
     case_id: str
     include_commentary: bool = False
+    include_solution_notes: bool = False
 
 
 class SearchExemplarsArgs(StrictModel):
@@ -233,6 +234,7 @@ class LoadMemorySummariesArgs(StrictModel):
     """Arguments for the compact memory-summary lookup tool."""
 
     limit: int = Field(default=5, ge=1, le=12)
+    end_index: int | None = Field(default=None, ge=0)
 
 
 class LoadMemoryEntryArgs(StrictModel):

@@ -131,6 +131,7 @@ if RedisClient is not None and config.REDIS_URL:
 _LOCAL_CONVERSATIONS: dict[str, dict[str, Any]] = {}
 
 MEMORY_LOGBOOK = config.MEMORY_LOGBOOK
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _LOCAL_LOGBOOK_PATH = Path(__file__).resolve().parent / "config" / MEMORY_LOGBOOK
 _LOCAL_MEMORY_CANDIDATE_PATH = (
     Path(__file__).resolve().parent / "config" / "memory_candidates.jsonl"
@@ -138,6 +139,7 @@ _LOCAL_MEMORY_CANDIDATE_PATH = (
 _LOCAL_REVIEW_REQUESTS_PATH = (
     Path(__file__).resolve().parent / "config" / "review_requests.jsonl"
 )
+_SOLUTION_NOTES_PATH = _REPO_ROOT / "zenbot_knowledge" / "solutions.md"
 
 
 @dataclass(frozen=True)
@@ -1207,6 +1209,38 @@ def _candidate_previous_response_id(
     return previous_response_id
 
 
+def _load_solution_notes(case_id: str) -> list[str]:
+    """Return known project solution notes for one case, when recorded."""
+
+    target = str(case_id or "").strip()
+    if not target or not _SOLUTION_NOTES_PATH.exists():
+        return []
+
+    try:
+        lines = _SOLUTION_NOTES_PATH.read_text(encoding="utf-8").splitlines()
+    except Exception as exc:
+        logging.warning("Unable to read koan solution notes: %s", exc)
+        return []
+
+    notes: list[str] = []
+    collecting = False
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line[0].isdigit() and "." in line:
+            quoted = line.split('"', 2)
+            heading = quoted[1] if len(quoted) > 1 else line
+            case_number = heading.split(maxsplit=1)[0].strip()
+            collecting = case_number == target
+            continue
+        if collecting and line.startswith("*"):
+            note = line.lstrip("*").strip().strip('"')
+            if note:
+                notes.append(note)
+    return notes
+
+
 def _load_case_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     """Load one koan case payload for function-tool execution."""
 
@@ -1224,6 +1258,10 @@ def _load_case_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     if args.include_commentary:
         payload["comment"] = str(koan.get("comment", ""))
         payload["verse"] = koan.get("verse", [])
+    if args.include_solution_notes:
+        notes = _load_solution_notes(str(koan.get("id", args.case_id)))
+        if notes:
+            payload["solution_notes"] = notes
     return payload
 
 
@@ -1301,12 +1339,13 @@ def _load_memory_summaries_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     """Load compact memory summaries for tool-driven retrieval."""
 
     args = LoadMemorySummariesArgs.model_validate(arguments)
-    summaries, total_count = load_memory_logbook_summaries(limit=args.limit)
+    page = load_memory_logbook_summary_page(
+        limit=args.limit,
+        end_index=args.end_index,
+    )
     return {
-        "status": "success" if summaries else "empty",
-        "summaries": summaries,
-        "returned_count": len(summaries),
-        "total_count": total_count,
+        "status": "success" if page["summaries"] else "empty",
+        **page,
     }
 
 
