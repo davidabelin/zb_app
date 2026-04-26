@@ -46,7 +46,15 @@ from flask import (
 from werkzeug.exceptions import BadRequest
 from werkzeug.exceptions import HTTPException
 
-from contracts import SessionStartRequest, SessionSettingsInput, TurnRequest
+from contracts import (
+    EnqueueReviewArgs,
+    ReportUiStatusArgs,
+    SaveMemoryCandidateArgs,
+    SearchExemplarsArgs,
+    SessionStartRequest,
+    SessionSettingsInput,
+    TurnRequest,
+)
 import review_sync
 import session_reviews
 import utilities as utipy
@@ -88,7 +96,7 @@ class ChatTurnRequest:
                     "message": str(data.get("message", "")).strip(),
                     "conversation_id": str(data.get("conversation_id", "")).strip(),
                     "case_id": str(data.get("case_id", "")).strip(),
-                    "student": str(data.get("student", "")).strip() or "webmonkE",
+                    "student": str(data.get("student", "")).strip() or "guest",
                     "settings": data.get("settings"),
                 }
             )
@@ -108,7 +116,7 @@ class ChatTurnRequest:
             message=validated.message,
             conversation_id=validated.conversation_id,
             case_id=validated.case_id,
-            student=validated.student or "webmonkE",
+            student=validated.student or "guest",
             settings=validated.settings,
         )
 
@@ -521,6 +529,20 @@ def _parse_int_query_arg(
     return value
 
 
+def _parse_bool_query_arg(name: str, default: bool = False) -> bool:
+    """Parse an optional boolean query parameter."""
+    raw_value = request.args.get(name, "").strip().lower()
+    if not raw_value:
+        return default
+    if raw_value in {"1", "true", "yes", "on"}:
+        return True
+    if raw_value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(
+        f"Query parameter '{name}' must be true/false, yes/no, on/off, or 1/0."
+    )
+
+
 def _parse_exclude_indices_arg() -> set[int]:
     """Parse optional comma-separated non-negative review indices."""
     raw_value = request.args.get("exclude_indices", "").strip()
@@ -813,7 +835,7 @@ def chat_case(case_id: str):
             return jsonify({"error": "No case_id provided."}), 400
 
         data = utipy.get_request_data()
-        payload = ChatStartRequest.from_dict(data, default_student="webmonkE")
+        payload = ChatStartRequest.from_dict(data, default_student="guest")
         conversation_id, _messages, _metadata = utipy.create_conversation(
             student=payload.student,
             case_id=case_id,
@@ -1204,6 +1226,138 @@ def zb_api_load_memory_entry(serial_number: str):
     )
 
 
+@app.route("/zb_api/exemplars/search", methods=["GET"])
+def zb_api_search_exemplars():
+    """Search accepted review sessions for compact exemplar snippets."""
+    try:
+        args = SearchExemplarsArgs.model_validate(
+            {
+                "query": str(request.args.get("query", "")).strip(),
+                "limit": _parse_int_query_arg("limit", 3, 1, 5),
+                "case_id": str(request.args.get("case_id", "")).strip(),
+            }
+        )
+    except ValueError as exc:
+        return _api_failure("bad_request", str(exc), 400)
+    except ValidationError as exc:
+        return _api_failure(
+            "bad_request",
+            "Exemplar search query failed validation.",
+            400,
+            details=exc.errors(),
+        )
+
+    tokens = [token for token in args.query.lower().split() if len(token) > 2]
+    if not tokens:
+        return _api_success(
+            query=args.query,
+            case_id=args.case_id,
+            search_status="empty_query",
+            returned_count=0,
+            results=[],
+        )
+
+    try:
+        rows = _load_review_state_for_api()
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except Exception:
+        logging.exception("/zb_api/exemplars/search failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while searching exemplar sessions.",
+            500,
+        )
+
+    ranked: list[tuple[int, dict[str, Any]]] = []
+    for index, row in enumerate(rows):
+        if str(row.get("evaluation", "")).strip() != "Use":
+            continue
+        if args.case_id and str(row.get("case_id", "")).strip() != args.case_id:
+            continue
+        haystack = " ".join(
+            [
+                str(row.get("preview_user", "")),
+                str(row.get("preview_assistant", "")),
+                str(row.get("case_id", "")),
+            ]
+        ).lower()
+        score = sum(1 for token in tokens if token in haystack)
+        if score <= 0:
+            continue
+        try:
+            record = session_reviews.serialize_record(rows, index)
+        except Exception:
+            continue
+        ranked.append(
+            (
+                score,
+                {
+                    "conversation_id": record["metadata"]["conversation_id"],
+                    "case_id": record["metadata"].get("case_id", ""),
+                    "score": score,
+                    "preview_user": record.get("preview_user", ""),
+                    "preview_assistant": record.get("preview_assistant", ""),
+                    "excerpt": utipy._excerpt_messages(record.get("messages", [])),
+                },
+            )
+        )
+
+    ranked.sort(key=lambda item: (-item[0], item[1]["conversation_id"]))
+    results = [item[1] for item in ranked[: args.limit]]
+    return _api_success(
+        query=args.query,
+        case_id=args.case_id,
+        search_status="success",
+        returned_count=len(results),
+        results=results,
+    )
+
+
+@app.route("/zb_api/memory/candidates", methods=["POST"])
+def zb_api_queue_memory_candidate():
+    """Queue one structured memory candidate for later human/operator review."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _api_failure("bad_request", "JSON body is required.", 400)
+
+    try:
+        args = SaveMemoryCandidateArgs.model_validate(data)
+        payload = {
+            "queued_at": utipy._utc_now(),
+            "entry": args.entry.model_dump(mode="json"),
+        }
+        utipy._write_jsonl_record(
+            utipy.config.MEMORY_CANDIDATE_QUEUE,
+            payload,
+            utipy._LOCAL_MEMORY_CANDIDATE_PATH,
+        )
+    except ValidationError as exc:
+        return _api_failure(
+            "bad_request",
+            "Memory candidate payload failed validation.",
+            400,
+            details=exc.errors(),
+        )
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except Exception:
+        logging.exception("/zb_api/memory/candidates failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while queueing the memory candidate.",
+            500,
+        )
+
+    entry = payload["entry"]
+    return _api_success(
+        message="memory candidate queued for review",
+        queued_at=payload["queued_at"],
+        serial_number=entry.get("serial_number", ""),
+        title=entry.get("title", ""),
+    )
+
+
 @app.route("/zb_api/update_memory_logbook", methods=["POST"])
 def zb_api_update_memory_logbook():
     """Append one entry or replace the full memory logbook via the new API."""
@@ -1333,6 +1487,11 @@ def zb_api_get_koan_by_title():
 @app.route("/zb_api/koans/<case_id>", methods=["GET"])
 def zb_api_get_koan_by_id(case_id: str):
     """Return one koan case by ID."""
+    try:
+        include_solution_notes = _parse_bool_query_arg("include_solution_notes")
+    except ValueError as exc:
+        return _api_failure("bad_request", str(exc), 400, case_id=str(case_id))
+
     koan = utipy.get_mmnk_case(case_id)
     if not koan:
         return _api_failure(
@@ -1341,7 +1500,12 @@ def zb_api_get_koan_by_id(case_id: str):
             404,
             case_id=str(case_id),
         )
-    return _api_success(**dict(koan))
+    payload = dict(koan)
+    if include_solution_notes:
+        notes = utipy._load_solution_notes(str(payload.get("id", case_id)))
+        if notes:
+            payload["solution_notes"] = notes
+    return _api_success(**payload)
 
 
 # -------- Source Text Pages --------
@@ -1879,6 +2043,47 @@ def api_session_evaluations_random_zb_review():
     )
 
 
+@app.post("/zb_api/session-evaluations/review-requests")
+def api_session_evaluations_review_request():
+    """Queue one follow-up review request for a conversation."""
+    _require_admin_auth()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _api_failure("bad_request", "JSON body is required.", 400)
+
+    try:
+        args = EnqueueReviewArgs.model_validate(data)
+        payload = {
+            "queued_at": utipy._utc_now(),
+            "conversation_id": args.conversation_id,
+            "reviewer": args.reviewer,
+            "note": args.note,
+        }
+        utipy._write_jsonl_record(
+            utipy.config.REVIEW_REQUESTS_BLOB,
+            payload,
+            utipy._LOCAL_REVIEW_REQUESTS_PATH,
+        )
+    except ValidationError as exc:
+        return _api_failure(
+            "bad_request",
+            "Review request payload failed validation.",
+            400,
+            details=exc.errors(),
+        )
+    except RuntimeError as exc:
+        return _api_storage_unavailable(str(exc))
+    except Exception:
+        logging.exception("/zb_api/session-evaluations/review-requests failed")
+        return _api_failure(
+            "internal_server_error",
+            "Unexpected server-side failure while queueing the review request.",
+            500,
+        )
+
+    return _api_success(message="review request queued", **payload)
+
+
 @app.post("/zb_api/session-evaluations/record/<int:index>/decision")
 def api_session_evaluations_decision(index: int):
     """Apply a JSON review decision for the requested reviewer and record."""
@@ -2017,6 +2222,31 @@ def api_session_evaluations_next():
             if next_index is not None
             else None
         ),
+    )
+
+
+@app.post("/zb_api/runtime/status-events")
+def zb_api_runtime_status_event():
+    """Record one lightweight GPT/operator status breadcrumb."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _api_failure("bad_request", "JSON body is required.", 400)
+
+    try:
+        args = ReportUiStatusArgs.model_validate(data)
+    except ValidationError as exc:
+        return _api_failure(
+            "bad_request",
+            "Runtime status payload failed validation.",
+            400,
+            details=exc.errors(),
+        )
+
+    logging.info("runtime_status_event stage=%s detail=%s", args.stage, args.detail)
+    return _api_success(
+        message="runtime status event reported",
+        stage=args.stage,
+        detail=args.detail,
     )
 
 

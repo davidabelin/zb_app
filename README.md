@@ -59,7 +59,8 @@ Implemented v3 runtime pieces:
   - `report_ui_status`
 - optional background session critic submissions
 
-The tool catalog can be exported with:
+For internal runtime diagnostics, the Responses function-tool catalog can be
+exported to `generated/openai_response_tools.json` with:
 
 ```cmd
 python scripts/export_openai_tool_manifest.py

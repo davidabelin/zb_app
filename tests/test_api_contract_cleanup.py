@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -16,6 +17,15 @@ def _schema() -> dict:
         / "action_schemas.yaml"
     )
     return yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+
+
+def _schema_json() -> dict:
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "zenbot_knowledge"
+        / "action_schemas.json"
+    )
+    return json.loads(schema_path.read_text(encoding="utf-8"))
 
 
 def _normalized_api_rule_paths() -> set[str]:
@@ -215,18 +225,28 @@ def test_action_schema_paths_match_runtime_gpt_api_surface():
     assert _normalized_api_rule_paths() == schema_paths
 
 
+def test_action_schema_json_matches_yaml_source():
+    assert _schema_json() == _schema()
+
+
 def test_action_schema_exposes_v31_chat_settings_contract():
     schema = _schema()
     paths = schema["paths"]
     components = schema["components"]["schemas"]
 
+    assert schema["info"]["version"] == "3.4.4"
     assert "/zb_api/chat/options" in paths
     assert "/zb_api/load_memory_logbook_full" not in paths
     assert "/appendMemoryLogbookEntry" not in paths
     assert "/zb_api/koans/{case_id}" in paths
     assert "/zb_api/koans/by-title" in paths
+    assert "/zb_api/exemplars/search" in paths
+    assert "/zb_api/memory/candidates" in paths
+    assert "/zb_api/session-evaluations/review-requests" in paths
+    assert "/zb_api/runtime/status-events" in paths
     assert "settings" in components["ChatTurnRequest"]["properties"]
     assert "case_id" in components["ChatTurnRequest"]["properties"]
+    assert "solution_notes" in components["KoanResponse"]["properties"]
     assert "409" in paths["/zb_api/chat"]["post"]["responses"]
     assert "session_settings" in components["ChatTurnResponse"]["properties"]
     assert "conversation_status" in components["ChatTurnResponse"]["properties"]
@@ -240,14 +260,75 @@ def test_koan_lookup_api_by_id_and_title(monkeypatch):
 
     by_id = client.get("/zb_api/koans/1")
     by_title = client.get("/zb_api/koans/by-title?title=joshu%27s%20dog")
+    with_solution_notes = client.get("/zb_api/koans/46?include_solution_notes=true")
     missing = client.get("/zb_api/koans/999")
 
     assert by_id.status_code == 200
     assert by_id.get_json()["title"] == "Joshu's Dog"
     assert by_title.status_code == 200
     assert by_title.get_json()["id"] == 1
+    assert with_solution_notes.status_code == 200
+    assert with_solution_notes.get_json()["solution_notes"] == ["Climb down."]
     assert missing.status_code == 404
     assert missing.get_json()["error"] == "koan_not_found"
+
+
+def test_scavenged_action_routes_queue_and_report(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "ZB_API_STRICT_AUTH", False)
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
+    written = []
+
+    def fake_write(blob_name, record, local_path):
+        written.append((blob_name, record, local_path))
+
+    monkeypatch.setattr(main.utipy, "_write_jsonl_record", fake_write)
+    client = main.app.test_client()
+    memory_entry = {
+        "date": "2026-04-26",
+        "time": "12:00",
+        "serial_number": "999",
+        "title": "Candidate",
+        "koans_used": ["46"],
+        "user_problem_or_questions": "test",
+        "response_summary": "summary",
+        "session_evaluations": [
+            {
+                "case": "46",
+                "conversation_id": "conv-1",
+                "evaluation": "Use",
+                "notes": "notes",
+            }
+        ],
+        "key_insights": ["insight"],
+        "lessons_learned": ["lesson"],
+        "final_outcome": "queued",
+        "user_instructions": [],
+    }
+
+    memory_response = client.post(
+        "/zb_api/memory/candidates",
+        json={"entry": memory_entry},
+    )
+    review_response = client.post(
+        "/zb_api/session-evaluations/review-requests",
+        json={"conversation_id": "conv-1", "reviewer": "ZB", "note": "check"},
+    )
+    status_response = client.post(
+        "/zb_api/runtime/status-events",
+        json={"stage": "schema-check", "detail": "ok"},
+    )
+
+    assert memory_response.status_code == 200
+    assert memory_response.get_json()["serial_number"] == "999"
+    assert review_response.status_code == 200
+    assert review_response.get_json()["conversation_id"] == "conv-1"
+    assert status_response.status_code == 200
+    assert status_response.get_json()["stage"] == "schema-check"
+    assert [item[0] for item in written] == [
+        main.utipy.config.MEMORY_CANDIDATE_QUEUE,
+        main.utipy.config.REVIEW_REQUESTS_BLOB,
+    ]
 
 
 def test_memory_logbook_supports_end_index_pagination(monkeypatch):
