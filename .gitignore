@@ -160,3 +160,4 @@ cython_debug/
 # YAML
 .yaml
 upload-list.txt
+static/images/zendo_mainhall.png
