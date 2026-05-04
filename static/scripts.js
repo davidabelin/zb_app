@@ -179,6 +179,41 @@ function removeThinkingIndicator(node) {
   }
 }
 
+function insertGestureText(gesture) {
+  const chatInput = document.getElementById("chatInput");
+  const text = String(gesture || "").trim();
+  if (!chatInput || !text) return;
+
+  const start = Number.isInteger(chatInput.selectionStart)
+    ? chatInput.selectionStart
+    : chatInput.value.length;
+  const end = Number.isInteger(chatInput.selectionEnd)
+    ? chatInput.selectionEnd
+    : chatInput.value.length;
+  const before = chatInput.value.slice(0, start);
+  const after = chatInput.value.slice(end);
+  const prefix = before && !/\s$/.test(before) ? " " : "";
+  const suffix = after && !/^\s/.test(after) ? " " : "";
+  const insertion = `${prefix}${text}${suffix}`;
+
+  chatInput.value = `${before}${insertion}${after}`;
+  chatInput.focus();
+  const cursor = before.length + insertion.length;
+  if (typeof chatInput.setSelectionRange === "function") {
+    chatInput.setSelectionRange(cursor, cursor);
+  }
+}
+
+function bindGestureButtons() {
+  document.querySelectorAll("[data-gesture]").forEach((button) => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => {
+      insertGestureText(button.dataset.gesture);
+    });
+  });
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   if (!response.ok) {
@@ -933,6 +968,8 @@ async function initChatterPage() {
   const chatButton = document.getElementById("chatSend");
   const endChatButton = document.getElementById("chatEnd");
   const saveChatButton = document.getElementById("chatSave");
+
+  bindGestureButtons();
 
   try {
     await ensureSessionSettingsPanel();

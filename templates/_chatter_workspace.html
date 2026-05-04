@@ -16,6 +16,17 @@
       <a href="{{ url_for('display_pdf') }}">BCR notes</a>
       <a href="{{ url_for('home') }}">Entrance hall</a>
     </nav>
+    <section class="zendo-context-form" aria-labelledby="zendo-context-form-title">
+      <div class="panel-heading">
+        <span>Room notes</span>
+        <h2 id="zendo-context-form-title">Working Form</h2>
+      </div>
+      <ul>
+        <li>Settings lock after the first turn.</li>
+        <li>Save when the dokusan is complete.</li>
+        <li>Reset clears the current local session.</li>
+      </ul>
+    </section>
   </section>
 
   <section class="zendo-chat-panel" aria-labelledby="zendo-title">
@@ -41,8 +52,15 @@
         <button id="chatSave" type="button">Save</button>
         <button id="chatEnd" type="button" class="button-danger">Reset</button>
       </div>
-      <div class="chat-help">
-        <small>Enter to send • Shift+Enter for a newline • Save archives the session</small>
+      <div class="chat-assist-row">
+        <div class="gesture-buttons" aria-label="Dokusan gestures">
+          <button type="button" data-gesture="(bows)">(bows)</button>
+          <button type="button" data-gesture="(smiles)">(smiles)</button>
+          <button type="button" data-gesture="(winks)">(winks)</button>
+        </div>
+        <div class="chat-help">
+          <small>Enter to send • Shift+Enter for a newline • Save archives the session</small>
+        </div>
       </div>
     </section>
   </section>
@@ -109,16 +127,5 @@
       </div>
     </section>
 
-    <section class="zendo-notes">
-      <div class="panel-heading">
-        <span>Room notes</span>
-        <h2>Working Form</h2>
-      </div>
-      <ul>
-        <li>Settings lock after the first turn.</li>
-        <li>Save when the dokusan is complete.</li>
-        <li>Reset clears the current local session.</li>
-      </ul>
-    </section>
   </aside>
 </main>

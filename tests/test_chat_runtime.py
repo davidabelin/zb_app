@@ -76,7 +76,7 @@ def test_entrance_hall_replaces_public_splash():
     assert "/chatter" in body
     assert "Site map seed" in body
     assert "Resource guide placeholder" in body
-    assert "zenbot_hall.png" in body
+    assert "zendo_mainhall.png" in body
 
 
 def test_legacy_splash_preserves_previous_public_page():
@@ -110,6 +110,7 @@ def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(mo
     assert 'id="chatSave"' in body
     assert 'id="chatEnd"' in body
     assert 'id="chatPrefacePanel"' in body
+    assert 'data-gesture="(bows)"' in body
     assert "window.PUBLIC_SESSION_OPTIONS" in body
     assert "window.CHAT_API_BASE_URL" not in body
 
