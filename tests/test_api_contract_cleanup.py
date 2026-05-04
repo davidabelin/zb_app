@@ -234,7 +234,7 @@ def test_action_schema_exposes_v31_chat_settings_contract():
     paths = schema["paths"]
     components = schema["components"]["schemas"]
 
-    assert schema["info"]["version"] == "3.4.4"
+    assert schema["info"]["version"] == "3.5.0"
     assert "/zb_api/chat/options" in paths
     assert "/zb_api/load_memory_logbook_full" not in paths
     assert "/appendMemoryLogbookEntry" not in paths
@@ -252,6 +252,13 @@ def test_action_schema_exposes_v31_chat_settings_contract():
     assert "conversation_status" in components["ChatTurnResponse"]["properties"]
     assert "requested_conversation_id" in components["ChatTurnResponse"]["properties"]
     assert "archived" in components["SaveChatResponse"]["properties"]
+    memory_write = paths["/zb_api/update_memory_logbook"]["post"]
+    memory_write_schema = memory_write["requestBody"]["content"]["application/json"][
+        "schema"
+    ]
+    assert memory_write["operationId"] == "commitMemoryEntry"
+    assert memory_write_schema["required"] == ["entry"]
+    assert "full_logbook" not in memory_write_schema["properties"]
 
 
 def test_koan_lookup_api_by_id_and_title(monkeypatch):
@@ -320,7 +327,10 @@ def test_scavenged_action_routes_queue_and_report(monkeypatch):
     )
 
     assert memory_response.status_code == 200
-    assert memory_response.get_json()["serial_number"] == "999"
+    memory_payload = memory_response.get_json()
+    assert memory_payload["serial_number"] == "999"
+    assert memory_payload["canonical_logbook_updated"] is False
+    assert memory_payload["queue_blob"] == main.utipy.config.MEMORY_CANDIDATE_QUEUE
     assert review_response.status_code == 200
     assert review_response.get_json()["conversation_id"] == "conv-1"
     assert status_response.status_code == 200

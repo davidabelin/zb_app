@@ -1351,10 +1351,14 @@ def zb_api_queue_memory_candidate():
 
     entry = payload["entry"]
     return _api_success(
-        message="memory candidate queued for review",
+        message=(
+            "memory candidate queued for review; canonical memory logbook was not updated"
+        ),
         queued_at=payload["queued_at"],
         serial_number=entry.get("serial_number", ""),
         title=entry.get("title", ""),
+        canonical_logbook_updated=False,
+        queue_blob=utipy.config.MEMORY_CANDIDATE_QUEUE,
     )
 
 
@@ -1936,6 +1940,7 @@ def api_session_evaluations_summary():
 
     return _api_success(
         summary=session_reviews.build_summary(rows),
+        progress_summary=session_reviews.build_progress_summary(rows),
         storage=session_reviews.storage_metadata(),
     )
 
@@ -2113,6 +2118,21 @@ def api_session_evaluations_decision(index: int):
     if not isinstance(data, dict):
         return _api_failure("bad_request", "JSON body is required.", 400, index=index)
 
+    expected_conversation_id = str(data.get("conversation_id", "")).strip()
+    actual_conversation_id = str(rows[index].get("conversation_id", "")).strip()
+    if expected_conversation_id and expected_conversation_id != actual_conversation_id:
+        return _api_failure(
+            "review_record_mismatch",
+            (
+                "Decision payload conversation_id does not match the current "
+                "record at this index. Refetch the review record before saving."
+            ),
+            409,
+            index=index,
+            expected_conversation_id=expected_conversation_id,
+            conversation_id=actual_conversation_id,
+        )
+
     try:
         evaluation = session_reviews.normalize_evaluation(data.get("evaluation", ""))
     except ValueError as exc:
@@ -2147,6 +2167,8 @@ def api_session_evaluations_decision(index: int):
     return _api_success(
         record=session_reviews.serialize_record(rows, index),
         next_unreviewed_index=session_reviews.next_unreviewed_after(rows, index),
+        summary=session_reviews.build_summary(rows),
+        progress_summary=session_reviews.build_progress_summary(rows),
     )
 
 
