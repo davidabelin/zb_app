@@ -17,13 +17,31 @@
 
 # Python pycache:
 __pycache__/
+*.py[cod]
+
+# Local build, cache, and type-check artifacts:
+.mypy_cache/
+.pytest_cache/
+.cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+cover/
+build/
+dist/
+*.egg-info/
+
 # Ignored by the build system
 /setup.cfg
 
 # Explicit deploy exclusions
 venv/
+.venv/
+env/
+ENV/
 config/
-.pytest_cache/
 .vscode/
 tests/
 upload-list.txt
