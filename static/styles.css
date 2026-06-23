@@ -502,6 +502,14 @@
   --z-line: #cdbb9e;
   --z-shadow: rgba(32, 29, 24, 0.16);
   --z-font: "Sahitya", "Noto Serif Devanagari", "Nirmala UI", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --z-fs-micro: 11px;
+  --z-fs-xs: 12px;
+  --z-fs-sm: 13px;
+  --z-fs-base: 14px;
+  --z-fs-md: 15px;
+  --z-fs-lg: 17px;
+  --z-fs-xl: 20px;
+  --z-fs-2xl: 23px;
 }
 
 body {
@@ -806,43 +814,54 @@ footer a,
 
 .intro-tour-hero {
   position: relative;
-  min-height: min(520px, 64vh);
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: clamp(18px, 3.5vw, 48px);
   overflow: hidden;
   border-bottom: 1px solid var(--z-line);
-  background: var(--z-green-dark);
+  background:
+    radial-gradient(circle at center, rgba(36, 79, 53, 0.24), transparent 58%),
+    #080b0d;
 }
 
 .intro-tour-tree {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 42%;
+  position: relative;
+  grid-area: 1 / 1;
+  display: block;
+  width: min(100%, 1180px, 94vh);
+  height: auto;
+  min-width: 0;
+  justify-self: center;
+  object-fit: contain;
+  object-position: center center;
 }
 
 .intro-tour-shade {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(17, 28, 21, 0.7) 0%, rgba(17, 28, 21, 0.36) 48%, rgba(17, 28, 21, 0.12) 100%),
-    linear-gradient(180deg, rgba(17, 28, 21, 0.05) 0%, rgba(20, 16, 12, 0.72) 100%);
+    linear-gradient(90deg, rgba(8, 11, 13, 0.78) 0%, rgba(8, 11, 13, 0.3) 38%, rgba(8, 11, 13, 0.12) 100%),
+    linear-gradient(180deg, rgba(8, 11, 13, 0.04) 0%, rgba(8, 11, 13, 0.52) 100%);
+  pointer-events: none;
 }
 
 .intro-tour-hero-text {
   position: relative;
+  grid-area: 1 / 1;
   z-index: 1;
-  width: min(620px, calc(100% - 28px));
-  margin: 0 0 7vh clamp(14px, 7vw, 110px);
+  width: min(620px, calc(100vw - 36px));
+  min-width: 0;
+  justify-self: start;
+  align-self: end;
+  margin: 0 0 clamp(10px, 3vh, 32px) clamp(0px, 4vw, 70px);
   color: #fff8e8;
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.42);
 }
 
 .intro-tour-hero h1 {
   margin: 6px 0 9px;
-  font-size: clamp(28px, 3.4vw, 48px);
+  font-size: clamp(32px, 3.8vw, 56px);
   line-height: 0.98;
   letter-spacing: 0;
 }
@@ -850,12 +869,12 @@ footer a,
 .intro-tour-hero p {
   max-width: 540px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--z-fs-md);
   line-height: 1.45;
 }
 
 .intro-tour-body {
-  width: min(880px, calc(100% - 36px));
+  width: min(880px, calc(100vw - 36px));
   margin: 0 auto;
   padding: 30px 0 36px;
 }
@@ -870,14 +889,14 @@ footer a,
 .intro-tour-closing h2 {
   margin: 3px 0 11px;
   color: var(--z-green-dark);
-  font-size: 20px;
+  font-size: var(--z-fs-2xl);
   line-height: 1.08;
 }
 
 .tour-question {
   margin: 0;
   color: var(--z-gold);
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
   font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -885,7 +904,7 @@ footer a,
 
 .intro-tour p,
 .intro-tour li {
-  font-size: 13px;
+  font-size: var(--z-fs-md);
   line-height: 1.58;
 }
 
@@ -1382,47 +1401,48 @@ footer a,
   border-top: 1px solid rgba(205, 187, 158, 0.7);
 }
 
-/* Enforce the public shrink pass with explicit px sizes, avoiding rem leakage. */
+/* Shared public scale for pages extending base.html. */
 .entrance-hall,
 .gg-page,
+.intro-tour,
 .zendo-workspace {
-  font-size: 12px;
+  font-size: var(--z-fs-base);
 }
 
 .entrance-kicker,
 .section-heading span,
 .panel-heading span {
-  font-size: 9px;
+  font-size: var(--z-fs-xs);
 }
 
 .entrance-hero h1 {
-  font-size: clamp(24px, 3.2vw, 44px);
+  font-size: clamp(30px, 3.5vw, 52px);
 }
 
 .entrance-hero p,
 .entrance-link-grid span,
 .entrance-guide-grid p {
-  font-size: 12px;
+  font-size: var(--z-fs-base);
 }
 
 .entrance-link-grid strong,
 .entrance-guide-grid h3 {
-  font-size: 13px;
+  font-size: var(--z-fs-md);
 }
 
 .gg-header h1,
 .gg-header h2 {
-  font-size: 18px;
+  font-size: 21px;
 }
 
 .gg-case-page .koan-title {
-  font-size: 14px;
+  font-size: var(--z-fs-lg);
 }
 
 .gg-case-page .koan-body,
 .gg-case-page .koan-comment,
 .gg-case-page .koan-verse {
-  font-size: 12px;
+  font-size: var(--z-fs-base);
   line-height: 1.5;
 }
 
@@ -1430,13 +1450,13 @@ footer a,
   grid-template-columns: minmax(220px, 0.55fr) minmax(0, 3fr) minmax(240px, 0.6fr);
   gap: 7px;
   padding: 7px 10px;
-  font-size: 12px;
+  font-size: var(--z-fs-base);
 }
 
 .zendo-reference-panel,
 .zendo-chat-panel,
 .zendo-setup-panel {
-  font-size: 12px;
+  font-size: var(--z-fs-base);
 }
 
 .zendo-room-panel {
@@ -1445,7 +1465,7 @@ footer a,
 
 .zendo-workspace .panel-heading h2,
 .session-settings-topline h2 {
-  font-size: 16px;
+  font-size: var(--z-fs-xl);
   line-height: 1.05;
 }
 
@@ -1454,13 +1474,13 @@ footer a,
 }
 
 .zendo-chat-header h1 {
-  font-size: clamp(15px, 1.05vw, 19px);
+  font-size: clamp(18px, 1.2vw, 23px);
   line-height: 1.06;
 }
 
 .zendo-chat-header p,
 .chat-streaming-note {
-  font-size: 11px;
+  font-size: var(--z-fs-sm);
   line-height: 1.2;
 }
 
@@ -1472,14 +1492,14 @@ footer a,
 }
 
 .koan-preface {
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
   line-height: 1.35;
 }
 
 .empty-koan-note,
 .zendo-small-links a,
 .zendo-context-form li {
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
   line-height: 1.3;
 }
 
@@ -1505,7 +1525,7 @@ footer a,
   max-width: min(78%, 620px);
   padding: 4px 6px;
   margin-bottom: 4px;
-  font-size: 12px;
+  font-size: var(--z-fs-base);
   line-height: 1.25;
 }
 
@@ -1519,14 +1539,14 @@ footer a,
   height: 50px;
   min-height: 50px;
   padding: 5px 6px;
-  font-size: 12px;
+  font-size: var(--z-fs-base);
   line-height: 1.25;
 }
 
 .chat-buttons button {
   min-height: 0;
   padding: 2px 4px;
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
 }
 
 .chat-assist-row {
@@ -1536,11 +1556,11 @@ footer a,
 .gesture-buttons button {
   min-height: 20px;
   padding: 2px 5px;
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
 }
 
 .chat-help {
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
 }
 
 .zendo-teacher-seat {
@@ -1559,16 +1579,16 @@ footer a,
 }
 
 .zendo-teacher-seat figcaption span {
-  font-size: 8px;
+  font-size: var(--z-fs-micro);
 }
 
 .zendo-teacher-seat figcaption strong {
-  font-size: 12px;
+  font-size: var(--z-fs-base);
 }
 
 .session-settings-summary,
 .session-settings-status {
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
   line-height: 1.25;
 }
 
@@ -1582,7 +1602,7 @@ footer a,
 }
 
 .session-field {
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
   gap: 2px;
 }
 
@@ -1590,7 +1610,7 @@ footer a,
 .session-field select {
   min-height: 24px;
   padding: 3px 5px;
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
 }
 
 .session-settings-toggles {
@@ -1601,13 +1621,13 @@ footer a,
 .session-toggle {
   min-height: 24px;
   padding: 3px 5px;
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
 }
 
 footer {
   padding: 6px;
   margin-top: 8px;
-  font-size: 10px;
+  font-size: var(--z-fs-xs);
 }
 
 footer ul {
@@ -1674,7 +1694,7 @@ footer ul {
   .zendo-workspace {
     padding: 10px;
     gap: 10px;
-    font-size: 12px;
+    font-size: var(--z-fs-base);
   }
 
   .gg-page {
