@@ -580,6 +580,12 @@ def home():
     return render_template("index.html")
 
 
+@app.route("/intro-tour")
+def intro_tour():
+    """Render the public introductory zendo tour."""
+    return render_template("intro_tour.html")
+
+
 @app.route("/legacy-splash")
 def legacy_splash():
     """Render the previous public splash page for reference."""

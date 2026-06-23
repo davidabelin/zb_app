@@ -799,6 +799,133 @@ footer a,
   color: var(--z-muted);
 }
 
+.intro-tour {
+  min-height: calc(100vh - 96px);
+  color: var(--z-ink);
+}
+
+.intro-tour-hero {
+  position: relative;
+  min-height: min(520px, 64vh);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  border-bottom: 1px solid var(--z-line);
+  background: var(--z-green-dark);
+}
+
+.intro-tour-tree {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+}
+
+.intro-tour-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(17, 28, 21, 0.7) 0%, rgba(17, 28, 21, 0.36) 48%, rgba(17, 28, 21, 0.12) 100%),
+    linear-gradient(180deg, rgba(17, 28, 21, 0.05) 0%, rgba(20, 16, 12, 0.72) 100%);
+}
+
+.intro-tour-hero-text {
+  position: relative;
+  z-index: 1;
+  width: min(620px, calc(100% - 28px));
+  margin: 0 0 7vh clamp(14px, 7vw, 110px);
+  color: #fff8e8;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.42);
+}
+
+.intro-tour-hero h1 {
+  margin: 6px 0 9px;
+  font-size: clamp(28px, 3.4vw, 48px);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.intro-tour-hero p {
+  max-width: 540px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.intro-tour-body {
+  width: min(880px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 30px 0 36px;
+}
+
+.intro-tour-stop,
+.intro-tour-closing {
+  padding: 22px 0;
+  border-bottom: 1px solid rgba(205, 187, 158, 0.86);
+}
+
+.intro-tour-stop h2,
+.intro-tour-closing h2 {
+  margin: 3px 0 11px;
+  color: var(--z-green-dark);
+  font-size: 20px;
+  line-height: 1.08;
+}
+
+.tour-question {
+  margin: 0;
+  color: var(--z-gold);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.intro-tour p,
+.intro-tour li {
+  font-size: 13px;
+  line-height: 1.58;
+}
+
+.intro-tour ul {
+  list-style: disc;
+  padding-left: 22px;
+  margin: 10px 0 12px;
+}
+
+.intro-tour li {
+  margin: 5px 0;
+}
+
+.intro-tour blockquote {
+  margin: 14px 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--z-gold);
+  background: rgba(255, 250, 241, 0.64);
+  color: #342d24;
+}
+
+.intro-tour blockquote p {
+  margin: 4px 0;
+}
+
+.intro-tour-koan {
+  border-bottom-color: var(--z-gold);
+}
+
+.intro-tour-closing {
+  border-bottom: 0;
+}
+
+.intro-tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 16px;
+}
+
 .zendo-workspace {
   min-height: calc(100vh - 106px);
   display: grid;
