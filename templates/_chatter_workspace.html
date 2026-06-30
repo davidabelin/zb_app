@@ -49,17 +49,13 @@
       <textarea id="chatInput" rows="3" placeholder="Speak..."></textarea>
       <div class="chat-buttons">
         <button id="chatSend" type="button">Send</button>
+        <button type="button" data-gesture="(bows)">End</button>
         <button id="chatSave" type="button">Save</button>
         <button id="chatEnd" type="button" class="button-danger">Reset</button>
       </div>
       <div class="chat-assist-row">
-        <div class="gesture-buttons" aria-label="Dokusan gestures">
-          <button type="button" data-gesture="(bows)">(bows)</button>
-          <button type="button" data-gesture="(smiles)">(smiles)</button>
-          <button type="button" data-gesture="(winks)">(winks)</button>
-        </div>
         <div class="chat-help">
-          <small>Enter to send • Shift+Enter for a newline • Save archives the session</small>
+          <small>Enter to send • (bows) to end • Shift+Enter for a newline • Save archives the session</small>
         </div>
       </div>
     </section>
@@ -104,7 +100,7 @@
         </label>
         <label class="session-field">
           <span>Max Tokens</span>
-          <input id="sessionMaxTokens" type="number" min="1" max="4096" step="1">
+          <input id="sessionMaxTokens" type="number" min="1" max="4096" step="128">
         </label>
       </div>
       <div class="session-settings-toggles">
