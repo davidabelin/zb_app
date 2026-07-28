@@ -44,7 +44,9 @@ def test_chat_response_allows_explicit_extra_origin(monkeypatch):
     )
 
     assert response.status_code == 400
-    assert response.headers["Access-Control-Allow-Origin"] == "https://shell.example.com"
+    assert (
+        response.headers["Access-Control-Allow-Origin"] == "https://shell.example.com"
+    )
 
 
 def test_chat_preflight_rejects_unknown_origin(monkeypatch):
@@ -90,7 +92,19 @@ def test_legacy_splash_preserves_previous_public_page():
     assert "/chatter" in body
 
 
-def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(monkeypatch):
+def test_blueprint_templates_resolve_public_and_admin_endpoints(monkeypatch):
+    """Representative templates should render after endpoint namespacing."""
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
+    client = main.app.test_client()
+
+    for path in ("/", "/gg", "/bcr", "/admin/login", "/admin/session_settings"):
+        assert client.get(path).status_code == 200
+
+
+def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(
+    monkeypatch,
+):
     monkeypatch.setattr(main.utipy.config, "STREAMING", False)
 
     client = main.app.test_client()
@@ -151,7 +165,9 @@ def test_public_case_button_defers_server_session_creation():
 
     assert 'ul.className = "gg-case-grid"' in script
     case_handler_start = script.index('discussBtn.addEventListener("click"')
-    case_handler_end = script.index("container.appendChild(document.createElement", case_handler_start)
+    case_handler_end = script.index(
+        "container.appendChild(document.createElement", case_handler_start
+    )
     case_handler = script[case_handler_start:case_handler_end]
     assert "/chat_case/" not in case_handler
     assert 'clearSessionValue("conversation_id")' in case_handler

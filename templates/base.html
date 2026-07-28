@@ -24,11 +24,11 @@
     <footer>
         {% block footer %}{% endblock %}
         <ul>
-            <li><a href="{{ url_for('home') }}">Back to the Entrance Hall</a></li>
-            <li><a href="{{ url_for('chatter') }}">Enter the Sanzen Room</a></li>
-            <li><a href="{{ url_for('gg') }}"><i>Gateless Gate</i> Commentaries</a></li>
-            <li><a href="{{ url_for('display_pdf') }}"><i>Blue Cliff Record</i> Materials</a></li>
-            <li><a href="{{ url_for('legacy_splash') }}">Legacy Splash</a></li>
+            <li><a href="{{ url_for('web.home') }}">Back to the Entrance Hall</a></li>
+            <li><a href="{{ url_for('web.chatter') }}">Enter the Sanzen Room</a></li>
+            <li><a href="{{ url_for('web.gg') }}"><i>Gateless Gate</i> Commentaries</a></li>
+            <li><a href="{{ url_for('web.display_pdf') }}"><i>Blue Cliff Record</i> Materials</a></li>
+            <li><a href="{{ url_for('web.legacy_splash') }}">Legacy Splash</a></li>
             <li><a href="https://chatgpt.com/g/g-9w9FN2RE6-zenbot">Chat with the 'Zen Guidebot' at ChatGPT.com</a></li>
         </ul>
         <i>ZenbotZendo &copy; 2026</i>

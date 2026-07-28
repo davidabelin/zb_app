@@ -12,18 +12,14 @@ import utilities
 
 def _schema() -> dict:
     schema_path = (
-        Path(__file__).resolve().parents[2]
-        / "zenbot_knowledge"
-        / "action_schemas.yaml"
+        Path(__file__).resolve().parents[2] / "zenbot_knowledge" / "action_schemas.yaml"
     )
     return yaml.safe_load(schema_path.read_text(encoding="utf-8"))
 
 
 def _schema_json() -> dict:
     schema_path = (
-        Path(__file__).resolve().parents[2]
-        / "zenbot_knowledge"
-        / "action_schemas.json"
+        Path(__file__).resolve().parents[2] / "zenbot_knowledge" / "action_schemas.json"
     )
     return json.loads(schema_path.read_text(encoding="utf-8"))
 
@@ -37,6 +33,21 @@ def _normalized_api_rule_paths() -> set[str]:
         normalized = re.sub(r"<(?:[^:>]+:)?([^>]+)>", r"{\1}", path)
         paths.add(normalized)
     return paths
+
+
+def test_zb_api_blueprint_preserves_route_paths_and_methods():
+    """Blueprint registration must not change the GPT-facing API contract."""
+    api_rules = {
+        rule.rule: (rule.endpoint, rule.methods)
+        for rule in main.app.url_map.iter_rules()
+        if rule.rule.startswith("/zb_api/")
+    }
+
+    assert api_rules["/zb_api/chat"][0] == "zb_api.zb_api_chat"
+    assert api_rules["/zb_api/chat"][1] >= {"POST"}
+    assert api_rules["/zb_api/chat/options"][1] >= {"GET"}
+    assert api_rules["/zb_api/session-evaluations/summary"][1] >= {"GET"}
+    assert api_rules["/zb_api/runtime/status-events"][1] >= {"POST"}
 
 
 def test_api_auth_failures_return_json(monkeypatch):
@@ -108,7 +119,7 @@ def test_zb_api_chat_settings_lock_uses_standardized_failure(monkeypatch):
     monkeypatch.setattr(main.utipy, "_LOCAL_CONVERSATIONS", {})
     conversation_id, _messages, _metadata = main.utipy.create_conversation(
         student="api-lock",
-        settings={"preset_id": "balanced_mumon"},
+        settings={"preset_id": "balanced"},
     )
 
     client = main.app.test_client()
@@ -117,7 +128,7 @@ def test_zb_api_chat_settings_lock_uses_standardized_failure(monkeypatch):
         json={
             "conversation_id": conversation_id,
             "message": "hello",
-            "settings": {"preset_id": "explanatory_guide"},
+            "settings": {"preset_id": "fierce_barrier"},
         },
     )
 
@@ -126,7 +137,7 @@ def test_zb_api_chat_settings_lock_uses_standardized_failure(monkeypatch):
     assert payload["status"] == "failure"
     assert payload["error"] == "settings_locked"
     assert payload["conversation_id"] == conversation_id
-    assert payload["session_settings"]["preset_id"] == "balanced_mumon"
+    assert payload["session_settings"]["preset_id"] == "balanced"
 
 
 def test_zb_api_save_chat_returns_normalized_success(monkeypatch, fake_bucket):
@@ -154,8 +165,14 @@ def test_zb_api_save_chat_returns_normalized_success(monkeypatch, fake_bucket):
             },
         ),
     )
-    monkeypatch.setattr(main.utipy, "delete_messages_from_firestore", lambda conversation_id: None)
-    monkeypatch.setattr(main.utipy, "submit_background_session_critic", lambda *args, **kwargs: "resp_123")
+    monkeypatch.setattr(
+        main.utipy, "delete_messages_from_firestore", lambda conversation_id: None
+    )
+    monkeypatch.setattr(
+        main.utipy,
+        "submit_background_session_critic",
+        lambda *args, **kwargs: "resp_123",
+    )
 
     client = main.app.test_client()
     response = client.post("/zb_api/save_chat", json={"conversation_id": "save-123"})
@@ -179,7 +196,9 @@ def test_archive_and_review_routes_return_503_when_storage_unavailable(monkeypat
     client = main.app.test_client()
     archive_response = client.get("/zb_api/conversations/list")
     review_response = client.get("/zb_api/session-evaluations/summary")
-    save_response = client.post("/zb_api/save_chat", json={"conversation_id": "missing"})
+    save_response = client.post(
+        "/zb_api/save_chat", json={"conversation_id": "missing"}
+    )
 
     for response in (archive_response, review_response, save_response):
         payload = response.get_json()
@@ -196,11 +215,15 @@ def test_deprecated_memory_routes_are_removed(monkeypatch):
     assert client.post("/appendMemoryLogbookEntry", json={}).status_code == 404
 
 
-def test_standardized_not_found_for_conversation_and_memory_entry(monkeypatch, fake_bucket):
+def test_standardized_not_found_for_conversation_and_memory_entry(
+    monkeypatch, fake_bucket
+):
     monkeypatch.setattr(main.utipy.config, "ZB_API_STRICT_AUTH", False)
     monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
     monkeypatch.setattr(utilities, "BUCKET", fake_bucket)
-    monkeypatch.setattr(main.utipy, "get_memory_logbook_entry", lambda serial_number: None)
+    monkeypatch.setattr(
+        main.utipy, "get_memory_logbook_entry", lambda serial_number: None
+    )
 
     client = main.app.test_client()
     conversation_response = client.get("/zb_api/conversations/missing-one")

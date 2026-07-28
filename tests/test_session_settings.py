@@ -10,7 +10,7 @@ def test_session_options_payload_exposes_defaults_presets_and_models():
 
     assert payload["settings_version"] == utilities.config.SESSION_SETTINGS_VERSION
     assert payload["defaults"]["preset_id"] == utilities.config.DEFAULT_BOTLING_ID
-    assert any(preset["id"] == "balanced_mumon" for preset in payload["presets"])
+    assert any(preset["id"] == "balanced" for preset in payload["presets"])
 
     model = next(model for model in payload["models"] if model["id"] == default_model)
     assert model["supports_reasoning"] is False
@@ -71,9 +71,12 @@ def test_chat_and_zb_api_options_routes_return_session_payload(monkeypatch):
 
     assert browser_response.status_code == 200
     assert api_response.status_code == 200
-    assert browser_response.get_json()["defaults"]["preset_id"] == "balanced_mumon"
+    assert browser_response.get_json()["defaults"]["preset_id"] == "balanced"
     assert api_response.get_json()["status"] == "success"
-    assert api_response.get_json()["settings_version"] == browser_response.get_json()["settings_version"]
+    assert (
+        api_response.get_json()["settings_version"]
+        == browser_response.get_json()["settings_version"]
+    )
 
 
 def test_chat_rejects_mid_session_settings_change(monkeypatch):
@@ -82,7 +85,7 @@ def test_chat_rejects_mid_session_settings_change(monkeypatch):
 
     conversation_id, _messages, metadata = main.utipy.create_conversation(
         student="lock-test",
-        settings={"preset_id": "balanced_mumon"},
+        settings={"preset_id": "balanced"},
     )
 
     client = main.app.test_client()
@@ -91,16 +94,17 @@ def test_chat_rejects_mid_session_settings_change(monkeypatch):
         json={
             "message": "hello",
             "conversation_id": conversation_id,
-            "settings": {"preset_id": "explanatory_guide"},
+            "settings": {"preset_id": "fierce_barrier"},
         },
     )
 
     payload = response.get_json()
     assert response.status_code == 409
     assert payload["error"] == "settings_locked"
-    assert payload["session_settings"]["preset_id"] == metadata["session_settings"][
-        "preset_id"
-    ]
+    assert (
+        payload["session_settings"]["preset_id"]
+        == metadata["session_settings"]["preset_id"]
+    )
 
 
 def test_chat_first_turn_can_create_case_session_with_selected_settings(monkeypatch):
@@ -132,10 +136,14 @@ def test_streaming_chat_emits_session_settings_in_start_event(monkeypatch):
     monkeypatch.setattr(main.utipy, "DB", None)
     monkeypatch.setattr(main.utipy, "_LOCAL_CONVERSATIONS", {})
     monkeypatch.setattr(main.utipy.config, "STREAMING", True)
-    monkeypatch.setattr(main.utipy, "get_model_reply", lambda *args, **kwargs: "tool-ready answer")
+    monkeypatch.setattr(
+        main.utipy, "get_model_reply", lambda *args, **kwargs: "tool-ready answer"
+    )
 
     def _unexpected_stream(*args, **kwargs):
-        raise AssertionError("stream path should not be used when function tools are enabled")
+        raise AssertionError(
+            "stream path should not be used when function tools are enabled"
+        )
 
     monkeypatch.setattr(main.utipy, "get_model_stream", _unexpected_stream)
 
@@ -144,7 +152,7 @@ def test_streaming_chat_emits_session_settings_in_start_event(monkeypatch):
         "/chat",
         json={
             "message": "show me the way",
-            "settings": {"preset_id": "balanced_mumon"},
+            "settings": {"preset_id": "balanced"},
         },
     )
 
@@ -153,7 +161,7 @@ def test_streaming_chat_emits_session_settings_in_start_event(monkeypatch):
     assert response.mimetype == "text/event-stream"
     assert '"event": "start"' in body
     assert '"session_settings"' in body
-    assert '"preset_id": "balanced_mumon"' in body
+    assert '"preset_id": "balanced"' in body
     assert '"response": "tool-ready answer"' in body
 
 
@@ -169,13 +177,12 @@ def test_chat_case_and_zb_api_chat_case_return_resolved_settings(monkeypatch):
     )
     api_response = client.post(
         "/zb_api/chat_case/1",
-        json={"settings": {"preset_id": "explanatory_guide"}},
+        json={"settings": {"preset_id": "fierce_barrier"}},
     )
 
     assert browser_response.status_code == 200
     assert api_response.status_code == 200
-    assert browser_response.get_json()["session_settings"]["preset_id"] == "austere_abbot"
     assert (
-        api_response.get_json()["session_settings"]["preset_id"]
-        == "explanatory_guide"
+        browser_response.get_json()["session_settings"]["preset_id"] == "austere_abbot"
     )
+    assert api_response.get_json()["session_settings"]["preset_id"] == "fierce_barrier"

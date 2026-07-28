@@ -13,7 +13,11 @@ single App Engine application with an OpenAI-native runtime underneath:
 
 ## What Lives Here
 
-- `main.py`: Flask routes for browser, API, admin, and review flows
+- `main.py`: Flask application composition and the stable App Engine entry point
+- `app_support.py`: shared HTTP contracts, auth, CORS, request guards, and errors
+- `web_routes.py`: public pages and browser-session chat routes
+- `zb_api.py`: authenticated JSON endpoints used by GPT Actions and operators
+- `admin_routes.py`: browser-facing admin and review workflows
 - `utilities.py`: hot-state storage, Responses API adapter, koan lookup, GCS
   archive helpers, memory logbook helpers, and tool handlers
 - `contracts.py`: typed runtime contracts and tool schemas
