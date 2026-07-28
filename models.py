@@ -9,8 +9,9 @@ training-pipeline work.
 from __future__ import annotations
 
 
-# Active live list. Keep this small while evaluating fresh botlings.
+# Active live list. Keep the generic baseline available beside the finetunes.
 MODELS_IN_USE = {
+    "gpt-5.5": "gpt-5.5",
     "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
     "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
     "mmnk-bows-ble513": "ft:gpt-4o-2024-08-06:chatbot-tuners:mmnk-bows-ble513:AVXPlofK",
@@ -38,6 +39,7 @@ LEGACY_FINETUNES = {
 }
 
 MODEL_LOSSES = {
+    "gpt-5.5": 0.0,
     "gpt-5.4-mini": 0.0,
     "gpt-5.4": 0.0,
     "gpt-4.1": 0.0,

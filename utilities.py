@@ -162,7 +162,9 @@ def _conversation_store_key(conversation_id: str) -> str:
     return f"conversation:{conversation_id}"
 
 
-def _write_jsonl_record(blob_name: str, record: dict[str, Any], local_path: Path) -> None:
+def _write_jsonl_record(
+    blob_name: str, record: dict[str, Any], local_path: Path
+) -> None:
     """Append one JSON record to GCS or a local JSONL fallback file."""
 
     payload = json.dumps(record, ensure_ascii=False, default=str) + "\n"
@@ -196,7 +198,9 @@ def _runtime_profile_name(profile_name: str | None = None) -> str:
 
 
 def _coerce_session_settings_input(
-    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None,
+    raw_settings: (
+        SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None
+    ),
 ) -> dict[str, Any]:
     """Normalize an inbound session-settings payload into a compact dict."""
 
@@ -279,7 +283,9 @@ def _params_from_session_settings(
 
 
 def resolve_session_settings(
-    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None,
+    raw_settings: (
+        SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None
+    ),
     *,
     fallback_model_name: str = "",
     profile_name: str | None = None,
@@ -288,7 +294,9 @@ def resolve_session_settings(
 
     profile = _runtime_profile_name(profile_name)
     input_data = _coerce_session_settings_input(raw_settings)
-    preset_id = str(input_data.pop("preset_id", "")).strip() or config.DEFAULT_BOTLING_ID
+    preset_id = (
+        str(input_data.pop("preset_id", "")).strip() or config.DEFAULT_BOTLING_ID
+    )
     preset = _botling_preset_definition(preset_id)
     resolved: dict[str, Any] = {
         "preset_id": preset_id,
@@ -307,10 +315,16 @@ def resolve_session_settings(
 
     model_caps = config.model_capabilities(model_name)
     requested_reasoning = config._normalize_reasoning_effort(
-        str(resolved.get("reasoning_effort", "") or default_profile.get("reasoning_effort", ""))
+        str(
+            resolved.get("reasoning_effort", "")
+            or default_profile.get("reasoning_effort", "")
+        )
     )
     if model_caps["supports_reasoning"]:
-        if requested_reasoning and requested_reasoning not in model_caps["reasoning_efforts"]:
+        if (
+            requested_reasoning
+            and requested_reasoning not in model_caps["reasoning_efforts"]
+        ):
             raise ValueError(
                 f"Unsupported reasoning_effort '{requested_reasoning}' for {model_name}."
             )
@@ -334,7 +348,9 @@ def resolve_session_settings(
         resolved["top_p"] = None
 
     if resolved.get("max_output_tokens") is None:
-        resolved["max_output_tokens"] = int(default_profile.get("max_output_tokens", 900))
+        resolved["max_output_tokens"] = int(
+            default_profile.get("max_output_tokens", 900)
+        )
 
     tool_caps = _tool_caps()
     for key, cap_enabled in tool_caps.items():
@@ -388,7 +404,8 @@ def _legacy_session_settings(
     raw_params = metadata.get("params")
     params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
     snapshot: dict[str, Any] = {
-        "preset_id": str(metadata.get("botling_id", "")).strip() or config.DEFAULT_BOTLING_ID,
+        "preset_id": str(metadata.get("botling_id", "")).strip()
+        or config.DEFAULT_BOTLING_ID,
         "model_name": model_name or _default_model_key(),
         "max_output_tokens": params.get(
             "max_output_tokens",
@@ -443,7 +460,9 @@ def ensure_locked_session_settings(
 
 
 def _choose_session_profile(
-    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None = None,
+    raw_settings: (
+        SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None
+    ) = None,
     profile_name: str | None = None,
 ) -> dict[str, Any]:
     """Select one deterministic live runtime profile for a new conversation."""
@@ -747,11 +766,15 @@ def get_mmnk_case_by_title(title: str) -> Optional[dict[str, Any]]:
         return None
 
     cases = _load_mmnk_cases()
-    exact = [case for case in cases if str(case.get("title", "")).strip().lower() == query]
+    exact = [
+        case for case in cases if str(case.get("title", "")).strip().lower() == query
+    ]
     if exact:
         return exact[0]
 
-    partial = [case for case in cases if query in str(case.get("title", "")).strip().lower()]
+    partial = [
+        case for case in cases if query in str(case.get("title", "")).strip().lower()
+    ]
     if len(partial) == 1:
         return partial[0]
     if len(partial) > 1:
@@ -806,7 +829,9 @@ def _startup_opening_cue(session_settings: dict[str, Any] | None) -> str:
     return cue or "(smiles)"
 
 
-def base_startup(session_settings: dict[str, Any] | None = None) -> list[dict[str, str]]:
+def base_startup(
+    session_settings: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
     """Build the seeded startup prompt sequence for a non-koan session."""
 
     return [
@@ -1052,9 +1077,9 @@ def response_tool_definitions(include_web_search: bool = False) -> list[dict[str
             "reasoning_effort": config.OPENAI_REASONING_EFFORT,
             "temperature": None,
             "top_p": None,
-            "max_output_tokens": config.MODEL_ARGS.get(
-                _runtime_profile_name(), {}
-            ).get("max_output_tokens", 900),
+            "max_output_tokens": config.MODEL_ARGS.get(_runtime_profile_name(), {}).get(
+                "max_output_tokens", 900
+            ),
             "enable_function_tools": config.OPENAI_ENABLE_FUNCTION_TOOLS,
             "enable_file_search": bool(
                 config.OPENAI_ENABLE_FILE_SEARCH and config.OPENAI_VECTOR_STORE_IDS
@@ -1149,7 +1174,9 @@ def _response_instructions(metadata: dict[str, Any] | None) -> str:
             "Use file search when exact case wording or archived reference detail matters."
         )
     if session_settings.get("enable_web_search"):
-        lines.append("Web search is allowed only for explicitly factual modern questions.")
+        lines.append(
+            "Web search is allowed only for explicitly factual modern questions."
+        )
     else:
         lines.append("Do not use web search for dokusan or koan dialogue.")
     return "\n".join(lines)
@@ -1355,7 +1382,11 @@ def _load_memory_entry_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     args = LoadMemoryEntryArgs.model_validate(arguments)
     entry = get_memory_logbook_entry(args.serial_number)
     if not entry:
-        return {"status": "not_found", "serial_number": args.serial_number, "memory": None}
+        return {
+            "status": "not_found",
+            "serial_number": args.serial_number,
+            "memory": None,
+        }
     return {
         "status": "success",
         "serial_number": args.serial_number,
@@ -1405,7 +1436,9 @@ def _archive_session_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     }
     blob_name = f"{session_reviews.TRANSCRIPTS_PREFIX}{args.conversation_id}.jsonl"
     save_chat_to_bucket(messages, params, blob_name)
-    session_reviews.upsert_review_record_from_session(args.conversation_id, messages, params)
+    session_reviews.upsert_review_record_from_session(
+        args.conversation_id, messages, params
+    )
     delete_messages_from_firestore(args.conversation_id)
     return {
         "status": "archived",
@@ -1424,7 +1457,9 @@ def _enqueue_review_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         "reviewer": args.reviewer,
         "note": args.note,
     }
-    _write_jsonl_record(config.REVIEW_REQUESTS_BLOB, payload, _LOCAL_REVIEW_REQUESTS_PATH)
+    _write_jsonl_record(
+        config.REVIEW_REQUESTS_BLOB, payload, _LOCAL_REVIEW_REQUESTS_PATH
+    )
     return {"status": "queued", **payload}
 
 
@@ -1503,7 +1538,8 @@ def _response_request_kwargs(
 
     request_kwargs: dict[str, Any] = {
         **params,
-        "input": input_override or _response_input_messages(messages, previous_response_id),
+        "input": input_override
+        or _response_input_messages(messages, previous_response_id),
         "instructions": _response_instructions(metadata),
         "prompt_cache_key": _prompt_cache_key(metadata, conversation_id, params, mode),
         "prompt_cache_retention": config.OPENAI_PROMPT_CACHE_RETENTION,
@@ -1557,7 +1593,9 @@ def get_model_stream(
                 response = stream.get_final_response()
                 response_text = _response_text_from_response(response)
                 if metadata is not None:
-                    metadata["last_response_id"] = str(getattr(response, "id", "") or "")
+                    metadata["last_response_id"] = str(
+                        getattr(response, "id", "") or ""
+                    )
                     metadata["provider"] = "responses_api"
                 if response_text and not produced_output:
                     yield response_text
@@ -1619,7 +1657,9 @@ def get_model_reply(
                 if not function_calls:
                     break
                 if tool_hops >= 4:
-                    raise ModelAPIError("Tool-call budget exceeded before final response.")
+                    raise ModelAPIError(
+                        "Tool-call budget exceeded before final response."
+                    )
 
                 outputs = [
                     {
@@ -1710,9 +1750,7 @@ def friendly_model_error_message(raw_error: str) -> str:
         return "OpenAI rate limit reached. Please retry shortly."
     if "authentication" in text or "invalid_api_key" in text:
         return "OpenAI API key rejected. Check the configured key."
-    if "unsupported parameter" in text and (
-        "temperature" in text or "top_p" in text
-    ):
+    if "unsupported parameter" in text and ("temperature" in text or "top_p" in text):
         return "Configured sampling controls are not supported by the selected model."
     if "reasoning.effort" in text or (
         "unsupported value" in text and "reasoning" in text
@@ -1831,7 +1869,12 @@ def submit_background_session_critic(
     metadata: dict[str, Any],
     conversation_id: str,
 ) -> str:
-    """Submit a non-blocking session critic request via Responses background mode."""
+    """Submit a GPT-5.6 background critic job without delaying chat archival.
+
+    The caller receives the asynchronous Responses API ID and can poll that ID
+    separately. Critic submission remains opt-in through both the deployment
+    capability flag and the session's locked settings.
+    """
 
     if not session_allows_background_critic(metadata):
         return ""
@@ -1860,15 +1903,23 @@ def submit_background_session_critic(
         ],
     }
     transcript_excerpt = _excerpt_messages(messages, limit=1200)
+    judge_reasoning_effort = (
+        str(
+            config.MODEL_ARGS.get("judge", {}).get("reasoning_effort", "medium")
+        ).strip()
+        or "medium"
+    )
 
     try:
         response = client.responses.create(
             model=config.OPENAI_JUDGE_MODEL,
             background=True,
             store=True,
+            reasoning={"effort": judge_reasoning_effort},
             instructions=(
                 "Evaluate this Zen session for style drift, koan grounding, ritual "
-                "correctness, and meta-AI leakage. Score conservatively."
+                "correctness, and meta-AI leakage. Score conservatively and use "
+                "the supplied JSON schema exactly."
             ),
             input=[
                 {
@@ -1896,7 +1947,9 @@ def submit_background_session_critic(
                 f"{config.OPENAI_PROMPT_CACHE_PREFIX}:critic:"
                 f"{metadata.get('case_id', 'general')}"
             ),
-            prompt_cache_retention=config.OPENAI_PROMPT_CACHE_RETENTION,
+            prompt_cache_options={
+                "ttl": config.OPENAI_PROMPT_CACHE_RETENTION,
+            },
             metadata=_response_request_metadata(metadata, conversation_id, "critic"),
             safety_identifier=_hash_identifier(
                 str(metadata.get("student", conversation_id or "anon"))
@@ -2075,7 +2128,11 @@ def _conversation_record_from_blob(blob: Any) -> dict[str, Any]:
             metadata = dict(item)
 
     first_user = next(
-        (str(message.get("content", "")) for message in messages if message.get("role") == "user"),
+        (
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "user"
+        ),
         "",
     )
     first_assistant = next(
@@ -2233,9 +2290,11 @@ def _merge_labeled_strings(label: str, value: Any) -> list[str]:
 def _normalize_session_evaluations(entry: dict[str, Any]) -> list[dict[str, str]]:
     """Canonicalize legacy evaluation/session fields into one stable schema."""
     koans_used = _listify_logbook_strings(entry.get("koans_used"))
-    default_case = koans_used[0] if koans_used else _stringify_logbook_value(
-        entry.get("title")
-    ) or "unspecified"
+    default_case = (
+        koans_used[0]
+        if koans_used
+        else _stringify_logbook_value(entry.get("title")) or "unspecified"
+    )
     session_ids = _listify_logbook_strings(entry.get("sessions"))
     default_conversation_id = session_ids[0] if session_ids else ""
 
@@ -2269,7 +2328,9 @@ def _normalize_session_evaluations(entry: dict[str, Any]) -> list[dict[str, str]
                 case = default_case
                 conversation_id = default_conversation_id
                 evaluation = "recorded"
-                notes = _stringify_logbook_value(raw) or "No additional notes preserved."
+                notes = (
+                    _stringify_logbook_value(raw) or "No additional notes preserved."
+                )
             normalized.append(
                 {
                     "case": case,
@@ -2401,7 +2462,9 @@ def normalize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Normalize a full logbook payload into canonical memory-entry objects."""
-    return [normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)]
+    return [
+        normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)
+    ]
 
 
 def resequence_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:

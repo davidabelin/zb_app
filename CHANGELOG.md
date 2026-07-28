@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.2.5 - 2026-07-28
+
+- restored generic `gpt-5.5` as a selectable live botling alongside retained
+  fine-tuned models
+- moved the optional asynchronous session critic to `gpt-5.6-sol` with an
+  explicit medium reasoning baseline and current prompt-cache options
+- documented critic enablement, submission behavior, and result polling
+- synchronized the release marker across app documentation and deployment
+  messaging
+
 ## v3.2.3 - 2026-04-17
 
 Admin/review workflow and operator-maintenance release for `zb_app`.

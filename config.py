@@ -33,7 +33,7 @@ def _first_model_name() -> str:
 
 
 def _default_models_in_use() -> Dict[str, str]:
-    """Return the active live-model registry without a base-model fallback."""
+    """Return the active generic-baseline and fine-tuned live-model registry."""
 
     if not MODELS_IN_USE:
         raise RuntimeError("MODELS_IN_USE must contain at least one live botling.")
@@ -47,7 +47,7 @@ def _default_model_name() -> str:
 
 
 def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
-    """Return the first-pass named Mumonbot-ling preset registry. """
+    """Return the first-pass named Mumonbot-ling preset registry."""
 
     return {
         "mumonbot": {
@@ -304,7 +304,7 @@ class Config:
         default_factory=lambda: os.getenv("OPENAI_LIVE_MODEL", _default_model_name())
     )
     OPENAI_JUDGE_MODEL: str = field(
-        default_factory=lambda: os.getenv("OPENAI_JUDGE_MODEL", "gpt-5.4")
+        default_factory=lambda: os.getenv("OPENAI_JUDGE_MODEL", "gpt-5.6-sol")
     )
     OPENAI_POST_TRAINING_MODEL: str = field(
         default_factory=lambda: os.getenv("OPENAI_POST_TRAINING_MODEL", "gpt-4.1")
@@ -498,7 +498,9 @@ class Config:
             "label": model_name,
             "supports_reasoning": self._supports_reasoning(resolved_model),
             "reasoning_efforts": self.reasoning_effort_choices(resolved_model),
-            "supports_sampling_controls": self._supports_sampling_controls(resolved_model),
+            "supports_sampling_controls": self._supports_sampling_controls(
+                resolved_model
+            ),
         }
 
     @staticmethod
