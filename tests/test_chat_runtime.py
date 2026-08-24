@@ -124,7 +124,7 @@ def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(
     assert 'id="chatSave"' in body
     assert 'id="chatEnd"' in body
     assert 'id="chatPrefacePanel"' in body
-    assert 'data-gesture="(bows)"' in body
+    assert 'data-gesture="(bows)"' not in body
     assert "window.PUBLIC_SESSION_OPTIONS" in body
     assert "window.CHAT_API_BASE_URL" not in body
 

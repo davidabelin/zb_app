@@ -179,6 +179,7 @@ function removeThinkingIndicator(node) {
   }
 }
 
+/* Temporarily disabled with the Chatter page End gesture button.
 function insertGestureText(gesture) {
   const chatInput = document.getElementById("chatInput");
   const text = String(gesture || "").trim();
@@ -213,6 +214,7 @@ function bindGestureButtons() {
     });
   });
 }
+*/
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -969,7 +971,8 @@ async function initChatterPage() {
   const endChatButton = document.getElementById("chatEnd");
   const saveChatButton = document.getElementById("chatSave");
 
-  bindGestureButtons();
+  // Temporarily disabled with the Chatter page End gesture button.
+  // bindGestureButtons();
 
   try {
     await ensureSessionSettingsPanel();
