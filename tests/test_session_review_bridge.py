@@ -104,11 +104,18 @@ def test_review_page_and_api_use_cloud_review_manifest(monkeypatch, fake_bucket)
     assert zb_payload["record"]["review_zb"] == "Use"
     assert zb_payload["record"]["evaluation"] == ""
     assert zb_payload["record"]["status_label"] == "Awaiting Other Review"
+    assert zb_payload["summary"]["unreviewed"] == 1
+    assert zb_payload["progress_summary"]["zb_reviewed"] == 1
+    assert zb_payload["progress_summary"]["awaiting_other_review"] == 1
 
     cm_response = client.post(
         "/zb_api/session-evaluations/record/0/decision",
         headers=headers,
-        json={"reviewer": "CM", "evaluation": "Use"},
+        json={
+            "conversation_id": "bridge-test-001",
+            "reviewer": "CM",
+            "evaluation": "Use",
+        },
     )
     assert cm_response.status_code == 200
     cm_payload = cm_response.get_json()
@@ -120,6 +127,8 @@ def test_review_page_and_api_use_cloud_review_manifest(monkeypatch, fake_bucket)
     assert summary_response.status_code == 200
     assert summary_payload["summary"]["Use"] == 1
     assert summary_payload["summary"]["unreviewed"] == 0
+    assert summary_payload["progress_summary"]["zb_reviewed"] == 1
+    assert summary_payload["progress_summary"]["cm_reviewed"] == 1
     assert summary_payload["storage"]["bucket"] == main.utipy.config.BUCKET_NAME
     assert summary_payload["storage"]["review_index_blob"] == session_reviews.REVIEW_INDEX_BLOB
 
@@ -137,6 +146,32 @@ def test_review_page_and_api_use_cloud_review_manifest(monkeypatch, fake_bucket)
     assert record["metadata"]["botling_id"] == "fierce_barrier"
     assert record["metadata"]["settings_version"] == "v3.1"
     assert record["metadata"]["session_settings"]["preset_id"] == "fierce_barrier"
+
+
+def test_api_review_decision_rejects_stale_conversation_id(monkeypatch, fake_bucket):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret-token")
+    monkeypatch.setattr(main.utipy, "BUCKET", fake_bucket)
+
+    _archive_review_record(fake_bucket, conversation_id="guard-test-001")
+    headers = {"Authorization": "Bearer secret-token"}
+    client = main.app.test_client()
+
+    response = client.post(
+        "/zb_api/session-evaluations/record/0/decision",
+        headers=headers,
+        json={
+            "conversation_id": "different-record",
+            "reviewer": "ZB",
+            "evaluation": "Reject",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 409
+    assert payload["error"] == "review_record_mismatch"
+    rows = session_reviews.load_review_state()
+    assert rows[0]["review_zb"] == ""
 
 
 def test_needs_zb_review_lists_summary_records_with_pagination(
@@ -346,6 +381,7 @@ def test_browser_review_page_confirms_saved_pending_reject(monkeypatch, fake_buc
     assert response.status_code == 200
     assert "Saved CM Reject" in body
     assert "browser-reject-001" in body
+    assert "Reopen saved record." in body
     assert "Final Use/Alter/Reject counts only change after both reviewer decisions are present." in body
     assert "Awaiting Other Review" in body
 

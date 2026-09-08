@@ -1,6 +1,6 @@
 # ZB App
 
-Current app/repo release: `v3.2.3`
+Current app/repo release: `v3.2.5`
 
 `zb_app` is the web, API, and operator surface for Zenbot. In v3 it is a
 single App Engine application with an OpenAI-native runtime underneath:
@@ -13,7 +13,11 @@ single App Engine application with an OpenAI-native runtime underneath:
 
 ## What Lives Here
 
-- `main.py`: Flask routes for browser, API, admin, and review flows
+- `main.py`: Flask application composition and the stable App Engine entry point
+- `app_support.py`: shared HTTP contracts, auth, CORS, request guards, and errors
+- `web_routes.py`: public pages and browser-session chat routes
+- `zb_api.py`: authenticated JSON endpoints used by GPT Actions and operators
+- `admin_routes.py`: browser-facing admin and review workflows
 - `utilities.py`: hot-state storage, Responses API adapter, koan lookup, GCS
   archive helpers, memory logbook helpers, and tool handlers
 - `contracts.py`: typed runtime contracts and tool schemas
@@ -43,8 +47,10 @@ Responses API rather than Chat Completions.
 
 Implemented v3 runtime pieces:
 
-- deterministic live botling defaults sourced from `models.py`
-- `gpt-5.4` for critic/judging, `gpt-4.1` reserved for post-training work
+- deterministic live botling defaults sourced from `models.py`, including the
+  generic `gpt-5.5` baseline and the retained fine-tuned botlings
+- `gpt-5.6-sol` for asynchronous critic/judging, `gpt-4.1` reserved for
+  post-training work
 - prompt caching via stable `prompt_cache_key` values
 - provider-side conversation continuation via `previous_response_id`
 - optional File Search through configured vector stores
@@ -59,7 +65,25 @@ Implemented v3 runtime pieces:
   - `report_ui_status`
 - optional background session critic submissions
 
-The tool catalog can be exported with:
+### Background critic
+
+The optional session critic is a separate `gpt-5.6-sol` Responses API job. It
+submits after an archived chat is saved, uses background mode so it never holds
+up the browser/API save response, and returns a `response_id` when queued.
+Poll that ID with the Responses API if an operator needs the completed
+structured assessment; Zenbot does not currently write a completed critic
+result back into the review manifest automatically.
+
+Critic submission requires both `OPENAI_ENABLE_BACKGROUND_CRITIC=true` for the
+deployment and `enable_background_critic=true` in the session's locked
+settings. The browser session settings panel and API session settings payload
+expose the per-session choice. `OPENAI_JUDGE_MODEL` defaults to `gpt-5.6-sol`;
+leave its `judge` profile at medium reasoning for the initial baseline, then
+evaluate a lower effort against representative archived sessions before tuning.
+`OPENAI_PROMPT_CACHE_RETENTION` supplies the critic request's cache TTL.
+
+For internal runtime diagnostics, the Responses function-tool catalog can be
+exported to `generated/openai_response_tools.json` with:
 
 ```cmd
 python scripts/export_openai_tool_manifest.py
@@ -116,6 +140,7 @@ project notes, training data, and historical assets.
 - `OPENAI_ENABLE_FILE_SEARCH`
 - `OPENAI_VECTOR_STORE_IDS`
 - `OPENAI_ENABLE_BACKGROUND_CRITIC`
+- `OPENAI_PROMPT_CACHE_RETENTION`
 - `REDIS_URL`
 - `SESSION_TTL_SECONDS`
 - `STREAMING_ENABLED`

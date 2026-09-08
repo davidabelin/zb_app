@@ -354,6 +354,7 @@
           Saved {{ request.args.get("saved_reviewer", "") }} {{ request.args.get("saved_evaluation", "") }}
           for <strong>{{ request.args.get("saved_conversation_id") }}</strong>.
           Current status: <strong>{{ request.args.get("saved_status", "Awaiting Other Review") }}</strong>.
+          <a href="{{ url_for('admin.review_page', index=request.args.get('saved_index', 0), evaluation=evaluation) }}">Reopen saved record.</a>
           Final Use/Alter/Reject counts only change after both reviewer decisions are present.
         </div>
       {% elif status == "empty" %}
@@ -373,35 +374,35 @@
       </div>
 
       <div class="filter-row">
-        <a class="filter-pill{% if evaluation == 'needs_cm_review' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='needs_cm_review') }}">Need CM Review</a>
-        <a class="filter-pill{% if evaluation == 'needs_zb_review' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='needs_zb_review') }}">Need ZB Review</a>
-        <a class="filter-pill{% if evaluation == 'unreviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='unreviewed') }}">Awaiting Final</a>
-        <a class="filter-pill{% if evaluation == 'not_started' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='not_started') }}">Not Yet Touched</a>
-        <a class="filter-pill{% if evaluation == 'awaiting_other_review' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='awaiting_other_review') }}">Awaiting Other Review</a>
-        <a class="filter-pill{% if evaluation == 'cm_reviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='cm_reviewed') }}">CM Reviewed</a>
-        <a class="filter-pill{% if evaluation == 'zb_reviewed' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='zb_reviewed') }}">ZB Reviewed</a>
-        <a class="filter-pill{% if evaluation == 'Use' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Use') }}">Use</a>
-        <a class="filter-pill{% if evaluation == 'Alter' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Alter') }}">Alter</a>
-        <a class="filter-pill{% if evaluation == 'Reject' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='Reject') }}">Reject</a>
-        <a class="filter-pill{% if evaluation == 'all' %} active{% endif %}" href="{{ url_for('admin_conversations', evaluation='all') }}">All</a>
+        <a class="filter-pill{% if evaluation == 'needs_cm_review' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='needs_cm_review') }}">Need CM Review</a>
+        <a class="filter-pill{% if evaluation == 'needs_zb_review' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='needs_zb_review') }}">Need ZB Review</a>
+        <a class="filter-pill{% if evaluation == 'unreviewed' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='unreviewed') }}">Awaiting Final</a>
+        <a class="filter-pill{% if evaluation == 'not_started' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='not_started') }}">Not Yet Touched</a>
+        <a class="filter-pill{% if evaluation == 'awaiting_other_review' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='awaiting_other_review') }}">Awaiting Other Review</a>
+        <a class="filter-pill{% if evaluation == 'cm_reviewed' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='cm_reviewed') }}">CM Reviewed</a>
+        <a class="filter-pill{% if evaluation == 'zb_reviewed' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='zb_reviewed') }}">ZB Reviewed</a>
+        <a class="filter-pill{% if evaluation == 'Use' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Use') }}">Use</a>
+        <a class="filter-pill{% if evaluation == 'Alter' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Alter') }}">Alter</a>
+        <a class="filter-pill{% if evaluation == 'Reject' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Reject') }}">Reject</a>
+        <a class="filter-pill{% if evaluation == 'all' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='all') }}">All</a>
       </div>
 
       <div class="action-row">
         {% if next_cm_review_index is not none %}
-          <a class="action-link primary" href="{{ url_for('review_page', index=next_cm_review_index, evaluation='needs_cm_review') }}">Open Next CM Review</a>
+          <a class="action-link primary" href="{{ url_for('admin.review_page', index=next_cm_review_index, evaluation='needs_cm_review') }}">Open Next CM Review</a>
         {% endif %}
         {% if review_rows %}
-          <a class="action-link" href="{{ url_for('review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
+          <a class="action-link" href="{{ url_for('admin.review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
         {% endif %}
-        <a class="action-link" href="{{ url_for('admin_session_settings') }}">Session Settings</a>
+        <a class="action-link" href="{{ url_for('admin.admin_session_settings') }}">Session Settings</a>
         {% if is_local %}
-          <a class="action-link" href="{{ url_for('admin_memory_logbook_download') }}">Download Memory Logbook</a>
-          <form class="inline" method="post" action="{{ url_for('download_chats') }}">
+          <a class="action-link" href="{{ url_for('admin.admin_memory_logbook_download') }}">Download Memory Logbook</a>
+          <form class="inline" method="post" action="{{ url_for('admin.download_chats') }}">
             <input type="hidden" name="action" value="sync_local_remote">
             <button class="action-button primary" type="submit">Sync Local/Remote Sessions</button>
           </form>
         {% endif %}
-        <form class="inline" method="post" action="{{ url_for('admin_logout') }}">
+        <form class="inline" method="post" action="{{ url_for('admin.admin_logout') }}">
           <button class="action-button" type="submit">Log out</button>
         </form>
       </div>
@@ -409,7 +410,7 @@
       <div class="storage">
         Your working queue is <code>Need CM Review</code>, so once you rate a session it drops out of that list immediately.
         <br>
-        Final tallies move only after both reviewers have acted. A single saved decision appears under <code>Awaiting Other Review</code> and under <code>Awaiting Final</code>.
+        Final tallies move only after both reviewers have acted. A CM-only review leaves <code>Need CM Review</code> and appears under <code>CM Reviewed</code>, <code>Awaiting Other Review</code>, and <code>Awaiting Final</code>.
         <br>
         New sessions add themselves automatically, so routine backfill is not needed after the initial import.
         <br>
@@ -449,7 +450,7 @@
         <div class="queue">
           {% for row in review_rows %}
             <article class="card">
-              <a class="card-link" href="{{ url_for('review_page', index=row.index, evaluation=evaluation) }}">
+              <a class="card-link" href="{{ url_for('admin.review_page', index=row.index, evaluation=evaluation) }}">
                 <div class="card-top">
                   <div>
                     <h3>{{ row.conversation_id }}</h3>

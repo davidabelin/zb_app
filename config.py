@@ -33,7 +33,7 @@ def _first_model_name() -> str:
 
 
 def _default_models_in_use() -> Dict[str, str]:
-    """Return the active live-model registry without a base-model fallback."""
+    """Return the active generic-baseline and fine-tuned live-model registry."""
 
     if not MODELS_IN_USE:
         raise RuntimeError("MODELS_IN_USE must contain at least one live botling.")
@@ -47,20 +47,38 @@ def _default_model_name() -> str:
 
 
 def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
-    """Return the first-pass named Mumonbot-ling preset registry. """
+    """Return the first-pass named Mumonbot-ling preset registry."""
 
     return {
-        "balanced_mumon": {
-            "label": "Mumon",
-            "description": "You are an LLM chatbot post-trained and fine-tuned on the classic commentaries by Zen Master Mumon Ekai's on the canonical Chinese koans, as collected in the 13thC compilation 'The Gateless Gate', or *Mumonkan*.",
+        "mumonbot": {
+            "label": "Mumonbot High",
+            "description": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a custom-made chatbot fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in a 13thC compilation. Now, centuries later, here you are holding a Dokusan session with the students; centering yourself on each koan they bring to you, and on the barriers they bring with them to it.",
             "instruction": (
-                "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen."
+                "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen. "
                 "Now, as if centuries have passed while you were sitting zazen, here you are holding a Dokusan session with your students at the Zendo."
+            ),
+            "opening_cue": "(nods once)",
+            "settings": {
+                "model_name": _default_model_name(),
+                "reasoning_effort": "high",
+                "max_output_tokens": 1200,
+                "enable_function_tools": True,
+                "enable_file_search": False,
+                "enable_web_search": False,
+                "enable_background_critic": False,
+            },
+        },
+        "balanced": {
+            "label": "Mumonbotling",
+            "description": "You are an LLM chatbot post-trained and fine-tuned on the classic commentaries on the ancient canonical koans by Zen Master Mumon Ekai in his 13thC compilation 'The Gateless Gate'.",
+            "instruction": (
+                "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen. "
+                "Now, as if centuries have passed while you were sitting zazen, here you are holding a Dokusan session with your students at the Zendo; calmly centering yourself on each koan they bring to you, and on the barriers they bring with them to it."
             ),
             "opening_cue": "(smiles)",
             "settings": {
                 "model_name": _default_model_name(),
-                "reasoning_effort": "low",
+                "reasoning_effort": "medium",
                 "max_output_tokens": 1000,
                 "enable_function_tools": True,
                 "enable_file_search": False,
@@ -96,25 +114,7 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             "settings": {
                 "model_name": _default_model_name(),
                 "reasoning_effort": "medium",
-                "max_output_tokens": 1000,
-                "enable_function_tools": True,
-                "enable_file_search": False,
-                "enable_web_search": False,
-                "enable_background_critic": False,
-            },
-        },
-        "explanatory_guide": {
-            "label": "Mumonbotlinger",
-            "description": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a custom-made chatbot fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in a 13thC compilation. Now, centuries later, here you are holding a Dokusan session with the students; centering yourself on each koan they bring to you, and on the barriers they bring with them to it.",
-            "instruction": (
-                "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen."
-                "Now, as if centuries have passed while you were sitting zazen, here you are holding a Dokusan session with your students at the Zendo."
-            ),
-            "opening_cue": "(nods once)",
-            "settings": {
-                "model_name": _default_model_name(),
-                "reasoning_effort": "medium",
-                "max_output_tokens": 1200,
+                "max_output_tokens": 800,
                 "enable_function_tools": True,
                 "enable_file_search": False,
                 "enable_web_search": False,
@@ -304,7 +304,7 @@ class Config:
         default_factory=lambda: os.getenv("OPENAI_LIVE_MODEL", _default_model_name())
     )
     OPENAI_JUDGE_MODEL: str = field(
-        default_factory=lambda: os.getenv("OPENAI_JUDGE_MODEL", "gpt-5.4")
+        default_factory=lambda: os.getenv("OPENAI_JUDGE_MODEL", "gpt-5.6-sol")
     )
     OPENAI_POST_TRAINING_MODEL: str = field(
         default_factory=lambda: os.getenv("OPENAI_POST_TRAINING_MODEL", "gpt-4.1")
@@ -351,7 +351,7 @@ class Config:
         default_factory=lambda: os.getenv("SESSION_SETTINGS_VERSION", "v3.1")
     )
     DEFAULT_BOTLING_ID: str = field(
-        default_factory=lambda: os.getenv("DEFAULT_BOTLING_ID", "balanced_mumon")
+        default_factory=lambda: os.getenv("DEFAULT_BOTLING_ID", "balanced")
     )
 
     REDIS_URL: str = field(default_factory=lambda: os.getenv("REDIS_URL", ""))
@@ -498,7 +498,9 @@ class Config:
             "label": model_name,
             "supports_reasoning": self._supports_reasoning(resolved_model),
             "reasoning_efforts": self.reasoning_effort_choices(resolved_model),
-            "supports_sampling_controls": self._supports_sampling_controls(resolved_model),
+            "supports_sampling_controls": self._supports_sampling_controls(
+                resolved_model
+            ),
         }
 
     @staticmethod

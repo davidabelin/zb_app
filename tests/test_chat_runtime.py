@@ -44,7 +44,9 @@ def test_chat_response_allows_explicit_extra_origin(monkeypatch):
     )
 
     assert response.status_code == 400
-    assert response.headers["Access-Control-Allow-Origin"] == "https://shell.example.com"
+    assert (
+        response.headers["Access-Control-Allow-Origin"] == "https://shell.example.com"
+    )
 
 
 def test_chat_preflight_rejects_unknown_origin(monkeypatch):
@@ -76,7 +78,7 @@ def test_entrance_hall_replaces_public_splash():
     assert "/chatter" in body
     assert "Site map seed" in body
     assert "Resource guide placeholder" in body
-    assert "zenbot_hall.png" in body
+    assert "zendo_mainhall.png" in body
 
 
 def test_legacy_splash_preserves_previous_public_page():
@@ -90,7 +92,19 @@ def test_legacy_splash_preserves_previous_public_page():
     assert "/chatter" in body
 
 
-def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(monkeypatch):
+def test_blueprint_templates_resolve_public_and_admin_endpoints(monkeypatch):
+    """Representative templates should render after endpoint namespacing."""
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
+    client = main.app.test_client()
+
+    for path in ("/", "/gg", "/bcr", "/admin/login", "/admin/session_settings"):
+        assert client.get(path).status_code == 200
+
+
+def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(
+    monkeypatch,
+):
     monkeypatch.setattr(main.utipy.config, "STREAMING", False)
 
     client = main.app.test_client()
@@ -110,6 +124,7 @@ def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(mo
     assert 'id="chatSave"' in body
     assert 'id="chatEnd"' in body
     assert 'id="chatPrefacePanel"' in body
+    assert 'data-gesture="(bows)"' not in body
     assert "window.PUBLIC_SESSION_OPTIONS" in body
     assert "window.CHAT_API_BASE_URL" not in body
 
@@ -129,3 +144,38 @@ def test_chatter_renders_workspace_and_session_settings_in_streaming_mode(monkey
     assert 'id="chatInput"' in body
     assert "Streaming enabled" in body
     assert "window.CHAT_API_BASE_URL" not in body
+
+
+def test_gateless_gate_pages_render_scoped_layout_hooks():
+    client = main.app.test_client()
+
+    list_response = client.get("/gg")
+    case_response = client.get("/gg/49")
+
+    assert list_response.status_code == 200
+    assert 'class="gg-page"' in list_response.get_data(as_text=True)
+    assert 'id="caseList"' in list_response.get_data(as_text=True)
+    assert case_response.status_code == 200
+    assert 'class="gg-page gg-case-page"' in case_response.get_data(as_text=True)
+    assert 'id="koan-container"' in case_response.get_data(as_text=True)
+
+
+def test_public_case_button_defers_server_session_creation():
+    script = main.app.test_client().get("/static/scripts.js").get_data(as_text=True)
+
+    assert 'ul.className = "gg-case-grid"' in script
+    case_handler_start = script.index('discussBtn.addEventListener("click"')
+    case_handler_end = script.index(
+        "container.appendChild(document.createElement", case_handler_start
+    )
+    case_handler = script[case_handler_start:case_handler_end]
+    assert "/chat_case/" not in case_handler
+    assert 'clearSessionValue("conversation_id")' in case_handler
+    assert 'setSessionValue("case_id", String(koan.id))' in case_handler
+
+
+def test_chat_error_restores_unsent_prompt_in_browser_script():
+    script = main.app.test_client().get("/static/scripts.js").get_data(as_text=True)
+
+    assert 'case_id: getSessionValue("case_id") || ""' in script
+    assert "chatInput.value = prompt" in script

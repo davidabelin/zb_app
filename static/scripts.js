@@ -128,7 +128,11 @@ function renderMarkdownSafe(markdownText) {
   if (typeof marked === "undefined") {
     return escapeHtml(markdownText);
   }
-  return marked.parse(escapeHtml(markdownText));
+  const escaped = escapeHtml(markdownText);
+  if (typeof marked.parseInline === "function") {
+    return marked.parseInline(escaped);
+  }
+  return marked.parse(escaped);
 }
 
 function appendThinkingIndicator() {
@@ -154,11 +158,63 @@ function setPrefacePanelVisibility(visible) {
   prefacePanel.hidden = !visible;
 }
 
+function setCaseContextNote(koan) {
+  const note = document.getElementById("caseContextNote");
+  if (!note) return;
+
+  if (!koan) {
+    note.innerHTML =
+      'Choose a case from <a href="/gg">The Gateless Gate</a>, or enter without a case and let the exchange find its own barrier.';
+    return;
+  }
+
+  const title = String(koan.title || "").trim();
+  const id = String(koan.id || "").trim();
+  note.textContent = `You have chosen Case #${id}${title ? `, "${title},"` : ""} for this session.`;
+}
+
 function removeThinkingIndicator(node) {
   if (node && node.parentNode) {
     node.parentNode.removeChild(node);
   }
 }
+
+/* Temporarily disabled with the Chatter page End gesture button.
+function insertGestureText(gesture) {
+  const chatInput = document.getElementById("chatInput");
+  const text = String(gesture || "").trim();
+  if (!chatInput || !text) return;
+
+  const start = Number.isInteger(chatInput.selectionStart)
+    ? chatInput.selectionStart
+    : chatInput.value.length;
+  const end = Number.isInteger(chatInput.selectionEnd)
+    ? chatInput.selectionEnd
+    : chatInput.value.length;
+  const before = chatInput.value.slice(0, start);
+  const after = chatInput.value.slice(end);
+  const prefix = before && !/\s$/.test(before) ? " " : "";
+  const suffix = after && !/^\s/.test(after) ? " " : "";
+  const insertion = `${prefix}${text}${suffix}`;
+
+  chatInput.value = `${before}${insertion}${after}`;
+  chatInput.focus();
+  const cursor = before.length + insertion.length;
+  if (typeof chatInput.setSelectionRange === "function") {
+    chatInput.setSelectionRange(cursor, cursor);
+  }
+}
+
+function bindGestureButtons() {
+  document.querySelectorAll("[data-gesture]").forEach((button) => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => {
+      insertGestureText(button.dataset.gesture);
+    });
+  });
+}
+*/
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -717,9 +773,9 @@ function appendChatMessage(sender, message) {
   try {
     const text = String(message ?? "");
     const htmlContent = renderMarkdownSafe(text);
-    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong><br>${htmlContent}`;
+    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong> ${htmlContent}`;
   } catch (error) {
-    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}</strong> caused error:<br>${escapeHtml(error?.message || String(error))}`;
+    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}</strong> caused error: ${escapeHtml(error?.message || String(error))}`;
   } finally {
     chatResults.appendChild(messageDiv);
     chatResults.scrollTop = chatResults.scrollHeight;
@@ -746,6 +802,7 @@ function renderKoanPreface(koan) {
   koanDiv.appendChild(bodyDiv);
   preface.appendChild(koanDiv);
   setPrefacePanelVisibility(true);
+  setCaseContextNote(koan);
 }
 
 async function loadKoanPreface(caseId) {
@@ -770,6 +827,7 @@ function clearChatDom() {
   if (chatInput) chatInput.value = "";
   if (chatPreface) chatPreface.innerHTML = "";
   setPrefacePanelVisibility(false);
+  setCaseContextNote(null);
 }
 
 async function resetChatUi() {
@@ -796,6 +854,7 @@ function initGGList() {
       if (!tocDiv) return;
       tocDiv.innerHTML = "";
       const ul = document.createElement("ul");
+      ul.className = "gg-case-grid";
       data.cases.forEach((koan) => {
         const li = document.createElement("li");
         const a = document.createElement("a");
@@ -880,28 +939,10 @@ function initGGCasePage() {
         discussBtn.disabled = true;
         setSessionStatus("Opening dokusan session...", "pending");
         try {
-          const options = await getChatOptions();
-          const settings = sanitizeSessionSettings(options.defaults || {}, options);
-          const response = await fetch(`/chat_case/${koan.id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ case_id: caseId, settings }),
-            credentials: "include",
-          });
-          if (!response.ok) {
-            await parseErrorResponse(response, options);
-          }
-          const res = await response.json();
-          if (res.error) {
-            throw new Error(res?.message || res?.error || "Unable to start dokusan session.");
-          }
-
-          setSessionValue("conversation_id", res.conversation_id);
-          setSessionValue("case_id", res.case_id);
-          if (res.session_settings) {
-            adoptLockedSessionSettings(res.session_settings, options);
-          }
-          setSessionStatus("Dokusan session ready. Entering the sanzen room...", "success");
+          clearSessionValue("conversation_id");
+          clearActiveSessionSettings();
+          setSessionValue("case_id", String(koan.id));
+          setSessionStatus("Case selected. Entering the sanzen room...", "success");
           window.location.href = "/chatter";
         } catch (err) {
           console.error("Error starting Koan chat:", err);
@@ -929,6 +970,9 @@ async function initChatterPage() {
   const chatButton = document.getElementById("chatSend");
   const endChatButton = document.getElementById("chatEnd");
   const saveChatButton = document.getElementById("chatSave");
+
+  // Temporarily disabled with the Chatter page End gesture button.
+  // bindGestureButtons();
 
   try {
     await ensureSessionSettingsPanel();
@@ -989,16 +1033,19 @@ async function parseErrorResponse(response, options) {
 
 async function handleStreamResponse(response, thinkingNode, options) {
   const chatResults = document.getElementById("chatResults");
-  const messageDiv = document.createElement("div");
-  messageDiv.className = "zenbot-message";
-  messageDiv.innerHTML =
-    '<strong>Mumonbot:</strong><br><span class="message-content"></span>';
-  const contentEl = messageDiv.querySelector(".message-content");
+  let messageDiv = null;
+  let contentEl = null;
 
-  if (chatResults) {
+  const ensureResponseMessage = () => {
+    if (messageDiv || !chatResults) return;
+    messageDiv = document.createElement("div");
+    messageDiv.className = "zenbot-message";
+    messageDiv.innerHTML =
+      '<strong>Mumonbot:</strong> <span class="message-content"></span>';
+    contentEl = messageDiv.querySelector(".message-content");
     chatResults.appendChild(messageDiv);
     chatResults.scrollTop = chatResults.scrollHeight;
-  }
+  };
 
   let buffer = "";
   let fullText = "";
@@ -1015,7 +1062,6 @@ async function handleStreamResponse(response, thinkingNode, options) {
         adoptLockedSessionSettings(data.session_settings, options);
       }
       setSaveButtonState();
-      removeThinkingIndicator(thinkingNode);
       return;
     }
 
@@ -1032,6 +1078,7 @@ async function handleStreamResponse(response, thinkingNode, options) {
 
     if (typeof chunk === "string" && chunk) {
       removeThinkingIndicator(thinkingNode);
+      ensureResponseMessage();
       if (data?.event === "fallback") {
         fullText = chunk;
       } else {
@@ -1104,6 +1151,7 @@ async function startChat(prompt) {
       body: JSON.stringify({
         message: prompt,
         conversation_id: getSessionValue("conversation_id") || "",
+        case_id: getSessionValue("case_id") || "",
         settings: requestSettings,
       }),
       credentials: "include",
@@ -1141,6 +1189,9 @@ async function startChat(prompt) {
     }
   } catch (error) {
     removeThinkingIndicator(thinkingNode);
+    if (chatInput && !chatInput.value) {
+      chatInput.value = prompt;
+    }
     appendChatMessage("System", `Error: ${error?.message || String(error)}`);
     handleError(error, "chatPreface", "Error starting chat.");
   } finally {
