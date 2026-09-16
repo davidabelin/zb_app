@@ -1,6 +1,6 @@
 # ZB App
 
-Current app/repo release: `v3.2.5`
+Current app/repo release: `v3.2.6`
 
 `zb_app` is the web, API, and operator surface for Zenbot. In v3 it is a
 single App Engine application with an OpenAI-native runtime underneath:
@@ -52,6 +52,17 @@ Implemented v3 runtime pieces:
 - `gpt-5.6-sol` for asynchronous critic/judging, `gpt-4.1` reserved for
   post-training work
 - prompt caching via stable `prompt_cache_key` values
+- Mumon exemplar context for non-fine-tuned live models: the Responses
+  `instructions` block for generic models such as `gpt-5.5` opens with the
+  trainset03a dokusan transcripts rendered as `Student:` / `Mumon:` lines
+  (`static/mumon_exemplars.jsonl`, a snapshot of
+  `../training/trainset03/trainset03a.jsonl` to re-copy when set05 lands),
+  plus reading instructions and the `(bows)` closing rule; fine-tuned
+  botlings get the closing rule only. The block never enters the stored
+  transcript, archives, or training exports. Controlled by
+  `MUMON_EXEMPLARS_ENABLED` and `MUMON_EXEMPLARS_PATH`
+- the startup system prompt is the preset `description` followed by its
+  `instruction`, matching the system prompt the fine-tunes were trained with
 - provider-side conversation continuation via `previous_response_id`
 - optional File Search through configured vector stores
 - strict internal function tools:
@@ -141,6 +152,8 @@ project notes, training data, and historical assets.
 - `OPENAI_VECTOR_STORE_IDS`
 - `OPENAI_ENABLE_BACKGROUND_CRITIC`
 - `OPENAI_PROMPT_CACHE_RETENTION`
+- `MUMON_EXEMPLARS_ENABLED`
+- `MUMON_EXEMPLARS_PATH`
 - `REDIS_URL`
 - `SESSION_TTL_SECONDS`
 - `STREAMING_ENABLED`

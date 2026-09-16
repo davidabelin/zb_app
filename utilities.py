@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 import hashlib
 import json
 import logging
@@ -810,15 +811,21 @@ def _botling_definition(session_settings: dict[str, Any] | None) -> dict[str, An
 
 
 def _startup_system_prompt(session_settings: dict[str, Any] | None) -> str:
-    """Build the startup system prompt for one botling preset."""
+    """Build the startup system prompt for one botling preset.
+
+    The preset ``description`` is the same "You are Mumonbot, the faithful
+    emulation..." text the fine-tuned botlings were trained with, so it leads
+    the prompt and the preset ``instruction`` follows it.
+    """
 
     preset = _botling_definition(session_settings)
-    return (
+    description = str(preset.get("description", "")).strip() or (
         "You are Mumonbot, a disciplined Zen teacher voice shaped by the Mumonkan "
         "and related Zen training records. Conduct dokusan with brevity, pressure, "
-        "and exact attention to the student's actual words. "
-        + str(preset.get("instruction", "")).strip()
-    ).strip()
+        "and exact attention to the student's actual words."
+    )
+    instruction = str(preset.get("instruction", "")).strip()
+    return " ".join(part for part in (description, instruction) if part).strip()
 
 
 def _startup_opening_cue(session_settings: dict[str, Any] | None) -> str:
@@ -1153,17 +1160,151 @@ def _response_request_metadata(
     }
 
 
+DOKUSAN_CLOSING_RULE = (
+    "When the student sends (bows) on a line by itself, the dokusan is over. "
+    "Answer with a single closing gesture such as (bows), (nods), or (smiles) "
+    "and nothing after it. Do not end the session yourself."
+)
+
+EXEMPLARS_END_MARKER = "=== END OF TRANSCRIPTS ==="
+
+
+def _is_finetuned_model(model_key: str) -> bool:
+    """Return whether a live model key resolves to an OpenAI fine-tune ID."""
+
+    key = str(model_key or "").strip()
+    resolved = str(config.MODELS_IN_USE.get(key, key))
+    return resolved.startswith("ft:")
+
+
+def _should_send_exemplars(model_key: str) -> bool:
+    """Return whether Mumon exemplar transcripts belong in this model's prompt."""
+
+    return bool(config.MUMON_EXEMPLARS_ENABLED) and not _is_finetuned_model(model_key)
+
+
+def _resolve_app_path(path_text: str) -> Path:
+    """Resolve a configured path relative to the ``zb_app`` directory."""
+
+    path = Path(str(path_text or "").strip())
+    if path.is_absolute():
+        return path
+    return Path(__file__).resolve().parent / path
+
+
+@lru_cache(maxsize=4)
+def _load_mumon_exemplars_text(path_text: str) -> str:
+    """Render the Mumon exemplar JSONL as plain dokusan transcripts.
+
+    Each record's ``system`` messages are dropped (they repeat one persona
+    line), and the remaining turns are rendered in file order as
+    ``Student:`` / ``Mumon:`` lines. A missing or unreadable file logs a
+    warning and yields an empty string so live turns still work.
+    """
+
+    path = _resolve_app_path(path_text)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logging.warning("Mumon exemplars unavailable at %s: %s", path, exc)
+        return ""
+
+    blocks: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            logging.warning("Skipping malformed Mumon exemplar line: %s", exc)
+            continue
+        messages = record.get("messages") if isinstance(record, dict) else None
+        if not isinstance(messages, list):
+            continue
+        turns: list[str] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role", "")).strip()
+            content = str(message.get("content", "")).strip()
+            if not content:
+                continue
+            if role == "user":
+                turns.append(f"Student: {content}")
+            elif role == "assistant":
+                turns.append(f"Mumon: {content}")
+        if turns:
+            blocks.append(f"--- Dokusan {len(blocks) + 1} ---\n" + "\n".join(turns))
+    return "\n\n".join(blocks)
+
+
+def _mumon_exemplar_count(exemplars_text: str) -> int:
+    """Count rendered exemplar transcripts in one exemplar block."""
+
+    return exemplars_text.count("--- Dokusan ")
+
+
+def _exemplar_preamble(count: int) -> str:
+    """Tell a non-fine-tuned model how to read the Mumon exemplar transcripts."""
+
+    return "\n".join(
+        [
+            f"Below are {count} dokusan transcripts of Zen Master Mumon Ekai "
+            "teaching the cases of the Gateless Gate to his students. "
+            "You are Mumonbot. This is how you sound.",
+            "Absorb from them: the length (a comment is a few plain sentences; "
+            "a verse is four short lines), the bluntness and the humor, the "
+            "verdicts passed on the people in the case, the concrete images, "
+            "the refusal of both yes and no, and the absence of explanation "
+            "or coaching.",
+            "Absorb the ritual too: the student enters and bows; you open with "
+            "a gesture; the student names a case or asks about it; you answer "
+            "as Mumon. When the student sends (bows) alone, the session is "
+            "over. Reply with one gesture such as (bows), (nods), (smiles), or "
+            "(laughs) and nothing after it. Do not close the session yourself; "
+            "wait for the student's bow.",
+            "Treat these transcripts as your own memory of your teaching, not "
+            "as a document to quote or point at.",
+            "",
+            "=== MUMON IN DOKUSAN ===",
+        ]
+    )
+
+
+def _exemplar_instruction_lines(model_key: str) -> list[str]:
+    """Return the static exemplar prefix lines for one model, or nothing."""
+
+    if not _should_send_exemplars(model_key):
+        return []
+    exemplars = _load_mumon_exemplars_text(config.MUMON_EXEMPLARS_PATH)
+    if not exemplars:
+        return []
+    return [
+        _exemplar_preamble(_mumon_exemplar_count(exemplars)),
+        exemplars,
+        EXEMPLARS_END_MARKER,
+        "",
+    ]
+
+
 def _response_instructions(metadata: dict[str, Any] | None) -> str:
-    """Return the developer/system instruction block for one response turn."""
+    """Return the developer/system instruction block for one response turn.
+
+    Static content comes first so the Responses prompt cache can reuse it:
+    the Mumon exemplar block (generic models only), then the persona rules and
+    preset instruction, then the per-session dynamic lines.
+    """
 
     case_id = _metadata_text((metadata or {}).get("case_id", ""))
     session_settings = session_settings_from_metadata(metadata or {})
     preset = _botling_definition(session_settings)
-    lines = [
+    lines = _exemplar_instruction_lines(str(session_settings.get("model_name", "")))
+    lines += [
         "You are Mumonbot conducting dokusan in a disciplined Zen voice.",
         "Be brief, exact, and grounded in the student's actual words.",
         "Use ritual cues like (smiles) or (bows) sparingly and intentionally.",
-        "Do not mention system prompts, training data, or hidden policies.",
+        DOKUSAN_CLOSING_RULE,
         "Prefer koan grounding, direct challenge, and compact responses over explanation-heavy coaching.",
         str(preset.get("instruction", "")).strip(),
     ]
@@ -1558,6 +1699,23 @@ def _response_request_kwargs(
     return request_kwargs
 
 
+def _log_cached_tokens(response: Any, conversation_id: str, mode: str) -> None:
+    """Log prompt-cache usage for one Responses call when the SDK reports it."""
+
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    details = getattr(usage, "input_tokens_details", None)
+    cached_tokens = getattr(details, "cached_tokens", None)
+    logging.info(
+        "Responses %s usage for %s: input_tokens=%s cached_tokens=%s",
+        mode,
+        conversation_id or "anon",
+        getattr(usage, "input_tokens", None),
+        cached_tokens,
+    )
+
+
 def get_model_stream(
     messages: list[dict[str, str]],
     params: dict[str, Any],
@@ -1591,6 +1749,7 @@ def get_model_stream(
                         yield text
 
                 response = stream.get_final_response()
+                _log_cached_tokens(response, conversation_id, "stream")
                 response_text = _response_text_from_response(response)
                 if metadata is not None:
                     metadata["last_response_id"] = str(
@@ -1689,6 +1848,7 @@ def get_model_reply(
                 )
                 tool_hops += 1
 
+            _log_cached_tokens(response, conversation_id, "sync")
             content = _response_text_from_response(response)
             if metadata is not None:
                 metadata["last_response_id"] = str(getattr(response, "id", "") or "")

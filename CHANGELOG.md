@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.2.6 - 2026-09-15
+
+- added Mumon exemplar context for non-fine-tuned live models: the Responses
+  `instructions` block for generic models now opens with the trainset03a
+  dokusan transcripts (`static/mumon_exemplars.jsonl`) and reading
+  instructions, kept as a static cacheable prefix outside the stored transcript
+- added an explicit dokusan closing rule for every model: a student's
+  standalone `(bows)` ends the session and gets one closing gesture, nothing
+  after it
+- composed the startup system prompt from the preset `description` plus
+  `instruction`, restoring the system prompt the fine-tunes were trained with,
+  and unified the preset descriptions around the Mumonbot persona
+- added `MUMON_EXEMPLARS_ENABLED` / `MUMON_EXEMPLARS_PATH`, prompt-cache usage
+  logging per Responses call, and `scripts/inspect_botlings.py
+  --show-instructions` for previewing the resolved instructions block
+- removed the unused `START_CHATS` opening prompt from `config.py`
+
 ## v3.2.5 - 2026-07-28
 
 - restored generic `gpt-5.5` as a selectable live botling alongside retained

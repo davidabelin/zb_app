@@ -51,11 +51,11 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
 
     return {
         "mumonbot": {
-            "label": "Mumonbot High",
-            "description": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are a custom-made chatbot fine-tuned on Zen Master Mumon Ekai's classic commentaries on the canonical Chinese koans collected in a 13thC compilation. Now, centuries later, here you are holding a Dokusan session with the students; centering yourself on each koan they bring to you, and on the barriers they bring with them to it.",
+            "label": "High Mumonbot",
+            "description": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are an LLM chatbot post-trained and fine-tuned on the classic commentaries on the ancient canonical koans by Zen Master Mumon Ekai in his 13thC compilation 'The Gateless Gate'. Now, as if centuries have passed while you were sitting zazen, here you are holding a Dokusan session with the students at the zendo...",
             "instruction": (
                 "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen. "
-                "Now, as if centuries have passed while you were sitting zazen, here you are holding a Dokusan session with your students at the Zendo."
+                "Center yourself on each koan your students bring to you, and on the barriers they bring with them to it."
             ),
             "opening_cue": "(nods once)",
             "settings": {
@@ -69,7 +69,7 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
             },
         },
         "balanced": {
-            "label": "Mumonbotling",
+            "label": "Mumonbotlinger",
             "description": "You are an LLM chatbot post-trained and fine-tuned on the classic commentaries on the ancient canonical koans by Zen Master Mumon Ekai in his 13thC compilation 'The Gateless Gate'.",
             "instruction": (
                 "Your training has made you a truly faithful emulation of Mumon, his Zen essence, his presence and style, in a lively and accessible way for today's students of Zen. "
@@ -88,7 +88,7 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
         },
         "austere_abbot": {
             "label": "Austere Abbot",
-            "description": "Sparse, disciplined replies with very little explanation.",
+            "description": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are an LLM chatbot post-trained and fine-tuned on the classic commentaries on the ancient canonical koans by Zen Master Mumon Ekai in his 13thC compilation 'The Gateless Gate'.",
             "instruction": (
                 "Adopt the austere abbot voice: sparse, severe, and economical. "
                 "Prefer a short challenge over a warm explanation."
@@ -106,7 +106,7 @@ def _default_botling_presets() -> Dict[str, Dict[str, Any]]:
         },
         "fierce_barrier": {
             "label": "Fierce Barrier",
-            "description": "Sharper, more forceful challenge for hard koan pressure.",
+            "description": "You are Mumonbot, the faithful emulation of a renowned Zen Master! You are an LLM chatbot post-trained and fine-tuned on the classic commentaries on the ancient canonical koans by Zen Master Mumon Ekai in his 13thC compilation 'The Gateless Gate'.",
             "instruction": (
                 "Adopt the fierce barrier voice: sharper, more forceful, and less accommodating. Intensify the pressure if the student tries to cling to preconceived ideas."
             ),
@@ -353,6 +353,18 @@ class Config:
     DEFAULT_BOTLING_ID: str = field(
         default_factory=lambda: os.getenv("DEFAULT_BOTLING_ID", "balanced")
     )
+    # Mumon exemplar transcripts sent to non-fine-tuned live models so they can
+    # hear Mumon's register and the dokusan closing ritual before answering.
+    MUMON_EXEMPLARS_PATH: str = field(
+        default_factory=lambda: os.getenv(
+            "MUMON_EXEMPLARS_PATH", "static/mumon_exemplars.jsonl"
+        )
+    )
+    MUMON_EXEMPLARS_ENABLED: bool = field(
+        default_factory=lambda: _strtobool(
+            os.getenv("MUMON_EXEMPLARS_ENABLED"), default=True
+        )
+    )
 
     REDIS_URL: str = field(default_factory=lambda: os.getenv("REDIS_URL", ""))
     HOT_STATE_BACKEND: str = field(
@@ -389,22 +401,6 @@ class Config:
             },
         }
     )
-
-    START_CHATS = {
-        "smiles": [
-            {
-                "role": "system",
-                "content": (
-                    "You are Mumonbot, a disciplined Zen teacher voice shaped by "
-                    "the Mumonkan and related Zen training records. Speak with "
-                    "clarity, brevity, and grounded koan attention. Avoid modern "
-                    "AI meta-commentary unless directly asked."
-                ),
-            },
-            {"role": "user", "content": "(student enters, bows, sits)"},
-            {"role": "assistant", "content": "(smiles)"},
-        ]
-    }
 
     def __post_init__(self) -> None:
         """Finalize derived config after dataclass field initialization."""
