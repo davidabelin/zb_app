@@ -103,14 +103,15 @@ class TurnRequest(StrictModel):
 
     message: str = Field(min_length=1, max_length=2048)
     conversation_id: str = ""
-    student: str = "webmonkE"
+    case_id: str = ""
+    student: str = "webuser"
     settings: SessionSettingsInput | None = None
 
 
 class SessionStartRequest(StrictModel):
     """Validated request payload for creating a new session before any turn."""
 
-    student: str = "webmonkE"
+    student: str = "webuser"
     settings: SessionSettingsInput | None = None
 
 
@@ -218,6 +219,7 @@ class LoadCaseContextArgs(StrictModel):
 
     case_id: str
     include_commentary: bool = False
+    include_solution_notes: bool = False
 
 
 class SearchExemplarsArgs(StrictModel):
@@ -232,6 +234,7 @@ class LoadMemorySummariesArgs(StrictModel):
     """Arguments for the compact memory-summary lookup tool."""
 
     limit: int = Field(default=5, ge=1, le=12)
+    end_index: int | None = Field(default=None, ge=0)
 
 
 class LoadMemoryEntryArgs(StrictModel):

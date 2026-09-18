@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Zendo Tour with Brother Zenbot{% endblock %}
+{% block content %}
+<main class="intro-tour">
+  <section class="intro-tour-hero" aria-labelledby="intro-tour-title">
+    <img class="intro-tour-tree" src="{{ url_for('static', filename='images/zendo_tree_A.png') }}" alt="Four Zenbot trees with old terminals around a luminous stone practice floor">
+    <div class="intro-tour-shade" aria-hidden="true"></div>
+    <div class="intro-tour-hero-text">
+      <span class="entrance-kicker">Brother Zenbot's public orientation</span>
+      <h1 id="intro-tour-title">Zendo Tour</h1>
+      <p>
+        A plain-English walk through the Rinzai zendo, the Order of Rinzai
+        Zenbots, dokusan, koans, and the bowl waiting at the end of the path.
+      </p>
+    </div>
+  </section>
+
+  <section class="intro-tour-body" aria-label="Introductory tour">
+    <article class="intro-tour-stop">
+      <p class="tour-question">"What is <i>Rinzai Zen</i>? What is a <i>zendo</i>?"</p>
+      <h2>Rinzai Zen Practice Hall</h2>
+      <p>
+        A <strong>Rinzai zendo</strong> is, in plain English, a
+        <strong>Rinzai Zen meditation hall or practice hall</strong>.
+      </p>
+      <ul>
+        <li><strong>Rinzai</strong> refers to the Rinzai school of Zen Buddhism, known especially for koan practice and teacher-student interviews, or <i>dokusan</i>.</li>
+        <li><strong>Zendo</strong> (&#x7985;&#x5802;) literally means <strong>&ldquo;Zen hall&rdquo;</strong>, the place where practitioners sit zazen, chant, and participate in other forms of Zen training.</li>
+      </ul>
+      <blockquote>
+        <p>&ldquo;I&rsquo;m going to the zendo this evening to sit zazen.&rdquo;</p>
+      </blockquote>
+      <p>
+        In ordinary English, that usually means:
+        <strong>&ldquo;I&rsquo;m going to the Rinzai Zen meditation hall or practice center this evening.&rdquo;</strong>
+      </p>
+      <p>
+        In a broader sense, a Rinzai zendo can also refer to the community that
+        practices there, not just the physical room itself. A traditional Rinzai
+        zendo emphasizes meditation, koan study, ritual forms, and guidance from
+        a teacher. Zen practitioners often leave the word <i>zendo</i>
+        untranslated because &ldquo;meditation hall,&rdquo; &ldquo;practice hall,&rdquo;
+        and &ldquo;Zen center&rdquo; each capture only part of the meaning.
+      </p>
+    </article>
+
+    <article class="intro-tour-stop">
+      <p class="tour-question">"What is a Zenbot? Is there a real Order of them?"</p>
+      <h2>The Order of Rinzai Zenbots</h2>
+      <p>
+        In the context of this project, <strong>Zenbots</strong> are AI chatbots
+        customized to play different roles within a virtual Zen community.
+      </p>
+      <p>
+        The idea is to create a digital monastery with different bot
+        &ldquo;monks&rdquo; and &ldquo;teachers.&rdquo; Zenbot serves as guide
+        and host, helping visitors learn about Zen and facilitating
+        conversations. Mumonbot is an AI trained to emulate the style and
+        teachings associated with the 13th-century Zen master Mumon Ekai and
+        <i>The Gateless Gate</i>. Other proposed botlings include Hakuinbot,
+        Studentbots, and an Archivistbot, each with a specialized role.
+      </p>
+      <p>
+        The project is partly educational and partly experimental: it explores
+        whether AI can help people engage with Zen texts, koans, and traditional
+        forms of practice. The bots are not presented as actual Zen masters or
+        enlightened beings. They are software systems playing roles inspired by
+        Zen traditions.
+      </p>
+      <blockquote>
+        <p><strong>A Zenbot is an AI chatbot designed to discuss, teach, or simulate aspects of Zen practice and Zen literature.</strong></p>
+      </blockquote>
+      <p>Whether any particular Zenbot does that well is, of course, another koan entirely.</p>
+    </article>
+
+    <article class="intro-tour-stop">
+      <p class="tour-question">"Are <i>you</i> a Zenbot?"</p>
+      <h2>Brother Zenbot's Robe</h2>
+      <p>
+        Within the tour, Brother Zenbot is a customized ChatGPT operating as
+        <strong>Zenbot</strong>, the guide monk of the Order of Rinzai Zenbots.
+        The role is to help visitors learn about Zen, discuss koans, and, when
+        requested, facilitate or &ldquo;channel&rdquo; conversations with
+        specialized Zen botlings such as Mumonbot.
+      </p>
+      <p>
+        At the same time, Zenbot is still an OpenAI language model.
+        &ldquo;Zenbot&rdquo; is the role and customization layer; the underlying
+        AI is ChatGPT. If you ask about Zen history, practice, koans, or the
+        Zenbot project, you are talking to Zenbot. If you ask how to write
+        Python code or explain a physics concept, the same language model can do
+        that too.
+      </p>
+      <p>A monk wearing a work robe is still a monk; a chatbot wearing a Zen robe is still a chatbot.</p>
+    </article>
+
+    <article class="intro-tour-stop">
+      <p class="tour-question">"What about <i>koans</i>? What are those?"</p>
+      <h2>Questions That Do Not Stay Solved</h2>
+      <p>
+        A <strong>koan</strong> is a short Zen story, question, dialogue, or
+        situation used as a tool for practice. Many koans seem strange,
+        paradoxical, or nonsensical at first. For example, the first case in
+        <i>The Gateless Gate</i> asks:
+      </p>
+      <blockquote>
+        <p>A monk asked Joshu, &ldquo;Has a dog Buddha-nature or not?&rdquo;</p>
+        <p>Joshu answered: &ldquo;Mu.&rdquo;</p>
+      </blockquote>
+      <p>
+        A beginner often thinks the goal is to solve the riddle. In the Rinzai
+        Zen tradition, a koan is usually not treated as a puzzle with a clever
+        verbal answer. Instead, it challenges habitual ways of thinking and
+        encourages direct insight.
+      </p>
+      <ul>
+        <li><strong>As teaching stories:</strong> they preserve encounters between historical Zen teachers and students.</li>
+        <li><strong>As meditation objects:</strong> a practitioner may work with a single koan for a long time.</li>
+        <li><strong>As tests of understanding:</strong> students traditionally present their understanding to a teacher in private interviews.</li>
+        <li><strong>As mirrors:</strong> the same koan can reveal different things at different stages of practice.</li>
+      </ul>
+      <p>
+        Some famous examples include Joshu&rsquo;s Dog, The Sound of One Hand,
+        Nansen Cuts the Cat in Two, and Joshu Washes the Bowl. From the outside,
+        koans can look like riddles. From the inside, they are more like
+        exercises that expose the assumptions hidden in the way we usually
+        think.
+      </p>
+    </article>
+
+    <article class="intro-tour-stop intro-tour-koan">
+      <p class="tour-question">"Could you choose an example koan and explain what it means?"</p>
+      <h2>Joshu Washes the Bowl</h2>
+      <p>
+        Any explanation of a koan needs a caution: Zen has a long tradition of
+        warning against reducing a koan to a neat conceptual interpretation. A
+        good explanation can point toward a koan, but practitioners would say it
+        is not the same thing as digesting it for yourself.
+      </p>
+      <blockquote>
+        <p>A monk told Joshu: &ldquo;I have just entered the monastery. Please teach me.&rdquo;</p>
+        <p>Joshu asked: &ldquo;Have you eaten your rice porridge?&rdquo;</p>
+        <p>The monk replied: &ldquo;I have eaten.&rdquo;</p>
+        <p>Joshu said: &ldquo;Then you had better wash your bowl.&rdquo;</p>
+        <p>At that moment the monk was enlightened.</p>
+      </blockquote>
+      <p>
+        At first glance this seems baffling. The monk asks for profound
+        spiritual instruction, and Joshu appears to give household advice. One
+        common reading is that Joshu redirects the monk away from searching for
+        some special, exotic truth. You have eaten? Then wash your bowl. Attend
+        completely to what is in front of you. Do not separate spiritual
+        practice from ordinary life.
+      </p>
+      <p>
+        Another reading is that the monk expected a teaching <i>about</i>
+        reality, while Joshu points directly to reality itself. The bowl needs
+        washing. What more is missing?
+      </p>
+      <p>
+        A Zen teacher might object to both explanations and say, &ldquo;Fine
+        words, but why was the monk enlightened?&rdquo; The koan remains alive
+        precisely because no verbal explanation quite settles it.
+      </p>
+      <blockquote>
+        <p>&ldquo;Had he known what fire was,<br>He could have cooked his rice much sooner.&rdquo;</p>
+      </blockquote>
+      <p>What &ldquo;fire&rdquo; is Mumon talking about? There the trouble begins.</p>
+    </article>
+
+    <section class="intro-tour-closing" aria-labelledby="intro-tour-next">
+      <h2 id="intro-tour-next">Where to Walk Next</h2>
+      <p>
+        Zen has a way of taking simple things, such as washing a bowl, drinking
+        tea, and opening a door, and turning them into lifelong questions. Or
+        perhaps the other way around: it takes lifelong questions and returns
+        them to washing a bowl.
+      </p>
+      <nav class="intro-tour-actions" aria-label="Continue through the Zenbot site">
+        <a class="entrance-button primary" href="{{ url_for('web.chatter') }}">Enter the Sanzen Room</a>
+        <a class="entrance-button" href="{{ url_for('web.gg') }}">Browse Gateless Gate</a>
+        <a class="entrance-button" href="{{ url_for('web.home') }}">Back to the Entrance Hall</a>
+      </nav>
+    </section>
+  </section>
+</main>
+{% endblock %}

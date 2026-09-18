@@ -3,8 +3,11 @@
 {% block content %}
 <main class="entrance-hall">
   <section class="entrance-hero" aria-labelledby="entrance-title">
-    <img class="entrance-hero-image" src="{{ url_for('static', filename='images/zenbot_hall.png') }}" alt="Mumonbot seated in a zendo-like server hall">
+    <img class="entrance-hero-image" src="{{ url_for('static', filename='images/zendo_mainhall.png') }}" alt="A luminous zendo main hall with seated monks, server racks, and cable paths">
     <div class="entrance-hero-shade" aria-hidden="true"></div>
+    <div class="entrance-flourish entrance-bamboo" aria-hidden="true"></div>
+    <div class="entrance-flourish entrance-lotus" aria-hidden="true"></div>
+    <div class="entrance-flourish entrance-bowl" aria-hidden="true"></div>
     <div class="entrance-hero-content">
       <div class="entrance-kicker">Dokusan at the threshold</div>
       <h1 id="entrance-title">Zenbot Zendo Entrance Hall</h1>
@@ -13,8 +16,9 @@
         room. The full guide and site map will grow here; for now, enter simply.
       </p>
       <div class="entrance-actions" aria-label="Primary paths">
-        <a class="entrance-button primary" href="{{ url_for('chatter') }}">Enter the Sanzen Room</a>
-        <a class="entrance-button" href="{{ url_for('gg') }}">Browse Gateless Gate</a>
+        <a class="entrance-button primary" href="{{ url_for('web.chatter') }}">Enter the Sanzen Room</a>
+        <a class="entrance-button" href="{{ url_for('web.gg') }}">Browse Gateless Gate</a>
+        <a class="entrance-button" href="{{ url_for('admin.admin_conversations') }}">Administrative Area</a>
       </div>
     </div>
   </section>
@@ -25,21 +29,29 @@
       <h2 id="entrance-map-title">Current Paths</h2>
     </div>
     <nav class="entrance-link-grid" aria-label="Zenbot public site map">
-      <a href="{{ url_for('chatter') }}">
+      <a href="{{ url_for('web.intro_tour') }}">
+        <strong>Zendo Tour with Brother Zenbot</strong>
+        <span>What is an <i>Order of Rinzai Zenbots</i>? What do they do in <i>dokusan</i> at their <b>zendo</b>? Brother Zenbot leads the tour.</span>
+      </a>
+      <a href="{{ url_for('web.chatter') }}">
         <strong>Sanzen Room</strong>
         <span>Begin or continue a dokusan conversation.</span>
       </a>
-      <a href="{{ url_for('gg') }}">
+      <a href="{{ url_for('web.gg') }}">
         <strong>Gateless Gate</strong>
         <span>Read Mumonkan cases and bring one into chat.</span>
       </a>
-      <a href="{{ url_for('display_pdf') }}">
+      <a href="{{ url_for('web.display_pdf') }}">
         <strong>Blue Cliff Record</strong>
         <span>Open the current BCR commentary materials.</span>
       </a>
-      <a href="{{ url_for('legacy_splash') }}">
+      <a href="{{ url_for('web.legacy_splash') }}">
         <strong>Legacy Splash</strong>
         <span>View the previous public landing page.</span>
+      </a>
+      <a href="{{ url_for('admin.admin_conversations') }}">
+        <strong>Administrative Area</strong>
+        <span>Open the protected review dashboard and session tools.</span>
       </a>
     </nav>
   </section>
