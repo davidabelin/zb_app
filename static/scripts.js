@@ -881,9 +881,16 @@ function initGGCasePage() {
   const container = document.getElementById("koan-container");
   if (!container) return;
 
-  let caseId = getSessionValue("case_id");
+  // The leaf page's own case is authoritative: /gg/<id> must always render
+  // <id>, even when an earlier "Bring to a Dokusan Session" click left a
+  // different case_id in storage. Fall back to the stored case only when the
+  // page was rendered without one.
+  const pageCaseId = (container.getAttribute("data-case-id") || "").trim();
+  const caseId =
+    pageCaseId && pageCaseId !== "0" ? pageCaseId : getSessionValue("case_id");
   if (!caseId) {
-    caseId = container.getAttribute("data-case-id");
+    container.textContent = "No koan selected.";
+    return;
   }
 
   fetch("/static/mmnk.json")
