@@ -163,3 +163,5 @@ upload-list.txt
 static/images/zendo_mainhall.png
 static/images/zendo_tree_B.png
 static/images/zendo_tree_A.png
+# Local MCP deployment identity/configuration; never commit credentials.
+mcp_app.local.yaml

@@ -1,0 +1,1646 @@
+{
+  "source_version": "3.5.0",
+  "operations": {
+    "zbApiChatOptions": {
+      "$ref": "#/components/schemas/SessionOptionsResponse"
+    },
+    "zbApiChat": {
+      "$ref": "#/components/schemas/ChatTurnResponse"
+    },
+    "zbApiChatCase": {
+      "$ref": "#/components/schemas/ChatCaseResponse"
+    },
+    "zbApiSaveChat": {
+      "$ref": "#/components/schemas/SaveChatResponse"
+    },
+    "listConversations": {
+      "$ref": "#/components/schemas/ConversationListResponse"
+    },
+    "getConversation": {
+      "$ref": "#/components/schemas/ArchivedConversationResponse"
+    },
+    "searchExemplars": {
+      "$ref": "#/components/schemas/ExemplarSearchResponse"
+    },
+    "loadMemoryLogbook": {
+      "$ref": "#/components/schemas/MemorySelectionResponse"
+    },
+    "getMemoryLogbookEntry": {
+      "$ref": "#/components/schemas/MemoryEntryResponse"
+    },
+    "saveMemoryCandidate": {
+      "$ref": "#/components/schemas/MemoryCandidateQueueResponse"
+    },
+    "commitMemoryEntry": {
+      "$ref": "#/components/schemas/MemoryMutationResponse"
+    },
+    "getRandomKoan": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "body",
+        "comment",
+        "verse",
+        "status"
+      ],
+      "description": "Flattened randomly selected koan case object.",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Numeric identifier of the selected koan case."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short title of the selected koan case."
+        },
+        "body": {
+          "type": "string",
+          "description": "Full koan case text suitable for direct reading."
+        },
+        "comment": {
+          "type": "string",
+          "description": "Associated commentary text for the case."
+        },
+        "verse": {
+          "type": "array",
+          "description": "Verse lines associated with the selected koan case.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "type": "string",
+          "description": "Status string, typically `success`."
+        }
+      }
+    },
+    "getKoanByTitle": {
+      "$ref": "#/components/schemas/KoanResponse"
+    },
+    "getKoanById": {
+      "$ref": "#/components/schemas/KoanResponse"
+    },
+    "getSessionEvaluationSummary": {
+      "$ref": "#/components/schemas/ReviewSummaryResponse"
+    },
+    "getSessionEvaluationRecord": {
+      "$ref": "#/components/schemas/ReviewRecordResponse"
+    },
+    "listSessionEvaluationsNeedingZbReview": {
+      "$ref": "#/components/schemas/ReviewNeedsReviewerListResponse"
+    },
+    "getRandomSessionEvaluationForZbReview": {
+      "$ref": "#/components/schemas/ReviewRandomRecordResponse"
+    },
+    "enqueueReview": {
+      "$ref": "#/components/schemas/ReviewRequestQueueResponse"
+    },
+    "setSessionEvaluationDecision": {
+      "$ref": "#/components/schemas/ReviewDecisionResponse"
+    },
+    "getRandomSessionEvaluationSample": {
+      "$ref": "#/components/schemas/ReviewRandomSampleResponse"
+    },
+    "getNextSessionEvaluationRecord": {
+      "$ref": "#/components/schemas/ReviewNextResponse"
+    },
+    "reportRuntimeStatus": {
+      "$ref": "#/components/schemas/RuntimeStatusEventResponse"
+    },
+    "replaceMemoryLogbook": {
+      "$ref": "#/components/schemas/MemoryMutationResponse"
+    },
+    "getOperationStatus": {
+      "type": "object",
+      "required": [
+        "status",
+        "operation_id",
+        "state",
+        "tool",
+        "started_at"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "completed",
+            "uncertain"
+          ]
+        },
+        "tool": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "result": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "schemas": {
+    "SessionOptionsResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "settings_version",
+        "defaults",
+        "presets",
+        "models",
+        "tool_caps"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "settings_version": {
+          "type": "string"
+        },
+        "defaults": {
+          "$ref": "#/components/schemas/ResolvedSessionSettings"
+        },
+        "presets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/SessionPresetOption"
+          }
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/SessionModelOption"
+          }
+        },
+        "tool_caps": {
+          "$ref": "#/components/schemas/SessionToolCaps"
+        }
+      }
+    },
+    "ResolvedSessionSettings": {
+      "type": "object",
+      "description": "Canonical resolved session-settings snapshot locked to one conversation.",
+      "required": [
+        "preset_id",
+        "model_name",
+        "reasoning_effort",
+        "temperature",
+        "top_p",
+        "max_output_tokens",
+        "enable_function_tools",
+        "enable_file_search",
+        "enable_web_search",
+        "enable_background_critic"
+      ],
+      "properties": {
+        "preset_id": {
+          "type": "string"
+        },
+        "model_name": {
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "type": "string"
+        },
+        "temperature": {
+          "type": "number",
+          "nullable": true
+        },
+        "top_p": {
+          "type": "number",
+          "nullable": true
+        },
+        "max_output_tokens": {
+          "type": "integer"
+        },
+        "enable_function_tools": {
+          "type": "boolean"
+        },
+        "enable_file_search": {
+          "type": "boolean"
+        },
+        "enable_web_search": {
+          "type": "boolean"
+        },
+        "enable_background_critic": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SessionPresetOption": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "description",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/components/schemas/ResolvedSessionSettings"
+        }
+      }
+    },
+    "SessionModelOption": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "supports_reasoning",
+        "reasoning_efforts",
+        "supports_sampling_controls"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "supports_reasoning": {
+          "type": "boolean"
+        },
+        "reasoning_efforts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "supports_sampling_controls": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SessionToolCaps": {
+      "type": "object",
+      "required": [
+        "enable_function_tools",
+        "enable_file_search",
+        "enable_web_search",
+        "enable_background_critic"
+      ],
+      "properties": {
+        "enable_function_tools": {
+          "type": "boolean"
+        },
+        "enable_file_search": {
+          "type": "boolean"
+        },
+        "enable_web_search": {
+          "type": "boolean"
+        },
+        "enable_background_critic": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ChatTurnResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "conversation_id",
+        "conversation_status",
+        "response",
+        "session_settings"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "conversation_id": {
+          "type": "string",
+          "description": "Canonical conversation identifier to reuse on the next turn."
+        },
+        "conversation_status": {
+          "type": "string",
+          "enum": [
+            "created",
+            "continued",
+            "recreated_from_unknown_id"
+          ]
+        },
+        "requested_conversation_id": {
+          "type": "string",
+          "description": "Original unknown `conversation_id` supplied by the caller when the session had to be recreated."
+        },
+        "response": {
+          "type": "string"
+        },
+        "session_settings": {
+          "$ref": "#/components/schemas/ResolvedSessionSettings"
+        }
+      }
+    },
+    "ChatCaseResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "conversation_id",
+        "case_id",
+        "session_settings"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "session_settings": {
+          "$ref": "#/components/schemas/ResolvedSessionSettings"
+        }
+      }
+    },
+    "SaveChatResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "conversation_id",
+        "archived"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "background_critic_response_id": {
+          "type": "string"
+        }
+      }
+    },
+    "ConversationListResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "conversation_ids",
+        "records",
+        "total_matching",
+        "offset",
+        "limit",
+        "has_more"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "conversation_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/ConversationListRecord"
+          }
+        },
+        "total_matching": {
+          "type": "integer"
+        },
+        "offset": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "has_more": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ConversationListRecord": {
+      "type": "object",
+      "required": [
+        "conversation_id"
+      ],
+      "properties": {
+        "conversation_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "saved_at": {
+          "type": "string"
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "koan": {
+          "type": "string"
+        },
+        "student": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "message_count": {
+          "type": "integer"
+        },
+        "preview_user": {
+          "type": "string"
+        },
+        "preview_assistant": {
+          "type": "string"
+        }
+      }
+    },
+    "ArchivedConversationResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "conversation_id",
+        "messages"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "ExemplarSearchResponse": {
+      "type": "object",
+      "description": "Normalized response for approved-exemplar search.",
+      "required": [
+        "status",
+        "query",
+        "case_id",
+        "search_status",
+        "returned_count",
+        "results"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "query": {
+          "type": "string",
+          "description": "Search query that was evaluated."
+        },
+        "case_id": {
+          "type": "string",
+          "description": "Optional exact case filter used for the search."
+        },
+        "search_status": {
+          "type": "string",
+          "description": "Search-specific status, usually `success`; may be `empty_query` when no useful tokens were supplied."
+        },
+        "returned_count": {
+          "type": "integer",
+          "description": "Number of exemplar snippets returned."
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/ExemplarSearchResult"
+          }
+        }
+      }
+    },
+    "ExemplarSearchResult": {
+      "type": "object",
+      "description": "Compact reviewer-approved session snippet returned by exemplar search. This is deliberately summary-only; fetch the review record or archived conversation before using a transcript as training material.",
+      "required": [
+        "conversation_id",
+        "case_id",
+        "score",
+        "preview_user",
+        "preview_assistant",
+        "excerpt"
+      ],
+      "properties": {
+        "conversation_id": {
+          "type": "string",
+          "description": "Archived conversation identifier associated with the exemplar snippet."
+        },
+        "case_id": {
+          "type": "string",
+          "description": "Koan case identifier recorded for the matching session, if any."
+        },
+        "score": {
+          "type": "integer",
+          "description": "Simple token-match score used only to rank compact search results."
+        },
+        "preview_user": {
+          "type": "string",
+          "description": "First compact user-message preview from the review manifest."
+        },
+        "preview_assistant": {
+          "type": "string",
+          "description": "First compact assistant-message preview from the review manifest."
+        },
+        "excerpt": {
+          "type": "string",
+          "description": "Short role-labeled transcript excerpt for quick relevance triage."
+        }
+      }
+    },
+    "MemorySelectionResponse": {
+      "type": "object",
+      "description": "Compact newest-first memory index returned for GPT-side memory selection.",
+      "required": [
+        "status",
+        "summaries",
+        "returned_count",
+        "total_count",
+        "limit",
+        "start_index",
+        "end_index",
+        "next_end_index",
+        "has_more"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "summaries": {
+          "type": "array",
+          "description": "Compact memory summaries suitable for selection without loading full entries.",
+          "items": {
+            "$ref": "#/components/schemas/MemorySelectionSummary"
+          }
+        },
+        "returned_count": {
+          "type": "integer",
+          "description": "Number of summaries included in this response."
+        },
+        "total_count": {
+          "type": "integer",
+          "description": "Total number of memory entries currently available."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Effective `limit` value used to cap the summary list."
+        },
+        "start_index": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Zero-based first normalized logbook index included in the returned page."
+        },
+        "end_index": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Zero-based last normalized logbook index included in the returned page."
+        },
+        "next_end_index": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Use this value as `end_index` to retrieve the next older page, when present."
+        },
+        "has_more": {
+          "type": "boolean",
+          "description": "Indicates whether additional older memory summaries exist beyond this response."
+        }
+      }
+    },
+    "MemorySelectionSummary": {
+      "type": "object",
+      "description": "Compact summary used to choose whether a memory entry should be loaded in full.",
+      "required": [
+        "serial_number",
+        "date",
+        "time",
+        "title",
+        "primary_koan",
+        "koan_count",
+        "focus",
+        "final_outcome"
+      ],
+      "properties": {
+        "serial_number": {
+          "type": "string",
+          "description": "Server-assigned zero-padded sequential serial string to use with `/zb_api/load_memory_entry/{serial_number}`, such as `001`."
+        },
+        "date": {
+          "type": "string",
+          "description": "Calendar date of the memory entry."
+        },
+        "time": {
+          "type": "string",
+          "description": "Time associated with the memory entry."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short human-readable title for quick selection."
+        },
+        "primary_koan": {
+          "type": "string",
+          "description": "First koan or primary case label associated with the entry, if any."
+        },
+        "koan_count": {
+          "type": "integer",
+          "description": "Number of koans associated with the entry."
+        },
+        "focus": {
+          "type": "string",
+          "description": "Compact statement of the user issue or question that memory addresses."
+        },
+        "final_outcome": {
+          "type": "string",
+          "description": "Compact statement of how the session concluded."
+        }
+      }
+    },
+    "MemoryEntryResponse": {
+      "type": "object",
+      "description": "Full single-memory response returned after a summary entry has been selected.",
+      "required": [
+        "status",
+        "serial_number",
+        "memory"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "serial_number": {
+          "type": "string",
+          "description": "Server-assigned zero-padded sequential serial string of the memory entry returned in `memory`."
+        },
+        "memory": {
+          "$ref": "#/components/schemas/MemoryEntry"
+        }
+      }
+    },
+    "MemoryEntry": {
+      "type": "object",
+      "description": "Canonical long-term memory entry. Fill fields conservatively from known\nsession facts; do not invent missing details. Use summaries for selection\nand load this full shape only when one memory is needed.\n",
+      "required": [
+        "date",
+        "time",
+        "serial_number",
+        "title",
+        "koans_used",
+        "user_problem_or_questions",
+        "response_summary",
+        "session_evaluations",
+        "key_insights",
+        "lessons_learned",
+        "final_outcome"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Calendar date of the session or memory record."
+        },
+        "time": {
+          "type": "string",
+          "description": "Time associated with the session or memory record."
+        },
+        "serial_number": {
+          "type": "string",
+          "description": "Server-assigned zero-padded sequential serial string for the canonical logbook order, such as `001`."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short title summarizing the session or memory theme."
+        },
+        "koans_used": {
+          "type": "array",
+          "description": "List of koans explicitly used, discussed, or referenced.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "user_problem_or_questions": {
+          "type": "string",
+          "description": "Main issue, struggle, question, or request brought by the user."
+        },
+        "response_summary": {
+          "type": "string",
+          "description": "Concise but meaningful summary of the response or guidance given."
+        },
+        "session_evaluations": {
+          "type": "array",
+          "description": "Structured evaluations attached to the session.",
+          "items": {
+            "$ref": "#/components/schemas/SessionEvaluation"
+          }
+        },
+        "key_insights": {
+          "type": "array",
+          "description": "Important realizations, interpretive turns, or clarifying insights.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lessons_learned": {
+          "type": "array",
+          "description": "Generalizable lessons extracted from the exchange.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "final_outcome": {
+          "type": "string",
+          "description": "Net result or conclusion of the interaction."
+        },
+        "user_instructions": {
+          "type": "array",
+          "description": "Any enduring instructions or preferences the user expressed.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "SessionEvaluation": {
+      "type": "object",
+      "description": "Structured evaluation of one session or case-specific exchange. This is\nintended to capture a concise but explicit assessment of how a particular\nconversation instance went.\n",
+      "required": [
+        "case",
+        "conversation_id",
+        "evaluation",
+        "notes"
+      ],
+      "properties": {
+        "case": {
+          "type": "string",
+          "description": "Koan case identifier or label relevant to the evaluation."
+        },
+        "conversation_id": {
+          "type": "string",
+          "description": "Conversation identifier associated with the evaluated session."
+        },
+        "evaluation": {
+          "type": "string",
+          "description": "Short evaluative judgment or classification of the session."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Supporting rationale, observations, or nuance for the evaluation."
+        }
+      }
+    },
+    "MemoryCandidateQueueResponse": {
+      "type": "object",
+      "description": "Compact acknowledgement for a queued memory candidate.",
+      "required": [
+        "status",
+        "message",
+        "queued_at",
+        "serial_number",
+        "title",
+        "canonical_logbook_updated",
+        "queue_blob"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable queue acknowledgement."
+        },
+        "queued_at": {
+          "type": "string",
+          "description": "UTC timestamp when the candidate was queued."
+        },
+        "serial_number": {
+          "type": "string",
+          "description": "Candidate serial number supplied in the proposed entry."
+        },
+        "title": {
+          "type": "string",
+          "description": "Candidate memory title supplied in the proposed entry."
+        },
+        "canonical_logbook_updated": {
+          "type": "boolean",
+          "description": "Always false for this queue-only endpoint; use `commitMemoryEntry` for authoritative memory promotion."
+        },
+        "queue_blob": {
+          "type": "string",
+          "description": "Cloud/local queue location where the candidate was written."
+        }
+      }
+    },
+    "MemoryMutationResponse": {
+      "type": "object",
+      "description": "Compact acknowledgement returned after committing one reviewed memory entry.",
+      "required": [
+        "status",
+        "message",
+        "count"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable description of the memory commit that succeeded."
+        },
+        "count": {
+          "type": "integer",
+          "description": "Number of entries in the logbook after the write completed."
+        },
+        "serial_number": {
+          "type": "string",
+          "description": "Server-assigned zero-padded sequential serial string of the appended entry when the operation added one entry."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the appended entry when the operation added one entry."
+        }
+      }
+    },
+    "KoanResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "id",
+        "title",
+        "body",
+        "comment",
+        "verse"
+      ],
+      "description": "Flattened Mumonkan koan case object.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "id": {
+          "type": "integer",
+          "description": "Numeric identifier of the selected koan case."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short title of the selected koan case."
+        },
+        "body": {
+          "type": "string",
+          "description": "Full koan case text suitable for direct reading."
+        },
+        "comment": {
+          "type": "string",
+          "description": "Associated commentary text for the case."
+        },
+        "verse": {
+          "type": "array",
+          "description": "Verse lines associated with the selected koan case.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "solution_notes": {
+          "type": "array",
+          "description": "Optional project solution notes for the requested case. Present only when requested and when notes are recorded; these notes may be terse calibration hints rather than public commentary.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ReviewSummaryResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "summary",
+        "progress_summary",
+        "storage"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "summary": {
+          "$ref": "#/components/schemas/ReviewSummary"
+        },
+        "progress_summary": {
+          "$ref": "#/components/schemas/ReviewProgressSummary"
+        },
+        "storage": {
+          "$ref": "#/components/schemas/ReviewStorage"
+        }
+      }
+    },
+    "ReviewSummary": {
+      "type": "object",
+      "description": "Final dual-review outcome counts. A row stays `unreviewed` here until a final outcome can be derived from the dual-review rules.",
+      "required": [
+        "total",
+        "Use",
+        "Alter",
+        "Reject",
+        "unreviewed"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer"
+        },
+        "Use": {
+          "type": "integer"
+        },
+        "Alter": {
+          "type": "integer"
+        },
+        "Reject": {
+          "type": "integer"
+        },
+        "unreviewed": {
+          "type": "integer",
+          "description": "Rows without a final dual-review outcome yet."
+        }
+      }
+    },
+    "ReviewProgressSummary": {
+      "type": "object",
+      "description": "Reviewer-specific progress counts, including partial reviews not yet reflected in final outcome counts.",
+      "required": [
+        "cm_reviewed",
+        "zb_reviewed",
+        "needs_cm_review",
+        "needs_zb_review",
+        "awaiting_other_review",
+        "not_started"
+      ],
+      "properties": {
+        "cm_reviewed": {
+          "type": "integer",
+          "description": "Rows with a CM/manual reviewer decision."
+        },
+        "zb_reviewed": {
+          "type": "integer",
+          "description": "Rows with a ZB/GPT reviewer decision."
+        },
+        "needs_cm_review": {
+          "type": "integer",
+          "description": "Rows still missing a CM/manual reviewer decision."
+        },
+        "needs_zb_review": {
+          "type": "integer",
+          "description": "Rows still missing a ZB/GPT reviewer decision."
+        },
+        "awaiting_other_review": {
+          "type": "integer",
+          "description": "Rows with exactly one reviewer decision and no final dual-review outcome."
+        },
+        "not_started": {
+          "type": "integer",
+          "description": "Rows with neither reviewer decision."
+        }
+      }
+    },
+    "ReviewStorage": {
+      "type": "object",
+      "required": [
+        "bucket",
+        "transcripts_prefix",
+        "review_index_blob",
+        "sessions_to_train_blob"
+      ],
+      "properties": {
+        "bucket": {
+          "type": "string"
+        },
+        "transcripts_prefix": {
+          "type": "string"
+        },
+        "review_index_blob": {
+          "type": "string"
+        },
+        "sessions_to_train_blob": {
+          "type": "string"
+        }
+      }
+    },
+    "ReviewRecordResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "record"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "record": {
+          "$ref": "#/components/schemas/ReviewRecordEnvelope"
+        }
+      }
+    },
+    "ReviewRecordEnvelope": {
+      "type": "object",
+      "required": [
+        "index",
+        "display_number",
+        "evaluation",
+        "review_version",
+        "review_zb",
+        "review_cm",
+        "messages",
+        "metadata",
+        "summary",
+        "navigation"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer"
+        },
+        "display_number": {
+          "type": "integer"
+        },
+        "evaluation": {
+          "type": "string",
+          "nullable": true,
+          "description": "Final derived categorization.\n- `Use` only when both reviewers choose `Use`\n- `Reject` only when both reviewers choose `Reject`\n- `Alter` when either reviewer chooses `Alter` or when both reviewers disagree\n- `null` when no final categorization exists yet\n"
+        },
+        "review_version": {
+          "type": "integer",
+          "description": "Review-model version.\n`1` means a grandfathered legacy single-review row.\n`2` means a dual-review row with reviewer-specific fields.\n"
+        },
+        "review_zb": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/ReviewChoice"
+            }
+          ],
+          "nullable": true,
+          "description": "ZB/GPT reviewer decision, if present."
+        },
+        "review_cm": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/ReviewChoice"
+            }
+          ],
+          "nullable": true,
+          "description": "CM/manual reviewer decision, if present."
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Message"
+          }
+        },
+        "metadata": {
+          "$ref": "#/components/schemas/ReviewMetadata"
+        },
+        "summary": {
+          "$ref": "#/components/schemas/ReviewSummary"
+        },
+        "navigation": {
+          "$ref": "#/components/schemas/ReviewNavigation"
+        }
+      }
+    },
+    "ReviewChoice": {
+      "type": "string",
+      "enum": [
+        "Use",
+        "Alter",
+        "Reject"
+      ]
+    },
+    "Message": {
+      "type": "object",
+      "required": [
+        "role",
+        "content"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "system",
+            "user",
+            "assistant"
+          ]
+        },
+        "content": {
+          "type": "string"
+        }
+      }
+    },
+    "ReviewMetadata": {
+      "type": "object",
+      "required": [
+        "conversation_id",
+        "transcript_blob_name",
+        "transcript_hash",
+        "message_count"
+      ],
+      "properties": {
+        "conversation_id": {
+          "type": "string"
+        },
+        "transcript_blob_name": {
+          "type": "string"
+        },
+        "transcript_hash": {
+          "type": "string"
+        },
+        "message_count": {
+          "type": "integer"
+        },
+        "saved_at": {
+          "type": "string",
+          "nullable": true
+        },
+        "case_id": {
+          "type": "string",
+          "nullable": true
+        },
+        "profile": {
+          "type": "string",
+          "nullable": true
+        },
+        "loss": {
+          "nullable": true
+        },
+        "model": {
+          "type": "string",
+          "nullable": true
+        },
+        "student": {
+          "type": "string",
+          "nullable": true
+        },
+        "botling_id": {
+          "type": "string",
+          "nullable": true
+        },
+        "settings_version": {
+          "type": "string",
+          "nullable": true
+        },
+        "session_settings": {
+          "$ref": "#/components/schemas/ResolvedSessionSettings",
+          "nullable": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "ReviewNavigation": {
+      "type": "object",
+      "required": [
+        "previous_index",
+        "next_index",
+        "next_unreviewed_index"
+      ],
+      "properties": {
+        "previous_index": {
+          "type": "integer"
+        },
+        "next_index": {
+          "type": "integer"
+        },
+        "next_unreviewed_index": {
+          "type": "integer",
+          "nullable": true
+        }
+      }
+    },
+    "ReviewNeedsReviewerListResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "reviewer",
+        "total_matching",
+        "offset",
+        "limit",
+        "has_more",
+        "records"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "reviewer": {
+          "type": "string",
+          "enum": [
+            "ZB"
+          ],
+          "description": "Reviewer queue represented by this response."
+        },
+        "total_matching": {
+          "type": "integer",
+          "description": "Total rows still missing the ZB/GPT reviewer decision."
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Offset used for this page."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of rows requested for this page."
+        },
+        "has_more": {
+          "type": "boolean",
+          "description": "Whether more matching rows exist after this page."
+        },
+        "records": {
+          "type": "array",
+          "description": "Compact summary rows; these do not contain transcript messages.",
+          "items": {
+            "$ref": "#/components/schemas/ReviewListItem"
+          }
+        }
+      }
+    },
+    "ReviewListItem": {
+      "type": "object",
+      "description": "Compact review-row summary for queue listings and random samples. This\nobject intentionally does not include transcript `messages`. Use `index`\nwith `/zb_api/session-evaluations/record/{index}` when a full transcript\nis needed before applying a decision.\n",
+      "required": [
+        "index",
+        "display_number",
+        "conversation_id",
+        "evaluation",
+        "status_label",
+        "status_class",
+        "review_version",
+        "review_zb",
+        "review_cm",
+        "preview_user",
+        "preview_assistant",
+        "message_count",
+        "student",
+        "model",
+        "case_id",
+        "profile",
+        "botling_id",
+        "saved_at"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "description": "Zero-based record index for full-record lookup or decisions."
+        },
+        "display_number": {
+          "type": "integer",
+          "description": "Human-friendly one-based display number."
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "evaluation": {
+          "type": "string",
+          "nullable": true,
+          "description": "Final derived review result, or null when not finalized."
+        },
+        "status_label": {
+          "type": "string",
+          "description": "Human-readable status such as `Unreviewed`, `Awaiting Other Review`, `Use`, `Alter`, or `Reject`."
+        },
+        "status_class": {
+          "type": "string",
+          "description": "CSS-friendly status token used by the browser dashboard."
+        },
+        "review_version": {
+          "type": "integer"
+        },
+        "review_zb": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/ReviewChoice"
+            }
+          ],
+          "nullable": true,
+          "description": "ZB/GPT reviewer decision, if present."
+        },
+        "review_cm": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/ReviewChoice"
+            }
+          ],
+          "nullable": true,
+          "description": "CM/manual reviewer decision, if present."
+        },
+        "preview_user": {
+          "type": "string",
+          "description": "Compact first user-message preview for triage only."
+        },
+        "preview_assistant": {
+          "type": "string",
+          "description": "Compact first assistant-message preview for triage only."
+        },
+        "message_count": {
+          "type": "integer"
+        },
+        "student": {
+          "type": "string",
+          "nullable": true
+        },
+        "model": {
+          "type": "string",
+          "nullable": true
+        },
+        "case_id": {
+          "type": "string",
+          "nullable": true
+        },
+        "profile": {
+          "type": "string",
+          "nullable": true
+        },
+        "botling_id": {
+          "type": "string",
+          "nullable": true
+        },
+        "saved_at": {
+          "type": "string",
+          "nullable": true
+        }
+      }
+    },
+    "ReviewRandomRecordResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "reviewer",
+        "available_count",
+        "selected_index",
+        "record"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "reviewer": {
+          "type": "string",
+          "enum": [
+            "ZB"
+          ],
+          "description": "Reviewer queue sampled by this response."
+        },
+        "available_count": {
+          "type": "integer",
+          "description": "Number of non-excluded ZB-needed records available to choose."
+        },
+        "selected_index": {
+          "type": "integer",
+          "nullable": true,
+          "description": "Selected record index, or null when no eligible record exists."
+        },
+        "record": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/ReviewRecordEnvelope"
+            }
+          ],
+          "nullable": true,
+          "description": "Full selected review record, including transcript messages, or null when no eligible record exists."
+        }
+      }
+    },
+    "ReviewRequestQueueResponse": {
+      "type": "object",
+      "description": "Compact acknowledgement for a queued review request.",
+      "required": [
+        "status",
+        "message",
+        "queued_at",
+        "conversation_id",
+        "reviewer",
+        "note"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "queued_at": {
+          "type": "string",
+          "description": "UTC timestamp when the review request was queued."
+        },
+        "conversation_id": {
+          "type": "string"
+        },
+        "reviewer": {
+          "$ref": "#/components/schemas/ReviewerCode"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "ReviewerCode": {
+      "type": "string",
+      "enum": [
+        "ZB",
+        "CM"
+      ]
+    },
+    "ReviewDecisionResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "record",
+        "next_unreviewed_index",
+        "summary",
+        "progress_summary"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "record": {
+          "$ref": "#/components/schemas/ReviewRecordEnvelope"
+        },
+        "next_unreviewed_index": {
+          "type": "integer",
+          "nullable": true
+        },
+        "summary": {
+          "$ref": "#/components/schemas/ReviewSummary"
+        },
+        "progress_summary": {
+          "$ref": "#/components/schemas/ReviewProgressSummary"
+        }
+      }
+    },
+    "ReviewRandomSampleResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "requested_count",
+        "sampled_count",
+        "available_count",
+        "records"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "requested_count": {
+          "type": "integer",
+          "description": "Effective requested count after validation."
+        },
+        "sampled_count": {
+          "type": "integer",
+          "description": "Number of unique compact rows returned."
+        },
+        "available_count": {
+          "type": "integer",
+          "description": "Number of non-excluded rows available for sampling."
+        },
+        "records": {
+          "type": "array",
+          "description": "Compact random sample rows; these do not contain transcript messages.",
+          "items": {
+            "$ref": "#/components/schemas/ReviewListItem"
+          }
+        }
+      }
+    },
+    "ReviewNextResponse": {
+      "type": "object",
+      "required": [
+        "status",
+        "evaluation_filter",
+        "next_index",
+        "record"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "evaluation_filter": {
+          "type": "string"
+        },
+        "next_index": {
+          "type": "integer",
+          "nullable": true
+        },
+        "record": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/ReviewRecordEnvelope"
+            }
+          ],
+          "nullable": true
+        }
+      }
+    },
+    "RuntimeStatusEventResponse": {
+      "type": "object",
+      "description": "Acknowledgement for one recorded runtime status event.",
+      "required": [
+        "status",
+        "message",
+        "stage",
+        "detail"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

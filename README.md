@@ -17,6 +17,8 @@ single App Engine application with an OpenAI-native runtime underneath:
 - `app_support.py`: shared HTTP contracts, auth, CORS, request guards, and errors
 - `web_routes.py`: public pages and browser-session chat routes
 - `zb_api.py`: authenticated JSON endpoints used by GPT Actions and operators
+- `zb_services/`: shared conversation, memory, koan, and review workflows
+- `zb_mcp/`: independent private MCP transport, OAuth, and durable write receipts
 - `admin_routes.py`: browser-facing admin and review workflows
 - `utilities.py`: hot-state storage, Responses API adapter, koan lookup, GCS
   archive helpers, memory logbook helpers, and tool handlers
@@ -32,6 +34,8 @@ The v3.2 runtime is App Engine-only:
 
 - one public App Engine service serves browser routes, SSE chat, admin pages,
   and authenticated API routes from the same host
+- an independently deployed private `mcp` service exposes the shared API workflows
+  through authenticated Streamable HTTP; see [MCP_SETUP.md](MCP_SETUP.md)
 - `CHAT_ALLOWED_ORIGINS` remains available only for explicit extra browser
   callers; it is no longer used for a split Zenbot shell/API topology
 - active conversation state uses Redis/Memorystore when `REDIS_URL` is set,
@@ -159,6 +163,13 @@ project notes, training data, and historical assets.
 - `STREAMING_ENABLED`
 - `WEB_APP_ORIGIN`
 - `CHAT_ALLOWED_ORIGINS`
+
+## Private MCP Service
+
+The independent `mcp` App Engine service exposes the existing API workflows as
+typed MCP tools using shared Python services. It adds Google account authorization,
+encrypted OAuth state, durable write receipts, and an explicit logbook-replacement
+tool. See [MCP_SETUP.md](MCP_SETUP.md) for setup, testing, deployment, and recovery.
 
 ## Key Workflows
 

@@ -45,3 +45,6 @@ config/
 .vscode/
 tests/
 upload-list.txt
+mcp_app.local.yaml
+.env
+.env.*

@@ -52,15 +52,17 @@ from contracts import (
     ToolCallResult,
 )
 from models import MODEL_LOSSES
+import storage_policy
 
 # Optional cloud dependencies.
+firestore: Any
 try:
     from google.cloud import firestore
 except Exception:
     firestore = None
 
 try:
-    from google.cloud import storage
+    import google.cloud.storage as storage
 except Exception:
     storage = None
 
@@ -103,7 +105,7 @@ BOTLING = (
     else None
 )
 
-DB = None
+DB: Any = None
 if firestore is not None:
     try:
         DB = firestore.Client(project=config.GOOGLE_CLOUD_PROJECT)
@@ -168,6 +170,7 @@ def _write_jsonl_record(
 ) -> None:
     """Append one JSON record to GCS or a local JSONL fallback file."""
 
+    storage_policy.require(BUCKET is not None, "Cloud queue storage is unavailable.")
     payload = json.dumps(record, ensure_ascii=False, default=str) + "\n"
     if BUCKET:
         blob = BUCKET.blob(blob_name)
@@ -602,6 +605,11 @@ def save_messages_to_firestore(
     metadata: dict[str, Any] | None = None,
 ) -> None:
     """Persist live conversation state to Redis, Firestore, or the local cache."""
+
+    storage_policy.require(
+        config.HOT_STATE_BACKEND != "redis" or REDIS is not None,
+        "Configured Redis backend is unavailable.",
+    )
     payload = {
         "conversation_id": conversation_id,
         "messages": messages,
@@ -618,9 +626,14 @@ def save_messages_to_firestore(
             )
             return
         except Exception as e:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Redis operation failed."
+                ) from e
             logging.warning("Redis save failed for %s: %s", conversation_id, e)
 
     if DB is None:
+        storage_policy.require(False, "Firestore backend is unavailable.")
         existing = _LOCAL_CONVERSATIONS.get(conversation_id, {})
         merged = {
             **existing,
@@ -635,6 +648,10 @@ def save_messages_to_firestore(
             payload, merge=True
         )
     except Exception as e:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable(
+                "Firestore operation failed."
+            ) from e
         logging.error("Error saving conversation %s: %s", conversation_id, e)
 
 
@@ -642,6 +659,11 @@ def get_conversation_state(
     conversation_id: str,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
     """Load live conversation messages and metadata for one conversation ID."""
+
+    storage_policy.require(
+        config.HOT_STATE_BACKEND != "redis" or REDIS is not None,
+        "Configured Redis backend is unavailable.",
+    )
     if not conversation_id:
         return base_startup(), {}
 
@@ -653,10 +675,17 @@ def get_conversation_state(
                 return parsed.get("messages", []), _normalize_conversation_metadata(
                     parsed.get("metadata", {})
                 )
+            if storage_policy.is_strict():
+                return base_startup(), {}
         except Exception as e:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Redis operation failed."
+                ) from e
             logging.warning("Redis load failed for %s: %s", conversation_id, e)
 
     if DB is None:
+        storage_policy.require(False, "Firestore backend is unavailable.")
         payload = _LOCAL_CONVERSATIONS.get(conversation_id)
         if not payload:
             return base_startup(), {}
@@ -667,6 +696,10 @@ def get_conversation_state(
     try:
         doc = DB.collection("conversations").document(conversation_id).get()
     except Exception as e:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable(
+                "Firestore operation failed."
+            ) from e
         logging.error("Error retrieving conversation %s: %s", conversation_id, e)
         return base_startup(), {}
 
@@ -693,22 +726,38 @@ def get_conversation_metadata(conversation_id: str) -> dict[str, Any]:
 
 def delete_messages_from_firestore(conversation_id: str) -> None:
     """Delete one live conversation record from Redis, Firestore, or local cache."""
+
+    storage_policy.require(
+        config.HOT_STATE_BACKEND != "redis" or REDIS is not None,
+        "Configured Redis backend is unavailable.",
+    )
     if not conversation_id:
         return
 
     if REDIS is not None and config.HOT_STATE_BACKEND == "redis":
         try:
             REDIS.delete(_conversation_store_key(conversation_id))
+            if storage_policy.is_strict():
+                return
         except Exception as e:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Redis operation failed."
+                ) from e
             logging.warning("Redis delete failed for %s: %s", conversation_id, e)
 
     if DB is None:
+        storage_policy.require(False, "Firestore backend is unavailable.")
         _LOCAL_CONVERSATIONS.pop(conversation_id, None)
         return
 
     try:
         DB.collection("conversations").document(conversation_id).delete()
     except Exception as e:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable(
+                "Firestore operation failed."
+            ) from e
         logging.error("Error deleting conversation %s: %s", conversation_id, e)
 
 
@@ -931,7 +980,11 @@ def _get_openai_client():
         raise ModelAPIError(
             "OpenAI client unavailable. Install `openai` and set OPENAI_API_KEY."
         )
-    return BOTLING
+    # An ambiguous provider call must reach the MCP operation ledger without
+    # SDK retries repeating work that may already have happened.
+    return (
+        BOTLING.with_options(max_retries=0) if storage_policy.is_strict() else BOTLING
+    )
 
 
 def _strict_json_schema(model_cls: type[BaseModel]) -> dict[str, Any]:
@@ -1466,6 +1519,8 @@ def _search_exemplars_tool(arguments: dict[str, Any]) -> dict[str, Any]:
 
         rows = session_reviews.load_review_state()
     except Exception as exc:
+        if storage_policy.is_strict():
+            raise
         logging.warning("search_exemplars unavailable: %s", exc)
         return {"status": "unavailable", "results": []}
 
@@ -1488,6 +1543,8 @@ def _search_exemplars_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         try:
             record = session_reviews.serialize_record(rows, index)
         except Exception:
+            if storage_policy.is_strict():
+                raise
             continue
         ranked.append(
             (
@@ -1612,7 +1669,8 @@ def _report_ui_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     """Log one UI/runtime status event."""
 
     args = ReportUiStatusArgs.model_validate(arguments)
-    logging.info("ui_status stage=%s detail=%s", args.stage, args.detail)
+    if not storage_policy.is_strict():
+        logging.info("ui_status stage=%s detail=%s", args.stage, args.detail)
     return {"status": "reported", "stage": args.stage, "detail": args.detail}
 
 
@@ -1661,6 +1719,8 @@ def _dispatch_function_tool(
             payload={"error": "validation_error", "details": exc.errors()},
         )
     except Exception as exc:
+        if storage_policy.is_strict():
+            raise
         logging.exception("Function tool '%s' failed", name)
         result = ToolCallResult(
             name=name,
@@ -1729,7 +1789,7 @@ def get_model_stream(
     """Yield a streamed assistant reply from the OpenAI Responses API."""
 
     client = _get_openai_client()
-    max_attempts = 2
+    max_attempts = 1 if storage_policy.is_strict() else 2
     for attempt in range(1, max_attempts + 1):
         produced_output = False
         try:
@@ -1795,7 +1855,7 @@ def get_model_reply(
     """Return a full assistant reply from the Responses API with tool handling."""
 
     client = _get_openai_client()
-    max_attempts = 2
+    max_attempts = 1 if storage_policy.is_strict() else 2
     for attempt in range(1, max_attempts + 1):
         try:
             previous_response_id = _candidate_previous_response_id(metadata, messages)
@@ -1861,6 +1921,8 @@ def get_model_reply(
                 return content
             raise ModelAPIError("No model response received.")
         except Exception as e:
+            if storage_policy.is_strict():
+                raise
             if (
                 "previous_response_id" in str(e).lower()
                 and metadata is not None
@@ -2046,6 +2108,8 @@ def submit_background_session_critic(
     try:
         client = _get_openai_client()
     except ModelAPIError:
+        if storage_policy.is_strict():
+            raise
         return ""
 
     critic_schema = {
@@ -2120,6 +2184,8 @@ def submit_background_session_critic(
             ),
         )
     except Exception as exc:
+        if storage_policy.is_strict():
+            raise
         logging.warning(
             "Background session critic submission failed for %s: %s",
             conversation_id,
@@ -2274,7 +2340,9 @@ def _conversation_record_from_blob(blob: Any) -> dict[str, Any]:
     messages: list[dict[str, Any]] = []
     try:
         lines = blob.download_as_string().decode("utf-8").splitlines()
-    except Exception:
+    except Exception as exc:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable("Archive read failed.") from exc
         lines = []
 
     for line in lines:
@@ -2364,8 +2432,16 @@ def _parse_logbook_payload(payload: str) -> list[dict[str, Any]]:
     if text.startswith("["):
         try:
             data = json.loads(text)
+            storage_policy.require(
+                isinstance(data, list) and all(isinstance(item, dict) for item in data),
+                "Invalid memory logbook record.",
+            )
             return data if isinstance(data, list) else []
-        except Exception:
+        except Exception as exc:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Invalid memory logbook JSON."
+                ) from exc
             return []
 
     memories: list[dict[str, Any]] = []
@@ -2375,10 +2451,16 @@ def _parse_logbook_payload(payload: str) -> list[dict[str, Any]]:
             continue
         try:
             obj = json.loads(line)
-        except Exception:
+        except Exception as exc:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Invalid memory logbook JSONL."
+                ) from exc
             continue
         if isinstance(obj, dict):
             memories.append(obj)
+        elif storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable("Invalid memory logbook record.")
     return memories
 
 
@@ -2690,6 +2772,7 @@ def load_memory_logbook() -> list[dict[str, Any]]:
     In cloud runtimes, this function raises if the GCS-backed logbook cannot be
     loaded so the app does not silently drift into a local-only fallback.
     """
+    storage_policy.require(BUCKET is not None, "Cloud memory storage is unavailable.")
     payload = None
 
     if BUCKET:
@@ -2700,11 +2783,15 @@ def load_memory_logbook() -> list[dict[str, Any]]:
                     payload = blob.download_as_text()
                     break
             except Exception as e:
+                if storage_policy.is_strict():
+                    raise storage_policy.StorageUnavailable(
+                        "Cloud memory read failed."
+                    ) from e
                 logging.warning(
                     "Error loading memory logbook blob '%s': %s", blob_name, e
                 )
 
-    if payload is None and not config.LOCAL:
+    if payload is None and (not config.LOCAL or storage_policy.is_strict()):
         raise RuntimeError(
             "Cloud memory logbook unavailable: GCS read failed and local fallback is disabled in cloud runtimes."
         )
@@ -2782,6 +2869,7 @@ def save_logbook(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
     - normalizes and resequences the supplied records
     - writes JSONL to the configured GCS object or local fallback path
     """
+    storage_policy.require(BUCKET is not None, "Cloud memory storage is unavailable.")
     logbook = resequence_logbook_entries(logbook)
     lines = [json.dumps(item, ensure_ascii=False, default=str) for item in logbook]
     payload = "\n".join(lines)
