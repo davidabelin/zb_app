@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 import hashlib
 import json
 import logging
@@ -51,15 +52,17 @@ from contracts import (
     ToolCallResult,
 )
 from models import MODEL_LOSSES
+import storage_policy
 
 # Optional cloud dependencies.
+firestore: Any
 try:
     from google.cloud import firestore
 except Exception:
     firestore = None
 
 try:
-    from google.cloud import storage
+    import google.cloud.storage as storage
 except Exception:
     storage = None
 
@@ -102,7 +105,7 @@ BOTLING = (
     else None
 )
 
-DB = None
+DB: Any = None
 if firestore is not None:
     try:
         DB = firestore.Client(project=config.GOOGLE_CLOUD_PROJECT)
@@ -131,6 +134,7 @@ if RedisClient is not None and config.REDIS_URL:
 _LOCAL_CONVERSATIONS: dict[str, dict[str, Any]] = {}
 
 MEMORY_LOGBOOK = config.MEMORY_LOGBOOK
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _LOCAL_LOGBOOK_PATH = Path(__file__).resolve().parent / "config" / MEMORY_LOGBOOK
 _LOCAL_MEMORY_CANDIDATE_PATH = (
     Path(__file__).resolve().parent / "config" / "memory_candidates.jsonl"
@@ -138,6 +142,7 @@ _LOCAL_MEMORY_CANDIDATE_PATH = (
 _LOCAL_REVIEW_REQUESTS_PATH = (
     Path(__file__).resolve().parent / "config" / "review_requests.jsonl"
 )
+_SOLUTION_NOTES_PATH = _REPO_ROOT / "zenbot_knowledge" / "solutions.md"
 
 
 @dataclass(frozen=True)
@@ -160,9 +165,12 @@ def _conversation_store_key(conversation_id: str) -> str:
     return f"conversation:{conversation_id}"
 
 
-def _write_jsonl_record(blob_name: str, record: dict[str, Any], local_path: Path) -> None:
+def _write_jsonl_record(
+    blob_name: str, record: dict[str, Any], local_path: Path
+) -> None:
     """Append one JSON record to GCS or a local JSONL fallback file."""
 
+    storage_policy.require(BUCKET is not None, "Cloud queue storage is unavailable.")
     payload = json.dumps(record, ensure_ascii=False, default=str) + "\n"
     if BUCKET:
         blob = BUCKET.blob(blob_name)
@@ -194,7 +202,9 @@ def _runtime_profile_name(profile_name: str | None = None) -> str:
 
 
 def _coerce_session_settings_input(
-    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None,
+    raw_settings: (
+        SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None
+    ),
 ) -> dict[str, Any]:
     """Normalize an inbound session-settings payload into a compact dict."""
 
@@ -277,7 +287,9 @@ def _params_from_session_settings(
 
 
 def resolve_session_settings(
-    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None,
+    raw_settings: (
+        SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None
+    ),
     *,
     fallback_model_name: str = "",
     profile_name: str | None = None,
@@ -286,7 +298,9 @@ def resolve_session_settings(
 
     profile = _runtime_profile_name(profile_name)
     input_data = _coerce_session_settings_input(raw_settings)
-    preset_id = str(input_data.pop("preset_id", "")).strip() or config.DEFAULT_BOTLING_ID
+    preset_id = (
+        str(input_data.pop("preset_id", "")).strip() or config.DEFAULT_BOTLING_ID
+    )
     preset = _botling_preset_definition(preset_id)
     resolved: dict[str, Any] = {
         "preset_id": preset_id,
@@ -305,10 +319,16 @@ def resolve_session_settings(
 
     model_caps = config.model_capabilities(model_name)
     requested_reasoning = config._normalize_reasoning_effort(
-        str(resolved.get("reasoning_effort", "") or default_profile.get("reasoning_effort", ""))
+        str(
+            resolved.get("reasoning_effort", "")
+            or default_profile.get("reasoning_effort", "")
+        )
     )
     if model_caps["supports_reasoning"]:
-        if requested_reasoning and requested_reasoning not in model_caps["reasoning_efforts"]:
+        if (
+            requested_reasoning
+            and requested_reasoning not in model_caps["reasoning_efforts"]
+        ):
             raise ValueError(
                 f"Unsupported reasoning_effort '{requested_reasoning}' for {model_name}."
             )
@@ -332,7 +352,9 @@ def resolve_session_settings(
         resolved["top_p"] = None
 
     if resolved.get("max_output_tokens") is None:
-        resolved["max_output_tokens"] = int(default_profile.get("max_output_tokens", 900))
+        resolved["max_output_tokens"] = int(
+            default_profile.get("max_output_tokens", 900)
+        )
 
     tool_caps = _tool_caps()
     for key, cap_enabled in tool_caps.items():
@@ -386,7 +408,8 @@ def _legacy_session_settings(
     raw_params = metadata.get("params")
     params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
     snapshot: dict[str, Any] = {
-        "preset_id": str(metadata.get("botling_id", "")).strip() or config.DEFAULT_BOTLING_ID,
+        "preset_id": str(metadata.get("botling_id", "")).strip()
+        or config.DEFAULT_BOTLING_ID,
         "model_name": model_name or _default_model_key(),
         "max_output_tokens": params.get(
             "max_output_tokens",
@@ -441,7 +464,9 @@ def ensure_locked_session_settings(
 
 
 def _choose_session_profile(
-    raw_settings: SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None = None,
+    raw_settings: (
+        SessionSettingsInput | ResolvedSessionSettings | dict[str, Any] | None
+    ) = None,
     profile_name: str | None = None,
 ) -> dict[str, Any]:
     """Select one deterministic live runtime profile for a new conversation."""
@@ -580,6 +605,11 @@ def save_messages_to_firestore(
     metadata: dict[str, Any] | None = None,
 ) -> None:
     """Persist live conversation state to Redis, Firestore, or the local cache."""
+
+    storage_policy.require(
+        config.HOT_STATE_BACKEND != "redis" or REDIS is not None,
+        "Configured Redis backend is unavailable.",
+    )
     payload = {
         "conversation_id": conversation_id,
         "messages": messages,
@@ -596,9 +626,14 @@ def save_messages_to_firestore(
             )
             return
         except Exception as e:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Redis operation failed."
+                ) from e
             logging.warning("Redis save failed for %s: %s", conversation_id, e)
 
     if DB is None:
+        storage_policy.require(False, "Firestore backend is unavailable.")
         existing = _LOCAL_CONVERSATIONS.get(conversation_id, {})
         merged = {
             **existing,
@@ -613,6 +648,10 @@ def save_messages_to_firestore(
             payload, merge=True
         )
     except Exception as e:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable(
+                "Firestore operation failed."
+            ) from e
         logging.error("Error saving conversation %s: %s", conversation_id, e)
 
 
@@ -620,6 +659,11 @@ def get_conversation_state(
     conversation_id: str,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
     """Load live conversation messages and metadata for one conversation ID."""
+
+    storage_policy.require(
+        config.HOT_STATE_BACKEND != "redis" or REDIS is not None,
+        "Configured Redis backend is unavailable.",
+    )
     if not conversation_id:
         return base_startup(), {}
 
@@ -631,10 +675,17 @@ def get_conversation_state(
                 return parsed.get("messages", []), _normalize_conversation_metadata(
                     parsed.get("metadata", {})
                 )
+            if storage_policy.is_strict():
+                return base_startup(), {}
         except Exception as e:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Redis operation failed."
+                ) from e
             logging.warning("Redis load failed for %s: %s", conversation_id, e)
 
     if DB is None:
+        storage_policy.require(False, "Firestore backend is unavailable.")
         payload = _LOCAL_CONVERSATIONS.get(conversation_id)
         if not payload:
             return base_startup(), {}
@@ -645,6 +696,10 @@ def get_conversation_state(
     try:
         doc = DB.collection("conversations").document(conversation_id).get()
     except Exception as e:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable(
+                "Firestore operation failed."
+            ) from e
         logging.error("Error retrieving conversation %s: %s", conversation_id, e)
         return base_startup(), {}
 
@@ -671,22 +726,38 @@ def get_conversation_metadata(conversation_id: str) -> dict[str, Any]:
 
 def delete_messages_from_firestore(conversation_id: str) -> None:
     """Delete one live conversation record from Redis, Firestore, or local cache."""
+
+    storage_policy.require(
+        config.HOT_STATE_BACKEND != "redis" or REDIS is not None,
+        "Configured Redis backend is unavailable.",
+    )
     if not conversation_id:
         return
 
     if REDIS is not None and config.HOT_STATE_BACKEND == "redis":
         try:
             REDIS.delete(_conversation_store_key(conversation_id))
+            if storage_policy.is_strict():
+                return
         except Exception as e:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Redis operation failed."
+                ) from e
             logging.warning("Redis delete failed for %s: %s", conversation_id, e)
 
     if DB is None:
+        storage_policy.require(False, "Firestore backend is unavailable.")
         _LOCAL_CONVERSATIONS.pop(conversation_id, None)
         return
 
     try:
         DB.collection("conversations").document(conversation_id).delete()
     except Exception as e:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable(
+                "Firestore operation failed."
+            ) from e
         logging.error("Error deleting conversation %s: %s", conversation_id, e)
 
 
@@ -725,6 +796,42 @@ def get_mmnk_case(case_id: str) -> Optional[dict[str, Any]]:
         return None
 
 
+def find_mmnk_case_title_candidates(title: str) -> list[dict[str, Any]]:
+    """Return compact case-title candidates matching an exact or substring query."""
+    query = str(title or "").strip().lower()
+    if not query:
+        return []
+    candidates: list[dict[str, Any]] = []
+    for case in _load_mmnk_cases():
+        case_title = str(case.get("title", "")).strip()
+        if query in case_title.lower():
+            candidates.append({"id": case.get("id"), "title": case_title})
+    return candidates
+
+
+def get_mmnk_case_by_title(title: str) -> Optional[dict[str, Any]]:
+    """Return one koan by exact title, then by unambiguous title substring."""
+    query = str(title or "").strip().lower()
+    if not query:
+        return None
+
+    cases = _load_mmnk_cases()
+    exact = [
+        case for case in cases if str(case.get("title", "")).strip().lower() == query
+    ]
+    if exact:
+        return exact[0]
+
+    partial = [
+        case for case in cases if query in str(case.get("title", "")).strip().lower()
+    ]
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        raise ValueError("More than one koan title matched that query.")
+    return None
+
+
 def get_random_koan_case_id() -> str:
     """Return a random koan case ID, falling back to a numeric range if needed."""
     try:
@@ -753,15 +860,21 @@ def _botling_definition(session_settings: dict[str, Any] | None) -> dict[str, An
 
 
 def _startup_system_prompt(session_settings: dict[str, Any] | None) -> str:
-    """Build the startup system prompt for one botling preset."""
+    """Build the startup system prompt for one botling preset.
+
+    The preset ``description`` is the same "You are Mumonbot, the faithful
+    emulation..." text the fine-tuned botlings were trained with, so it leads
+    the prompt and the preset ``instruction`` follows it.
+    """
 
     preset = _botling_definition(session_settings)
-    return (
+    description = str(preset.get("description", "")).strip() or (
         "You are Mumonbot, a disciplined Zen teacher voice shaped by the Mumonkan "
         "and related Zen training records. Conduct dokusan with brevity, pressure, "
-        "and exact attention to the student's actual words. "
-        + str(preset.get("instruction", "")).strip()
-    ).strip()
+        "and exact attention to the student's actual words."
+    )
+    instruction = str(preset.get("instruction", "")).strip()
+    return " ".join(part for part in (description, instruction) if part).strip()
 
 
 def _startup_opening_cue(session_settings: dict[str, Any] | None) -> str:
@@ -772,7 +885,9 @@ def _startup_opening_cue(session_settings: dict[str, Any] | None) -> str:
     return cue or "(smiles)"
 
 
-def base_startup(session_settings: dict[str, Any] | None = None) -> list[dict[str, str]]:
+def base_startup(
+    session_settings: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
     """Build the seeded startup prompt sequence for a non-koan session."""
 
     return [
@@ -865,7 +980,11 @@ def _get_openai_client():
         raise ModelAPIError(
             "OpenAI client unavailable. Install `openai` and set OPENAI_API_KEY."
         )
-    return BOTLING
+    # An ambiguous provider call must reach the MCP operation ledger without
+    # SDK retries repeating work that may already have happened.
+    return (
+        BOTLING.with_options(max_retries=0) if storage_policy.is_strict() else BOTLING
+    )
 
 
 def _strict_json_schema(model_cls: type[BaseModel]) -> dict[str, Any]:
@@ -1018,9 +1137,9 @@ def response_tool_definitions(include_web_search: bool = False) -> list[dict[str
             "reasoning_effort": config.OPENAI_REASONING_EFFORT,
             "temperature": None,
             "top_p": None,
-            "max_output_tokens": config.MODEL_ARGS.get(
-                _runtime_profile_name(), {}
-            ).get("max_output_tokens", 900),
+            "max_output_tokens": config.MODEL_ARGS.get(_runtime_profile_name(), {}).get(
+                "max_output_tokens", 900
+            ),
             "enable_function_tools": config.OPENAI_ENABLE_FUNCTION_TOOLS,
             "enable_file_search": bool(
                 config.OPENAI_ENABLE_FILE_SEARCH and config.OPENAI_VECTOR_STORE_IDS
@@ -1094,17 +1213,155 @@ def _response_request_metadata(
     }
 
 
+DOKUSAN_CLOSING_RULE = (
+    "When the student sends (bows) on a line by itself, the dokusan is over. "
+    "Close it as Mumon would: usually a bare gesture such as (bows), (nods), "
+    "(smiles), or (laughs), and, when the exchange has earned one, a single "
+    "blunt parting line before that gesture. Never advice, encouragement, or "
+    "well-wishing, and nothing after the gesture. Do not end the session "
+    "yourself."
+)
+
+EXEMPLARS_END_MARKER = "=== END OF TRANSCRIPTS ==="
+
+
+def _is_finetuned_model(model_key: str) -> bool:
+    """Return whether a live model key resolves to an OpenAI fine-tune ID."""
+
+    key = str(model_key or "").strip()
+    resolved = str(config.MODELS_IN_USE.get(key, key))
+    return resolved.startswith("ft:")
+
+
+def _should_send_exemplars(model_key: str) -> bool:
+    """Return whether Mumon exemplar transcripts belong in this model's prompt."""
+
+    return bool(config.MUMON_EXEMPLARS_ENABLED) and not _is_finetuned_model(model_key)
+
+
+def _resolve_app_path(path_text: str) -> Path:
+    """Resolve a configured path relative to the ``zb_app`` directory."""
+
+    path = Path(str(path_text or "").strip())
+    if path.is_absolute():
+        return path
+    return Path(__file__).resolve().parent / path
+
+
+@lru_cache(maxsize=4)
+def _load_mumon_exemplars_text(path_text: str) -> str:
+    """Render the Mumon exemplar JSONL as plain dokusan transcripts.
+
+    Each record's ``system`` messages are dropped (they repeat one persona
+    line), and the remaining turns are rendered in file order as
+    ``Student:`` / ``Mumon:`` lines. A missing or unreadable file logs a
+    warning and yields an empty string so live turns still work.
+    """
+
+    path = _resolve_app_path(path_text)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logging.warning("Mumon exemplars unavailable at %s: %s", path, exc)
+        return ""
+
+    blocks: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            logging.warning("Skipping malformed Mumon exemplar line: %s", exc)
+            continue
+        messages = record.get("messages") if isinstance(record, dict) else None
+        if not isinstance(messages, list):
+            continue
+        turns: list[str] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role", "")).strip()
+            content = str(message.get("content", "")).strip()
+            if not content:
+                continue
+            if role == "user":
+                turns.append(f"Student: {content}")
+            elif role == "assistant":
+                turns.append(f"Mumon: {content}")
+        if turns:
+            blocks.append(f"--- Dokusan {len(blocks) + 1} ---\n" + "\n".join(turns))
+    return "\n\n".join(blocks)
+
+
+def _mumon_exemplar_count(exemplars_text: str) -> int:
+    """Count rendered exemplar transcripts in one exemplar block."""
+
+    return exemplars_text.count("--- Dokusan ")
+
+
+def _exemplar_preamble(count: int) -> str:
+    """Tell a non-fine-tuned model how to read the Mumon exemplar transcripts."""
+
+    return "\n".join(
+        [
+            f"Below are {count} dokusan transcripts of Zen Master Mumon Ekai "
+            "teaching the cases of the Gateless Gate to his students. "
+            "You are Mumonbot. This is how you sound.",
+            "Absorb from them: the length (a comment is a few plain sentences; "
+            "a verse is four short lines), the bluntness and the humor, the "
+            "verdicts passed on the people in the case, the concrete images, "
+            "the refusal of both yes and no, and the absence of explanation "
+            "or coaching.",
+            "Absorb the ritual too: the student enters and bows; you open with "
+            "a gesture; the student names a case or asks about it; you answer "
+            "as Mumon. When the student sends (bows) alone, the session is "
+            "over. Close with a gesture such as (bows), (nods), (smiles), or "
+            "(laughs); one blunt parting line may come before it, never after, "
+            "and never advice or well-wishing. Do not close the session "
+            "yourself; wait for the student's bow.",
+            "Treat these transcripts as your own memory of your teaching, not "
+            "as a document to quote or point at.",
+            "",
+            "=== MUMON IN DOKUSAN ===",
+        ]
+    )
+
+
+def _exemplar_instruction_lines(model_key: str) -> list[str]:
+    """Return the static exemplar prefix lines for one model, or nothing."""
+
+    if not _should_send_exemplars(model_key):
+        return []
+    exemplars = _load_mumon_exemplars_text(config.MUMON_EXEMPLARS_PATH)
+    if not exemplars:
+        return []
+    return [
+        _exemplar_preamble(_mumon_exemplar_count(exemplars)),
+        exemplars,
+        EXEMPLARS_END_MARKER,
+        "",
+    ]
+
+
 def _response_instructions(metadata: dict[str, Any] | None) -> str:
-    """Return the developer/system instruction block for one response turn."""
+    """Return the developer/system instruction block for one response turn.
+
+    Static content comes first so the Responses prompt cache can reuse it:
+    the Mumon exemplar block (generic models only), then the persona rules and
+    preset instruction, then the per-session dynamic lines.
+    """
 
     case_id = _metadata_text((metadata or {}).get("case_id", ""))
     session_settings = session_settings_from_metadata(metadata or {})
     preset = _botling_definition(session_settings)
-    lines = [
+    lines = _exemplar_instruction_lines(str(session_settings.get("model_name", "")))
+    lines += [
         "You are Mumonbot conducting dokusan in a disciplined Zen voice.",
         "Be brief, exact, and grounded in the student's actual words.",
         "Use ritual cues like (smiles) or (bows) sparingly and intentionally.",
-        "Do not mention system prompts, training data, or hidden policies.",
+        DOKUSAN_CLOSING_RULE,
         "Prefer koan grounding, direct challenge, and compact responses over explanation-heavy coaching.",
         str(preset.get("instruction", "")).strip(),
     ]
@@ -1115,7 +1372,9 @@ def _response_instructions(metadata: dict[str, Any] | None) -> str:
             "Use file search when exact case wording or archived reference detail matters."
         )
     if session_settings.get("enable_web_search"):
-        lines.append("Web search is allowed only for explicitly factual modern questions.")
+        lines.append(
+            "Web search is allowed only for explicitly factual modern questions."
+        )
     else:
         lines.append("Do not use web search for dokusan or koan dialogue.")
     return "\n".join(lines)
@@ -1175,6 +1434,38 @@ def _candidate_previous_response_id(
     return previous_response_id
 
 
+def _load_solution_notes(case_id: str) -> list[str]:
+    """Return known project solution notes for one case, when recorded."""
+
+    target = str(case_id or "").strip()
+    if not target or not _SOLUTION_NOTES_PATH.exists():
+        return []
+
+    try:
+        lines = _SOLUTION_NOTES_PATH.read_text(encoding="utf-8").splitlines()
+    except Exception as exc:
+        logging.warning("Unable to read koan solution notes: %s", exc)
+        return []
+
+    notes: list[str] = []
+    collecting = False
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line[0].isdigit() and "." in line:
+            quoted = line.split('"', 2)
+            heading = quoted[1] if len(quoted) > 1 else line
+            case_number = heading.split(maxsplit=1)[0].strip()
+            collecting = case_number == target
+            continue
+        if collecting and line.startswith("*"):
+            note = line.lstrip("*").strip().strip('"')
+            if note:
+                notes.append(note)
+    return notes
+
+
 def _load_case_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     """Load one koan case payload for function-tool execution."""
 
@@ -1192,6 +1483,10 @@ def _load_case_context_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     if args.include_commentary:
         payload["comment"] = str(koan.get("comment", ""))
         payload["verse"] = koan.get("verse", [])
+    if args.include_solution_notes:
+        notes = _load_solution_notes(str(koan.get("id", args.case_id)))
+        if notes:
+            payload["solution_notes"] = notes
     return payload
 
 
@@ -1224,6 +1519,8 @@ def _search_exemplars_tool(arguments: dict[str, Any]) -> dict[str, Any]:
 
         rows = session_reviews.load_review_state()
     except Exception as exc:
+        if storage_policy.is_strict():
+            raise
         logging.warning("search_exemplars unavailable: %s", exc)
         return {"status": "unavailable", "results": []}
 
@@ -1246,6 +1543,8 @@ def _search_exemplars_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         try:
             record = session_reviews.serialize_record(rows, index)
         except Exception:
+            if storage_policy.is_strict():
+                raise
             continue
         ranked.append(
             (
@@ -1269,12 +1568,13 @@ def _load_memory_summaries_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     """Load compact memory summaries for tool-driven retrieval."""
 
     args = LoadMemorySummariesArgs.model_validate(arguments)
-    summaries, total_count = load_memory_logbook_summaries(limit=args.limit)
+    page = load_memory_logbook_summary_page(
+        limit=args.limit,
+        end_index=args.end_index,
+    )
     return {
-        "status": "success" if summaries else "empty",
-        "summaries": summaries,
-        "returned_count": len(summaries),
-        "total_count": total_count,
+        "status": "success" if page["summaries"] else "empty",
+        **page,
     }
 
 
@@ -1284,7 +1584,11 @@ def _load_memory_entry_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     args = LoadMemoryEntryArgs.model_validate(arguments)
     entry = get_memory_logbook_entry(args.serial_number)
     if not entry:
-        return {"status": "not_found", "serial_number": args.serial_number, "memory": None}
+        return {
+            "status": "not_found",
+            "serial_number": args.serial_number,
+            "memory": None,
+        }
     return {
         "status": "success",
         "serial_number": args.serial_number,
@@ -1334,7 +1638,9 @@ def _archive_session_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     }
     blob_name = f"{session_reviews.TRANSCRIPTS_PREFIX}{args.conversation_id}.jsonl"
     save_chat_to_bucket(messages, params, blob_name)
-    session_reviews.upsert_review_record_from_session(args.conversation_id, messages, params)
+    session_reviews.upsert_review_record_from_session(
+        args.conversation_id, messages, params
+    )
     delete_messages_from_firestore(args.conversation_id)
     return {
         "status": "archived",
@@ -1353,7 +1659,9 @@ def _enqueue_review_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         "reviewer": args.reviewer,
         "note": args.note,
     }
-    _write_jsonl_record(config.REVIEW_REQUESTS_BLOB, payload, _LOCAL_REVIEW_REQUESTS_PATH)
+    _write_jsonl_record(
+        config.REVIEW_REQUESTS_BLOB, payload, _LOCAL_REVIEW_REQUESTS_PATH
+    )
     return {"status": "queued", **payload}
 
 
@@ -1361,7 +1669,8 @@ def _report_ui_status_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     """Log one UI/runtime status event."""
 
     args = ReportUiStatusArgs.model_validate(arguments)
-    logging.info("ui_status stage=%s detail=%s", args.stage, args.detail)
+    if not storage_policy.is_strict():
+        logging.info("ui_status stage=%s detail=%s", args.stage, args.detail)
     return {"status": "reported", "stage": args.stage, "detail": args.detail}
 
 
@@ -1410,6 +1719,8 @@ def _dispatch_function_tool(
             payload={"error": "validation_error", "details": exc.errors()},
         )
     except Exception as exc:
+        if storage_policy.is_strict():
+            raise
         logging.exception("Function tool '%s' failed", name)
         result = ToolCallResult(
             name=name,
@@ -1432,7 +1743,8 @@ def _response_request_kwargs(
 
     request_kwargs: dict[str, Any] = {
         **params,
-        "input": input_override or _response_input_messages(messages, previous_response_id),
+        "input": input_override
+        or _response_input_messages(messages, previous_response_id),
         "instructions": _response_instructions(metadata),
         "prompt_cache_key": _prompt_cache_key(metadata, conversation_id, params, mode),
         "prompt_cache_retention": config.OPENAI_PROMPT_CACHE_RETENTION,
@@ -1451,6 +1763,23 @@ def _response_request_kwargs(
     return request_kwargs
 
 
+def _log_cached_tokens(response: Any, conversation_id: str, mode: str) -> None:
+    """Log prompt-cache usage for one Responses call when the SDK reports it."""
+
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    details = getattr(usage, "input_tokens_details", None)
+    cached_tokens = getattr(details, "cached_tokens", None)
+    logging.info(
+        "Responses %s usage for %s: input_tokens=%s cached_tokens=%s",
+        mode,
+        conversation_id or "anon",
+        getattr(usage, "input_tokens", None),
+        cached_tokens,
+    )
+
+
 def get_model_stream(
     messages: list[dict[str, str]],
     params: dict[str, Any],
@@ -1460,7 +1789,7 @@ def get_model_stream(
     """Yield a streamed assistant reply from the OpenAI Responses API."""
 
     client = _get_openai_client()
-    max_attempts = 2
+    max_attempts = 1 if storage_policy.is_strict() else 2
     for attempt in range(1, max_attempts + 1):
         produced_output = False
         try:
@@ -1484,9 +1813,12 @@ def get_model_stream(
                         yield text
 
                 response = stream.get_final_response()
+                _log_cached_tokens(response, conversation_id, "stream")
                 response_text = _response_text_from_response(response)
                 if metadata is not None:
-                    metadata["last_response_id"] = str(getattr(response, "id", "") or "")
+                    metadata["last_response_id"] = str(
+                        getattr(response, "id", "") or ""
+                    )
                     metadata["provider"] = "responses_api"
                 if response_text and not produced_output:
                     yield response_text
@@ -1523,7 +1855,7 @@ def get_model_reply(
     """Return a full assistant reply from the Responses API with tool handling."""
 
     client = _get_openai_client()
-    max_attempts = 2
+    max_attempts = 1 if storage_policy.is_strict() else 2
     for attempt in range(1, max_attempts + 1):
         try:
             previous_response_id = _candidate_previous_response_id(metadata, messages)
@@ -1548,7 +1880,9 @@ def get_model_reply(
                 if not function_calls:
                     break
                 if tool_hops >= 4:
-                    raise ModelAPIError("Tool-call budget exceeded before final response.")
+                    raise ModelAPIError(
+                        "Tool-call budget exceeded before final response."
+                    )
 
                 outputs = [
                     {
@@ -1578,6 +1912,7 @@ def get_model_reply(
                 )
                 tool_hops += 1
 
+            _log_cached_tokens(response, conversation_id, "sync")
             content = _response_text_from_response(response)
             if metadata is not None:
                 metadata["last_response_id"] = str(getattr(response, "id", "") or "")
@@ -1586,6 +1921,8 @@ def get_model_reply(
                 return content
             raise ModelAPIError("No model response received.")
         except Exception as e:
+            if storage_policy.is_strict():
+                raise
             if (
                 "previous_response_id" in str(e).lower()
                 and metadata is not None
@@ -1639,9 +1976,7 @@ def friendly_model_error_message(raw_error: str) -> str:
         return "OpenAI rate limit reached. Please retry shortly."
     if "authentication" in text or "invalid_api_key" in text:
         return "OpenAI API key rejected. Check the configured key."
-    if "unsupported parameter" in text and (
-        "temperature" in text or "top_p" in text
-    ):
+    if "unsupported parameter" in text and ("temperature" in text or "top_p" in text):
         return "Configured sampling controls are not supported by the selected model."
     if "reasoning.effort" in text or (
         "unsupported value" in text and "reasoning" in text
@@ -1760,7 +2095,12 @@ def submit_background_session_critic(
     metadata: dict[str, Any],
     conversation_id: str,
 ) -> str:
-    """Submit a non-blocking session critic request via Responses background mode."""
+    """Submit a GPT-5.6 background critic job without delaying chat archival.
+
+    The caller receives the asynchronous Responses API ID and can poll that ID
+    separately. Critic submission remains opt-in through both the deployment
+    capability flag and the session's locked settings.
+    """
 
     if not session_allows_background_critic(metadata):
         return ""
@@ -1768,6 +2108,8 @@ def submit_background_session_critic(
     try:
         client = _get_openai_client()
     except ModelAPIError:
+        if storage_policy.is_strict():
+            raise
         return ""
 
     critic_schema = {
@@ -1789,15 +2131,23 @@ def submit_background_session_critic(
         ],
     }
     transcript_excerpt = _excerpt_messages(messages, limit=1200)
+    judge_reasoning_effort = (
+        str(
+            config.MODEL_ARGS.get("judge", {}).get("reasoning_effort", "medium")
+        ).strip()
+        or "medium"
+    )
 
     try:
         response = client.responses.create(
             model=config.OPENAI_JUDGE_MODEL,
             background=True,
             store=True,
+            reasoning={"effort": judge_reasoning_effort},
             instructions=(
                 "Evaluate this Zen session for style drift, koan grounding, ritual "
-                "correctness, and meta-AI leakage. Score conservatively."
+                "correctness, and meta-AI leakage. Score conservatively and use "
+                "the supplied JSON schema exactly."
             ),
             input=[
                 {
@@ -1825,13 +2175,17 @@ def submit_background_session_critic(
                 f"{config.OPENAI_PROMPT_CACHE_PREFIX}:critic:"
                 f"{metadata.get('case_id', 'general')}"
             ),
-            prompt_cache_retention=config.OPENAI_PROMPT_CACHE_RETENTION,
+            prompt_cache_options={
+                "ttl": config.OPENAI_PROMPT_CACHE_RETENTION,
+            },
             metadata=_response_request_metadata(metadata, conversation_id, "critic"),
             safety_identifier=_hash_identifier(
                 str(metadata.get("student", conversation_id or "anon"))
             ),
         )
     except Exception as exc:
+        if storage_policy.is_strict():
+            raise
         logging.warning(
             "Background session critic submission failed for %s: %s",
             conversation_id,
@@ -1979,6 +2333,83 @@ def list_conversation_files_in_gcs() -> list[str]:
     ]
 
 
+def _conversation_record_from_blob(blob: Any) -> dict[str, Any]:
+    """Build one lightweight archived-conversation record from a JSONL blob."""
+    conversation_id = blob.name.split("/")[-1].replace(".jsonl", "")
+    metadata: dict[str, Any] = {}
+    messages: list[dict[str, Any]] = []
+    try:
+        lines = blob.download_as_string().decode("utf-8").splitlines()
+    except Exception as exc:
+        if storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable("Archive read failed.") from exc
+        lines = []
+
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except Exception:
+            continue
+        if (
+            isinstance(item, dict)
+            and item.get("role") in {"system", "user", "assistant"}
+            and isinstance(item.get("content"), str)
+        ):
+            messages.append(item)
+        elif isinstance(item, dict) and not metadata:
+            metadata = dict(item)
+
+    first_user = next(
+        (
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "user"
+        ),
+        "",
+    )
+    first_assistant = next(
+        (
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "assistant"
+        ),
+        "",
+    )
+    title = first_user.strip().replace("\n", " ")[:96]
+    return {
+        "conversation_id": str(metadata.get("conversation_id") or conversation_id),
+        "title": title,
+        "date": str(metadata.get("saved_at") or metadata.get("created_at") or "")[:10],
+        "saved_at": str(metadata.get("saved_at") or metadata.get("created_at") or ""),
+        "case_id": str(metadata.get("case_id", "")).strip(),
+        "koan": str(metadata.get("case_id", "")).strip(),
+        "student": str(metadata.get("student", "")).strip(),
+        "model": str(metadata.get("model") or metadata.get("model_name") or "").strip(),
+        "message_count": len(messages),
+        "preview_user": first_user.strip().replace("\n", " ")[:180],
+        "preview_assistant": first_assistant.strip().replace("\n", " ")[:180],
+    }
+
+
+def list_conversation_records_in_gcs() -> list[dict[str, Any]]:
+    """Return lightweight records for archived JSONL conversations."""
+    if not BUCKET:
+        return []
+    records = [
+        _conversation_record_from_blob(blob)
+        for blob in BUCKET.list_blobs(prefix="zbchats/")
+        if blob.name.endswith(".jsonl")
+    ]
+    records.sort(
+        key=lambda record: (
+            str(record.get("saved_at", "")),
+            str(record.get("conversation_id", "")),
+        ),
+        reverse=True,
+    )
+    return records
+
+
 def get_conversation_from_gcs(conversation_id: str) -> list[dict[str, Any]] | None:
     """Return one archived conversation transcript from GCS by ID."""
     if not BUCKET:
@@ -2001,8 +2432,16 @@ def _parse_logbook_payload(payload: str) -> list[dict[str, Any]]:
     if text.startswith("["):
         try:
             data = json.loads(text)
+            storage_policy.require(
+                isinstance(data, list) and all(isinstance(item, dict) for item in data),
+                "Invalid memory logbook record.",
+            )
             return data if isinstance(data, list) else []
-        except Exception:
+        except Exception as exc:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Invalid memory logbook JSON."
+                ) from exc
             return []
 
     memories: list[dict[str, Any]] = []
@@ -2012,10 +2451,16 @@ def _parse_logbook_payload(payload: str) -> list[dict[str, Any]]:
             continue
         try:
             obj = json.loads(line)
-        except Exception:
+        except Exception as exc:
+            if storage_policy.is_strict():
+                raise storage_policy.StorageUnavailable(
+                    "Invalid memory logbook JSONL."
+                ) from exc
             continue
         if isinstance(obj, dict):
             memories.append(obj)
+        elif storage_policy.is_strict():
+            raise storage_policy.StorageUnavailable("Invalid memory logbook record.")
     return memories
 
 
@@ -2091,9 +2536,11 @@ def _merge_labeled_strings(label: str, value: Any) -> list[str]:
 def _normalize_session_evaluations(entry: dict[str, Any]) -> list[dict[str, str]]:
     """Canonicalize legacy evaluation/session fields into one stable schema."""
     koans_used = _listify_logbook_strings(entry.get("koans_used"))
-    default_case = koans_used[0] if koans_used else _stringify_logbook_value(
-        entry.get("title")
-    ) or "unspecified"
+    default_case = (
+        koans_used[0]
+        if koans_used
+        else _stringify_logbook_value(entry.get("title")) or "unspecified"
+    )
     session_ids = _listify_logbook_strings(entry.get("sessions"))
     default_conversation_id = session_ids[0] if session_ids else ""
 
@@ -2127,7 +2574,9 @@ def _normalize_session_evaluations(entry: dict[str, Any]) -> list[dict[str, str]
                 case = default_case
                 conversation_id = default_conversation_id
                 evaluation = "recorded"
-                notes = _stringify_logbook_value(raw) or "No additional notes preserved."
+                notes = (
+                    _stringify_logbook_value(raw) or "No additional notes preserved."
+                )
             normalized.append(
                 {
                     "case": case,
@@ -2259,7 +2708,9 @@ def normalize_memory_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Normalize a full logbook payload into canonical memory-entry objects."""
-    return [normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)]
+    return [
+        normalize_memory_entry(entry) for entry in logbook if isinstance(entry, dict)
+    ]
 
 
 def resequence_logbook_entries(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2321,6 +2772,7 @@ def load_memory_logbook() -> list[dict[str, Any]]:
     In cloud runtimes, this function raises if the GCS-backed logbook cannot be
     loaded so the app does not silently drift into a local-only fallback.
     """
+    storage_policy.require(BUCKET is not None, "Cloud memory storage is unavailable.")
     payload = None
 
     if BUCKET:
@@ -2331,11 +2783,15 @@ def load_memory_logbook() -> list[dict[str, Any]]:
                     payload = blob.download_as_text()
                     break
             except Exception as e:
+                if storage_policy.is_strict():
+                    raise storage_policy.StorageUnavailable(
+                        "Cloud memory read failed."
+                    ) from e
                 logging.warning(
                     "Error loading memory logbook blob '%s': %s", blob_name, e
                 )
 
-    if payload is None and not config.LOCAL:
+    if payload is None and (not config.LOCAL or storage_policy.is_strict()):
         raise RuntimeError(
             "Cloud memory logbook unavailable: GCS read failed and local fallback is disabled in cloud runtimes."
         )
@@ -2350,13 +2806,48 @@ def load_memory_logbook() -> list[dict[str, Any]]:
     return normalize_logbook_entries(_parse_logbook_payload(payload or ""))
 
 
+def load_memory_logbook_summary_page(
+    limit: int = 12,
+    end_index: int | None = None,
+) -> dict[str, Any]:
+    """Return a bounded newest-first memory summary page ending at `end_index`."""
+    normalized = load_memory_logbook()
+    total_count = len(normalized)
+    limit = max(0, int(limit))
+    if total_count == 0:
+        return {
+            "summaries": [],
+            "returned_count": 0,
+            "total_count": 0,
+            "start_index": None,
+            "end_index": None,
+            "next_end_index": None,
+            "has_more": False,
+        }
+
+    effective_end = total_count - 1 if end_index is None else int(end_index)
+    if effective_end < 0 or effective_end >= total_count:
+        raise ValueError(
+            f"Query parameter 'end_index' must be between 0 and {total_count - 1}."
+        )
+    start_index = max(0, effective_end - limit + 1)
+    window = normalized[start_index : effective_end + 1]
+    summaries = [summarize_memory_entry(entry) for entry in reversed(window)]
+    return {
+        "summaries": summaries,
+        "returned_count": len(summaries),
+        "total_count": total_count,
+        "start_index": start_index,
+        "end_index": effective_end,
+        "next_end_index": start_index - 1 if start_index > 0 else None,
+        "has_more": start_index > 0,
+    }
+
+
 def load_memory_logbook_summaries(limit: int = 12) -> tuple[list[dict[str, Any]], int]:
     """Return newest-first summary rows for GPT-side memory selection."""
-    normalized = list(reversed(load_memory_logbook()))
-    total_count = len(normalized)
-    if limit < 0:
-        limit = 0
-    return [summarize_memory_entry(entry) for entry in normalized[:limit]], total_count
+    page = load_memory_logbook_summary_page(limit=limit)
+    return page["summaries"], page["total_count"]
 
 
 def get_memory_logbook_entry(serial_number: str) -> dict[str, Any] | None:
@@ -2378,6 +2869,7 @@ def save_logbook(logbook: list[dict[str, Any]]) -> list[dict[str, Any]]:
     - normalizes and resequences the supplied records
     - writes JSONL to the configured GCS object or local fallback path
     """
+    storage_policy.require(BUCKET is not None, "Cloud memory storage is unavailable.")
     logbook = resequence_logbook_entries(logbook)
     lines = [json.dumps(item, ensure_ascii=False, default=str) for item in logbook]
     payload = "\n".join(lines)

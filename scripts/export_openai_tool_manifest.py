@@ -1,4 +1,9 @@
-"""Export the Zenbot Responses tool catalog to a JSON manifest."""
+"""Export the internal Zenbot Responses tool catalog to a JSON manifest.
+
+This is a runtime diagnostics helper. GPT-facing ChatGPT Actions belong in
+`zenbot_knowledge/action_schemas.yaml` and its generated JSON copy, not in this
+internal Responses function-tool manifest.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +13,9 @@ import sys
 
 
 def _output_path() -> Path:
-    """Return the default output path in `zenbot_knowledge`."""
+    """Return the app-local default output path for diagnostic exports."""
 
-    return Path(__file__).resolve().parents[2] / "zenbot_knowledge" / "openai_response_tools.json"
+    return Path(__file__).resolve().parents[1] / "generated" / "openai_response_tools.json"
 
 
 def _load_utilities_module():

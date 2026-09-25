@@ -1,0 +1,19 @@
+# Independent App Engine service. The default Flask service still uses app.yaml.
+service: mcp
+runtime: python314
+entrypoint: uvicorn zb_mcp.app:create_app --factory --host 0.0.0.0 --port $PORT --no-access-log
+
+env_variables:
+  GOOGLE_CLOUD_PROJECT: zenbot-434517
+  OPENAI_API_KEY_SECRET_NAME: zb-openai-api-key
+  MCP_BASE_URL: https://mcp-dot-zenbot-434517.uw.r.appspot.com
+  # Supply the allowed verified email(s) in the deployment overlay; blank denies startup.
+  MCP_ALLOWED_EMAILS: ""
+  MCP_GOOGLE_CLIENT_ID_SECRET_NAME: zb-mcp-google-client-id
+  MCP_GOOGLE_CLIENT_SECRET_SECRET_NAME: zb-mcp-google-client-secret
+  MCP_SIGNING_KEY_SECRET_NAME: zb-mcp-signing-key
+  MCP_ENCRYPTION_KEY_SECRET_NAME: zb-mcp-encryption-key
+  LOCAL: "false"
+  HOT_STATE_BACKEND: firestore
+
+service_account: zenbot-sa@zenbot-434517.iam.gserviceaccount.com
