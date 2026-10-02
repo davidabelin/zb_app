@@ -1,0 +1,8 @@
+# MCP and OAuth are independently pinned; existing OpenAI/Pydantic pins stay intact.
+fastmcp-slim[server]==4.0.7
+mcp==2.2.0
+py-key-value-aio[firestore]==0.4.6
+uvicorn==0.53.0
+# Tested with Python 3.14 and the repository's grpcio-tools/protobuf constraints.
+google-cloud-firestore==2.27.0
+google-cloud-secret-manager==2.30.0

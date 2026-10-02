@@ -331,6 +331,19 @@ def main() -> int:
         action="store_true",
         help="Print machine-readable JSON instead of text.",
     )
+    parser.add_argument(
+        "--show-instructions",
+        action="store_true",
+        help=(
+            "Also print the resolved Responses instructions block the live "
+            "runtime would send for these settings, with size estimates."
+        ),
+    )
+    parser.add_argument(
+        "--case",
+        default="",
+        help="Optional koan case ID to include when showing instructions.",
+    )
     args = parser.parse_args()
 
     Config, LEGACY_FINETUNES = _load_runtime_modules()
@@ -356,11 +369,59 @@ def main() -> int:
         "legacy_finetunes": LEGACY_FINETUNES if args.legacy_finetunes else {},
     }
 
+    if args.show_instructions:
+        payload["instructions"] = _instructions_report(resolved, args.case)
+
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
         print(_render_text(payload))
+        if args.show_instructions:
+            print()
+            print(_render_instructions(payload["instructions"]))
     return 0
+
+
+def _instructions_report(resolved: dict[str, Any], case_id: str) -> dict[str, Any]:
+    """Build the live instructions block plus size and exemplar diagnostics."""
+
+    import utilities
+
+    profile = utilities._choose_session_profile(dict(resolved))
+    metadata = utilities._build_metadata(
+        student="inspect",
+        case_id=case_id.strip() or None,
+        session_profile=profile,
+    )
+    text = utilities._response_instructions(metadata)
+    startup = utilities._startup_system_prompt(profile["session_settings"])
+    return {
+        "model_name": resolved["model_name"],
+        "finetuned": utilities._is_finetuned_model(resolved["model_name"]),
+        "exemplars_included": utilities.EXEMPLARS_END_MARKER in text,
+        "characters": len(text),
+        "approx_tokens": len(text) // 4,
+        "startup_system_prompt": startup,
+        "text": text,
+    }
+
+
+def _render_instructions(report: dict[str, Any]) -> str:
+    """Render the instructions diagnostics as readable text."""
+
+    lines = [
+        "resolved instructions block:",
+        f"  model: {report['model_name']} (fine-tuned: {report['finetuned']})",
+        f"  exemplars included: {report['exemplars_included']}",
+        f"  size: {report['characters']} chars, ~{report['approx_tokens']} tokens",
+        "",
+        "startup system prompt:",
+        f"  {report['startup_system_prompt']}",
+        "",
+        "instructions text:",
+        report["text"],
+    ]
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

@@ -279,6 +279,7 @@
           Saved {{ request.args.get("saved_reviewer", "") }} {{ request.args.get("saved_evaluation", "") }}
           for <strong>{{ request.args.get("saved_conversation_id") }}</strong>.
           Current status: <strong>{{ request.args.get("saved_status", "Awaiting Other Review") }}</strong>.
+          <a href="{{ url_for('admin.review_page', index=request.args.get('saved_index', record.index), evaluation=dashboard_filter) }}">Reopen saved record.</a>
           Final Use/Alter/Reject counts only change after both reviewer decisions are present.
         </div>
       {% endif %}
@@ -290,28 +291,28 @@
       {% endif %}
 
       <div class="nav">
-        <a class="primary" href="{{ url_for('admin_conversations', evaluation=dashboard_filter) }}">Session Review Queue</a>
-        <a href="{{ url_for('review_page', index=record.navigation.previous_index, evaluation=dashboard_filter) }}">Previous</a>
-        <a href="{{ url_for('review_page', index=record.navigation.next_index, evaluation=dashboard_filter) }}">Next</a>
+        <a class="primary" href="{{ url_for('admin.admin_conversations', evaluation=dashboard_filter) }}">Session Review Queue</a>
+        <a href="{{ url_for('admin.review_page', index=record.navigation.previous_index, evaluation=dashboard_filter) }}">Previous</a>
+        <a href="{{ url_for('admin.review_page', index=record.navigation.next_index, evaluation=dashboard_filter) }}">Next</a>
         {% if record.navigation.next_unreviewed_index is not none %}
-          <a href="{{ url_for('review_page', index=record.navigation.next_unreviewed_index, evaluation=dashboard_filter) }}">Next Unreviewed</a>
+          <a href="{{ url_for('admin.review_page', index=record.navigation.next_unreviewed_index, evaluation=dashboard_filter) }}">Next Unreviewed</a>
         {% endif %}
       </div>
 
       <div class="decision-row">
-        <form method="post" action="{{ url_for('set_decision', index=record.index) }}">
+        <form method="post" action="{{ url_for('admin.set_decision', index=record.index) }}">
           <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
           <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
           <input type="hidden" name="evaluation" value="Use">
           <button class="use" type="submit">Use</button>
         </form>
-        <form method="post" action="{{ url_for('set_decision', index=record.index) }}">
+        <form method="post" action="{{ url_for('admin.set_decision', index=record.index) }}">
           <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
           <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
           <input type="hidden" name="evaluation" value="Alter">
           <button class="alter" type="submit">Alter</button>
         </form>
-        <form method="post" action="{{ url_for('set_decision', index=record.index) }}">
+        <form method="post" action="{{ url_for('admin.set_decision', index=record.index) }}">
           <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
           <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
           <input type="hidden" name="evaluation" value="Reject">

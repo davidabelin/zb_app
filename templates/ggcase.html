@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
-<header>
+<main class="gg-page gg-case-page">
+<header class="gg-header">
     <h1>Case Study from the <i>Gateless Gate</i> Collection</h1>
 </header>
-<section>
+<section class="gg-panel">
   <div id="koan-container" data-case-id="{{ caseId or 0 }}">Loading koan...</div>
 </section>
+</main>
 {% endblock %}
 {% block footer %}
     <a href="/gg"><b>Back to List of Cases</b></a>

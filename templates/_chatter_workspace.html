@@ -8,21 +8,32 @@
     <div id="chatPrefacePanel" class="chat-preface-panel" hidden>
       <div id="chatPreface"></div>
     </div>
-    <div class="empty-koan-note">
-      Choose a case from <a href="{{ url_for('gg') }}">The Gateless Gate</a>, or enter without a case and let the exchange find its own barrier.
+    <div id="caseContextNote" class="empty-koan-note">
+      Choose a case from <a href="{{ url_for('web.gg') }}">The Gateless Gate</a>, or enter without a case and let the exchange find its own barrier.
     </div>
     <nav class="zendo-small-links" aria-label="Reference links">
-      <a href="{{ url_for('gg') }}">Mumonkan cases</a>
-      <a href="{{ url_for('display_pdf') }}">BCR notes</a>
-      <a href="{{ url_for('home') }}">Entrance hall</a>
+      <a href="{{ url_for('web.gg') }}">Mumonkan cases</a>
+      <a href="{{ url_for('web.display_pdf') }}">BCR notes</a>
+      <a href="{{ url_for('web.home') }}">Entrance hall</a>
     </nav>
+    <section class="zendo-context-form" aria-labelledby="zendo-context-form-title">
+      <div class="panel-heading">
+        <span>Room notes</span>
+        <h2 id="zendo-context-form-title">Working Form</h2>
+      </div>
+      <ul>
+        <li>Settings lock after the first turn.</li>
+        <li>Save when the dokusan is complete.</li>
+        <li>Reset clears the current local session.</li>
+      </ul>
+    </section>
   </section>
 
   <section class="zendo-chat-panel" aria-labelledby="zendo-title">
     <header class="chat-header zendo-chat-header">
       <div>
         <span class="entrance-kicker">Sanzen room</span>
-        <h1 id="zendo-title">Chat with ZM Mumonbot</h1>
+        <h1 id="zendo-title">Chat with Zen Master Mumonbot</h1>
       </div>
       <p>
         Speak plainly. Parenthetical gestures such as <code>(bows)</code> are welcome.
@@ -35,20 +46,31 @@
     <section id="chatResults" class="chat-messages" aria-live="polite"></section>
 
     <section class="chat-input-area" aria-label="Dokusan message input">
-      <textarea id="chatInput" rows="5" placeholder="Speak..."></textarea>
+      <textarea id="chatInput" rows="3" placeholder="Speak..."></textarea>
       <div class="chat-buttons">
         <button id="chatSend" type="button">Send</button>
+        {# Temporarily disabled End gesture button.
+        <button type="button" data-gesture="(bows)">End</button>
+        #}
         <button id="chatSave" type="button">Save</button>
         <button id="chatEnd" type="button" class="button-danger">Reset</button>
       </div>
-      <div class="chat-help">
-        <small>Enter to send • Shift+Enter for a newline • Save archives the session</small>
+      <div class="chat-assist-row">
+        <div class="chat-help">
+          <small>Enter to send • Shift+Enter for a newline • Save archives the session</small>
+        </div>
       </div>
     </section>
   </section>
 
   <aside class="zendo-room-panel zendo-setup-panel" aria-label="Session setup and room notes">
-    <div class="room-object bowl-object" aria-hidden="true"></div>
+    <figure class="zendo-teacher-seat">
+      <img src="{{ url_for('static', filename='images/zenbot.png') }}" alt="Mumonbot seated in robes among server racks">
+      <figcaption>
+        <span>Teacher's seat</span>
+        <strong>Mumonbot</strong>
+      </figcaption>
+    </figure>
     <section id="sessionSettingsPanel" class="session-settings-panel" data-locked="false">
       <div class="session-settings-topline">
         <div>
@@ -80,7 +102,7 @@
         </label>
         <label class="session-field">
           <span>Max Tokens</span>
-          <input id="sessionMaxTokens" type="number" min="1" max="4096" step="1">
+          <input id="sessionMaxTokens" type="number" min="1" max="4096" step="128">
         </label>
       </div>
       <div class="session-settings-toggles">
@@ -103,16 +125,5 @@
       </div>
     </section>
 
-    <section class="zendo-notes">
-      <div class="panel-heading">
-        <span>Room notes</span>
-        <h2>Working Form</h2>
-      </div>
-      <ul>
-        <li>Settings lock after the first turn.</li>
-        <li>Save when the dokusan is complete.</li>
-        <li>Reset clears the current local session.</li>
-      </ul>
-    </section>
   </aside>
 </main>
