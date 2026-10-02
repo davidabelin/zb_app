@@ -487,6 +487,64 @@
   }
 
 /* ========== Public UI Rebuild ========== */
+/* Complete public archive transcripts share the Entrance Hall palette. */
+.sampled-sessions {
+  width: min(960px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 48px 0;
+}
+
+.sampled-heading, .sampled-session-heading {
+  background: transparent;
+  color: var(--z-ink);
+  text-align: left;
+  padding: 0;
+}
+.sampled-heading { margin-bottom: 32px; }
+.sampled-heading h1 { color: var(--z-green-dark); font-size: 36px; }
+.sampled-heading p { max-width: 70ch; line-height: 1.7; }
+.sampled-note { color: var(--z-muted); }
+.sampled-jumps { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 24px; }
+.sampled-sessions a { color: var(--z-green-dark); }
+.sampled-sessions .primary { color: #fff9ed; }
+.sampled-sessions a:focus-visible { outline: 3px solid var(--z-gold); outline-offset: 4px; }
+.sampled-transcript, .sampled-empty {
+  background: #fff9ed;
+  border: 1px solid var(--z-line);
+  border-radius: 12px;
+  margin: 0 0 32px;
+  padding: 28px;
+  box-shadow: 0 6px 20px var(--z-shadow);
+  scroll-margin-top: 20px;
+}
+.sampled-session-heading h2 { margin: 0 0 16px; color: var(--z-green-dark); }
+.sampled-session-heading dl { margin: 0 0 24px; }
+.sampled-session-heading dl > div { display: flex; gap: 16px; margin: 8px 0; }
+.sampled-session-heading dt { flex: 0 0 72px; color: var(--z-muted); }
+.sampled-session-heading dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.sampled-dialogue { list-style: none; padding: 0; margin: 0; }
+.sampled-message {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px 0;
+  border-top: 1px solid var(--z-line);
+  font-size: 16px;
+  line-height: 1.75;
+}
+.sampled-speaker { color: var(--z-green-dark); }
+.sampled-system .sampled-speaker { color: var(--z-slate); }
+.sampled-system { background: rgba(49, 68, 82, 0.035); }
+.sampled-text-part { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sampled-text-part + .sampled-text-part { margin-top: 8px; }
+.sampled-back { display: inline-block; margin-top: 20px; }
+@media (max-width: 600px) {
+  .sampled-sessions { width: calc(100% - 24px); padding: 28px 0; }
+  .sampled-heading h1 { font-size: 28px; }
+  .sampled-transcript, .sampled-empty { padding: 18px; }
+  .sampled-message { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+
 :root {
   --z-paper: #f6efe1;
   --z-paper-deep: #eadcc3;

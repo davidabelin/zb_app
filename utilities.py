@@ -113,11 +113,15 @@ if firestore is not None:
         logging.warning("Firestore disabled: %s", e)
 
 BUCKET = None
+SAMPLED_HISTORICAL_BUCKET = None
 if storage is not None:
     try:
-        BUCKET = storage.Client(project=config.GOOGLE_CLOUD_PROJECT).bucket(
-            config.BUCKET_NAME
-        )
+        storage_client = storage.Client(project=config.GOOGLE_CLOUD_PROJECT)
+        BUCKET = storage_client.bucket(config.BUCKET_NAME)
+        if config.SAMPLED_HISTORICAL_BUCKET_NAME:
+            SAMPLED_HISTORICAL_BUCKET = storage_client.bucket(
+                config.SAMPLED_HISTORICAL_BUCKET_NAME
+            )
     except Exception as e:
         logging.warning("Cloud Storage disabled: %s", e)
 

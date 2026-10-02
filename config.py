@@ -271,6 +271,11 @@ class Config:
     BUCKET_NAME: str = field(
         default_factory=lambda: os.getenv("BUCKET_NAME", "zenbot_cloudstore")
     )
+    SAMPLED_HISTORICAL_BUCKET_NAME: str = field(
+        default_factory=lambda: os.getenv(
+            "SAMPLED_HISTORICAL_BUCKET_NAME", ""
+        )
+    )
     MEMORY_LOGBOOK: str = field(
         default_factory=lambda: os.getenv("MEMORY_LOGBOOK", "memory_logbook.json")
     )

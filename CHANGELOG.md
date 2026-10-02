@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- added public Sampled Sessions: five randomly selected complete Dokusan
+  dialogues, anonymous speaker labels, student-name replacement, and only model
+  and recorded date/time metadata
+- added a separate private historical archive importer with dry-run counts,
+  transcript deduplication, legacy text-block support, and conditional uploads
+- cached archive generations per worker for five minutes, with automatic new-save
+  inclusion and graceful empty/unavailable states
+- linked the page from public navigation and documented public sampling in the
+  privacy page and operator instructions
+
 ## v3.2.6 - 2026-09-15
 
 - added Mumon exemplar context for non-fine-tuned live models: the Responses

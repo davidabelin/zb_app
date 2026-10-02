@@ -8,6 +8,7 @@ single App Engine application with an OpenAI-native runtime underneath:
 - browser chat and reference pages
 - authenticated `zb_api` routes used by GPT Actions and other clients
 - review/admin pages
+- public, anonymized [Sampled Sessions](#sampled-sessions) from the full archive
 - Responses API chat runtime with prompt caching and provider conversation state
 - optional File Search, strict function tools, and background session critic
 
@@ -43,6 +44,68 @@ The v3.2 runtime is App Engine-only:
 - archived transcripts and generated review/training artifacts stay in GCS
 - review manifests and memory workflows remain GCS-backed today, with the new
   runtime ready for stricter structured backends later
+
+## Sampled Sessions
+
+`/sampled-sessions` is public and displays five randomly drawn, distinct archived
+Dokusan dialogues. Every recorded System, Student, and Mumonbot message is shown,
+including introductions and case readings. Names identified from student
+metadata, legacy session identifiers, and explicit student self-introductions
+are replaced with `Student`; other recorded text is preserved, including legacy
+text-block content. The page sends no archive identifiers, student metadata,
+review data, or chat-settings scripts to the browser.
+
+The sampler reads current `zbchats/` objects from `BUCKET_NAME`. If configured,
+it also reads `sampled_sessions/historical/` from
+`SAMPLED_HISTORICAL_BUCKET_NAME` (unset by default).
+Historical originals require a private bucket; a prefix inherits its bucket's
+access policy. The deployed service account needs `roles/storage.objectViewer`
+on the historical bucket. Do not grant public storage access for this page: the
+app reads originals privately and renders the anonymized view.
+
+The cache lasts five minutes per worker. Refreshes reuse unchanged object
+generations, add new saves, drop deleted objects, and deduplicate identical
+dialogues without consulting review ratings. An unreadable recording is skipped
+as a whole; a storage failure renders a temporary-unavailability page instead of
+serving a stale sample. Browser/proxy page caching is disabled.
+
+The October 1, 2026 live archive check found 484 readable cloud recordings,
+including all 455 unique dialogues in the 472 historical files and local cache
+copies. No import or additional bucket is required for that collection.
+
+For future historical files absent from the current cloud archive, first create
+a private destination and grant the web service account read access:
+
+```cmd
+gcloud storage buckets create gs://zenbot-434517-sampled-sessions --project=zenbot-434517 --location=us-east1 --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets add-iam-policy-binding gs://zenbot-434517-sampled-sessions --member=serviceAccount:zenbot-sa@zenbot-434517.iam.gserviceaccount.com --role=roles/storage.objectViewer
+```
+
+Set `SAMPLED_HISTORICAL_BUCKET_NAME=zenbot-434517-sampled-sessions` in local
+configuration and the web `app.yaml` environment before deploying. Then, from
+`zb_app`, preview and import the historical collection using
+application-default credentials (no credential values on the command line):
+
+```cmd
+venv\Scripts\python.exe scripts\import_sampled_sessions.py
+venv\Scripts\python.exe scripts\import_sampled_sessions.py --apply
+```
+
+The importer reads `collected_sessions/local`, `web`, and `use`, plus the local
+`zb_app/config/zbchats` cache. Use `--repo-root`, `--project`, or `--bucket` for a
+different checkout or private destination; keep the runtime bucket setting in
+agreement. The importer requires uniform bucket-level access and enforced
+public access prevention, and refuses public bucket IAM grants.
+Reports show scanned, invalid, duplicate, existing, pending, and
+uploaded counts. Hash-addressed conditional uploads make repeat runs safe.
+Original files, current cloud archives, and administrative review data are not
+modified. Imported object metadata retains the recording filename for dates;
+it is never sent to the browser. Missing dates/models are labelled unavailable,
+and times without a recorded timezone are displayed without an assumed one.
+
+Newly saved sessions automatically join the public pool after cache refresh.
+Name detection is based on recorded identities and explicit introductions; it
+does not attempt to identify every person mentioned in unrestricted prose.
 
 ## OpenAI-Native Runtime
 

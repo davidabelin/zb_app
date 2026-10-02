@@ -19,6 +19,7 @@ from flask import (
 from werkzeug.exceptions import BadRequest
 
 import session_reviews
+import sampled_sessions
 import utilities as utipy
 from app_support import (
     ChatStartRequest,
@@ -37,6 +38,30 @@ web_bp = Blueprint("web", __name__)
 def home():
     """Render the public landing page."""
     return render_template("index.html")
+
+
+@web_bp.route("/sampled-sessions")
+def sampled_sessions_page():
+    """Render a fresh public sample of complete, anonymized archived sessions."""
+    unavailable = False
+    try:
+        sessions = sampled_sessions.sampler.sample(
+            utipy.BUCKET, historical_bucket=utipy.SAMPLED_HISTORICAL_BUCKET
+        )
+    except sampled_sessions.ArchiveUnavailable:
+        logging.exception("Sampled session archive unavailable")
+        sessions = []
+        unavailable = True
+    response = make_response(
+        render_template(
+            "sampled_sessions.html", sessions=sessions, unavailable=unavailable
+        ),
+        503 if unavailable else 200,
+    )
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    if unavailable:
+        response.headers["Retry-After"] = "60"
+    return response
 
 
 @web_bp.route("/intro-tour")
