@@ -140,14 +140,15 @@ reconciliation.
 scripts\deploy_mcp.bat mcp_app.local.yaml
 ```
 
-This deploys only the MCP service and uses `--no-promote`. Check the new version's
+For an unpromoted smoke deployment, use `scripts\deploy_smoke_mcp.bat mcp_app.local.yaml`.
+The normal `deploy_mcp.bat` command promotes its version immediately. Check the new version's
 `/healthz` and `/readyz` first. Health is process liveness; readiness performs
 read-only storage checks and exposes no configuration values. Promote the tested
 version with App Engine traffic management for **service `mcp` only**. Complete
 OAuth testing at the canonical service URL after routing it to that version.
 
 Use MCP Inspector in Streamable HTTP mode with the complete `/mcp` URL. Verify
-the OAuth login, initialization, 25 tools, schemas, read/write annotations, and
+the OAuth login, initialization, 26 tools, schemas, read/write annotations, and
 an invalid-token request. The service uses complete JSON responses and stateless
 transport; it does not depend on sticky sessions or incremental SSE delivery.
 
@@ -193,3 +194,42 @@ References: [OpenAI MCP guide](https://developers.openai.com/plugins/build/mcp-s
 [personal plugin setup](https://developers.openai.com/plugins/quickstart),
 [FastMCP Google OAuth](https://gofastmcp.com/integrations/google),
 [App Engine response behavior](https://docs.cloud.google.com/appengine/docs/standard/how-requests-are-handled).
+
+## Zenbot preparation
+
+`prepareZenbotSession()` is an authenticated, read-only MCP-only operation. It
+returns five complete startup documents and their SHA-256 hashes, a bundle
+version, twelve newest memory summaries, the two newest full memories and the
+configured formative entries (deduplicated), a server-random koan, retrieval
+time, and exact loaded identifiers. It does not call a model, acquire a write
+lock, write memory, or certify that the host understood the material.
+
+The maintained source is the outer repository's `zenbot_knowledge` directory.
+Run its `scripts/build_zenbot_plugin.py`, then `--check`, to regenerate both the
+plugin references and this repository's `zb_mcp/data/startup_bundle.json`. Commit
+the generated bundle with application changes; production has no dependency on
+the outer checkout. Do not place it under the excluded `config/` directory.
+Canonical memories stay in live storage and are never copied into the bundle.
+
+Missing/corrupt documents, absent required memories, or a formative serial whose
+title changed return `preparation_incomplete`. Unavailable canonical storage
+returns `storage_unavailable`; failed koan retrieval remains an explicit failure.
+The endpoint refuses a logbook selection that changed during its reads. Operators
+must review selection changes rather than bypassing the guard or rewriting history.
+
+Regenerate `zb_mcp/output_schemas.json` with the existing exporter after changing
+the separate preparation schema. Existing REST operations remain unchanged.
+
+Rollout: run the tests and document build check, deploy with the smoke script,
+verify the version's health/readiness and authenticated preparation, then promote
+only service `mcp`. Publish plugin 0.149.6 after the canonical endpoint exposes
+the tool. Preserve the previous version for rollback. Read back the plugin
+release and test a fresh host chat; transport success is not behavioural acceptance.
+Preparation tests require no paid model call or canonical memory mutation.
+
+
+App Engine smoke checks use the exact version hostname derived from GAE_VERSION
+and GAE_SERVICE. The MCP host guard permits that hostname only for its matching
+cloud worker, alongside the canonical hostname; other hosts remain rejected.
+OAuth identity, audience and browser-origin checks remain canonical and unchanged.
+Readiness also validates the deployed startup bundle before reporting ready.

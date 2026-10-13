@@ -30,6 +30,18 @@ def build_snapshot(source: dict) -> dict:
             "result": {"type": "object"},
         },
     }
+    preparation = json.loads(
+        (APP_ROOT / "zb_mcp/preparation_schema.json").read_text(encoding="utf-8")
+    )
+    preparation["properties"]["memory_summaries"]["items"] = source["components"][
+        "schemas"
+    ]["MemorySelectionResponse"]["properties"]["summaries"]["items"]
+    koan_schema = dict(operations["getRandomKoan"])
+    koan_schema["required"] = [
+        key for key in koan_schema["required"] if key != "status"
+    ]
+    preparation["properties"]["koan"] = koan_schema
+    operations["prepareZenbotSession"] = preparation
     used = {}
 
     def collect(value):

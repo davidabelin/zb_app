@@ -144,6 +144,143 @@
           "type": "object"
         }
       }
+    },
+    "prepareZenbotSession": {
+      "type": "object",
+      "description": "Complete read-only startup material for Zenbot; retrieval is not proof of understanding.",
+      "required": [
+        "status",
+        "preparation_schema_version",
+        "bundle_version",
+        "retrieved_at",
+        "documents",
+        "memory_summaries",
+        "memories",
+        "latest_memory_serial",
+        "total_memory_count",
+        "loaded_document_names",
+        "loaded_memory_serials",
+        "koan"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "success"
+          ]
+        },
+        "preparation_schema_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "bundle_version": {
+          "type": "string"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "documents": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "sha256",
+              "content"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "content": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "memory_summaries": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/components/schemas/MemorySelectionSummary"
+          }
+        },
+        "memories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/MemoryEntry"
+          }
+        },
+        "latest_memory_serial": {
+          "type": "string"
+        },
+        "total_memory_count": {
+          "type": "integer"
+        },
+        "loaded_document_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "loaded_memory_serials": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "koan": {
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "body",
+            "comment",
+            "verse"
+          ],
+          "description": "Flattened randomly selected koan case object.",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "description": "Numeric identifier of the selected koan case."
+            },
+            "title": {
+              "type": "string",
+              "description": "Short title of the selected koan case."
+            },
+            "body": {
+              "type": "string",
+              "description": "Full koan case text suitable for direct reading."
+            },
+            "comment": {
+              "type": "string",
+              "description": "Associated commentary text for the case."
+            },
+            "verse": {
+              "type": "array",
+              "description": "Verse lines associated with the selected koan case.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "status": {
+              "type": "string",
+              "description": "Status string, typically `success`."
+            }
+          }
+        }
+      }
     }
   },
   "schemas": {

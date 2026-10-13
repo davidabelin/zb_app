@@ -272,7 +272,11 @@ def test_every_api_operation_matches_mcp(runtime, name, method, path, args):
 def test_discovery_and_schema_snapshot(runtime):
     tools = {tool.name: tool for tool in asyncio.run(runtime.server.list_tools())}
     names = {name for name, _, _, _ in PARITY}
-    assert set(tools) == names | {"replaceMemoryLogbook", "getOperationStatus"}
+    assert set(tools) == names | {
+        "replaceMemoryLogbook",
+        "getOperationStatus",
+        "prepareZenbotSession",
+    }
     for name, method, _, _ in PARITY:
         assert tools[name].annotations.read_only_hint == (method == "get")
         if method == "post":
@@ -566,7 +570,7 @@ def test_streamable_http_oauth_discovery_and_authenticated_tools(runtime, monkey
             headers=headers,
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         )
-        assert len(listing.json()["result"]["tools"]) == 25
+        assert len(listing.json()["result"]["tools"]) == 26
         tool = client.post(
             "/mcp",
             headers=headers,
@@ -938,3 +942,237 @@ def test_oauth_state_is_encrypted_namespaced_and_shared_across_instances(monkeyp
         )
 
     asyncio.run(exercise())
+
+
+@pytest.fixture
+def prepared_runtime(runtime):
+    """Provide a complete canonical history without relying on production storage."""
+    from zb_services import preparation
+
+    rows = [
+        {**memory_entry(), "serial_number": f"{i:03}", "title": f"Memory {i}"}
+        for i in range(1, 94)
+    ]
+    for selected in preparation.load_bundle()["memory_policy"]["formative_memories"]:
+        rows[int(selected["serial_number"]) - 1]["title"] = selected["expected_title"]
+    runtime.bucket.blob(utilities.config.MEMORY_LOGBOOK).upload_from_string(
+        json.dumps(rows)
+    )
+    return runtime
+
+
+def test_preparation_is_complete_read_only_and_independent_of_write_lock(
+    prepared_runtime, monkeypatch
+):
+    runtime = prepared_runtime
+    from zb_services import koans
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Preparation must not call a model or write canonical storage")
+
+    monkeypatch.setattr(utilities, "get_model_reply", forbidden)
+    monkeypatch.setattr(utilities, "save_logbook", forbidden)
+    runtime.operations.claim("chief-sub", "held", "zbApiChat", {}, ["monastery"])
+    before = deepcopy(runtime.db.data), deepcopy(runtime.bucket.storage)
+    koan = koans.by_id("1")
+    monkeypatch.setattr(koans, "random_koan", lambda: koan)
+    result = call(runtime, "prepareZenbotSession")
+    assert not result.is_error, result
+    value = result.structured_content
+    jsonschema.validate(value, adapter.output_schema("prepareZenbotSession"))
+    assert value["loaded_memory_serials"] == ["081", "084", "090", "093", "092"]
+    assert value["latest_memory_serial"] == "093"
+    assert len(value["memory_summaries"]) == 12
+    assert value["koan"] == koan
+    assert len(value["documents"]) == 5
+    assert all(row["content"] and row["sha256"] for row in value["documents"])
+    assert value["loaded_document_names"] == [r["name"] for r in value["documents"]]
+    assert [r["serial_number"] for r in value["memories"]] == value[
+        "loaded_memory_serials"
+    ]
+    datetime.fromisoformat(value["retrieved_at"])
+    assert (runtime.db.data, runtime.bucket.storage) == before
+
+
+def test_preparation_reads_new_canonical_entries(prepared_runtime):
+    runtime = prepared_runtime
+    rows = utilities.load_memory_logbook()
+    rows.append({**memory_entry(), "serial_number": "094", "title": "New live entry"})
+    runtime.bucket.blob(utilities.config.MEMORY_LOGBOOK).upload_from_string(
+        json.dumps(rows)
+    )
+    value = call(runtime, "prepareZenbotSession").structured_content
+    assert value["latest_memory_serial"] == "094"
+    assert value["loaded_memory_serials"] == ["081", "084", "090", "093", "094"]
+    assert value["memories"][-1]["title"] == "New live entry"
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["missing_file", "missing_document", "bad_hash", "empty_document", "bad_json"],
+)
+def test_preparation_rejects_incomplete_bundle(
+    prepared_runtime, monkeypatch, tmp_path, damage
+):
+    from zb_services import preparation
+
+    bundle = preparation.load_bundle()
+    target = tmp_path / "bundle.json"
+    if damage == "missing_document":
+        bundle["documents"].pop()
+    elif damage == "bad_hash":
+        bundle["documents"][0]["sha256"] = "0" * 64
+    elif damage == "empty_document":
+        bundle["documents"][0]["content"] = ""
+    if damage != "missing_file":
+        target.write_text(
+            "{" if damage == "bad_json" else json.dumps(bundle), encoding="utf-8"
+        )
+    monkeypatch.setattr(preparation, "BUNDLE_PATH", target)
+    result = call(prepared_runtime, "prepareZenbotSession")
+    assert result.is_error
+    assert result.structured_content["error"] == "preparation_incomplete"
+    assert "memories" not in result.structured_content
+
+
+@pytest.mark.parametrize("damage", ["missing", "renamed"])
+def test_preparation_rejects_changed_formative_identity(prepared_runtime, damage):
+    rows = utilities.load_memory_logbook()
+    if damage == "missing":
+        rows = [r for r in rows if r["serial_number"] != "081"]
+    else:
+        rows[80]["title"] = "Different memory at the same serial"
+    prepared_runtime.bucket.blob(utilities.config.MEMORY_LOGBOOK).upload_from_string(
+        json.dumps(rows)
+    )
+    result = call(prepared_runtime, "prepareZenbotSession")
+    assert result.is_error
+    assert result.structured_content["error"] == "preparation_incomplete"
+
+
+def test_preparation_refuses_changed_logbook_during_read(prepared_runtime, monkeypatch):
+    from zb_services import memories
+
+    original = memories.summaries
+    calls = []
+
+    def changing(*args, **kwargs):
+        value = original(*args, **kwargs)
+        calls.append(True)
+        if len(calls) > 1:
+            value["total_count"] += 1
+        return value
+
+    monkeypatch.setattr(memories, "summaries", changing)
+    result = call(prepared_runtime, "prepareZenbotSession")
+    assert result.is_error
+    assert result.structured_content["error"] == "preparation_incomplete"
+
+
+def test_preparation_fails_when_storage_unavailable(prepared_runtime, monkeypatch):
+    monkeypatch.setattr(utilities, "BUCKET", None)
+    result = call(prepared_runtime, "prepareZenbotSession")
+    assert result.is_error
+    assert result.structured_content["error"] == "storage_unavailable"
+
+
+def test_preparation_fails_when_koan_unavailable(prepared_runtime, monkeypatch):
+    from zb_services import ServiceError, koans
+
+    def unavailable():
+        raise ServiceError("koan_not_found", "No random koan is available.", 404)
+
+    monkeypatch.setattr(koans, "random_koan", unavailable)
+    result = call(prepared_runtime, "prepareZenbotSession")
+    assert result.is_error and result.structured_content["error"] == "koan_not_found"
+
+
+def test_preparation_requires_authorization_before_reading(runtime, monkeypatch):
+    from zb_services import preparation
+
+    runtime.token.claims = {}
+
+    def forbidden():
+        pytest.fail("Unauthorised caller must not read preparation data")
+
+    monkeypatch.setattr(preparation, "prepare", forbidden)
+    result = call(runtime, "prepareZenbotSession")
+    assert result.is_error and result.structured_content["error"] == "forbidden"
+
+
+def test_preparation_tool_has_no_arguments_and_is_read_only(runtime):
+    tools = {tool.name: tool for tool in asyncio.run(runtime.server.list_tools())}
+    tool = tools["prepareZenbotSession"]
+    assert tool.annotations.read_only_hint
+    assert not tool.annotations.destructive_hint
+    assert not tool.parameters.get("properties")
+
+
+def test_version_smoke_host_preserves_host_and_oauth_guards(runtime, monkeypatch):
+    from fastmcp.server.auth.providers.google import GoogleProvider
+    from key_value.aio.stores.memory import MemoryStore
+    from starlette.testclient import TestClient
+    from zb_mcp import app as application
+    from zb_services import preparation
+
+    origin = "https://mcp-dot-zenbot-434517.uw.r.appspot.com"
+    version_origin = "https://smoke-v1-dot-mcp-dot-zenbot-434517.uw.r.appspot.com"
+    monkeypatch.setenv("GAE_ENV", "standard")
+    monkeypatch.setenv("GAE_VERSION", "smoke-v1")
+    monkeypatch.setenv("GAE_SERVICE", "mcp")
+    settings = SimpleNamespace(
+        base_url=origin,
+        allowed_emails=frozenset({"chief@example.com"}),
+        namespace="zenbot_mcp",
+    )
+    monkeypatch.setattr(application.Settings, "from_environment", lambda: settings)
+    oauth = GoogleProvider(
+        client_id="test-client",
+        client_secret="test-secret",
+        base_url=origin,
+        jwt_signing_key="test-signing-key" * 3,
+        client_storage=MemoryStore(),
+        required_scopes=["openid", "email"],
+    )
+    monkeypatch.setattr(application, "provider", lambda settings: oauth)
+    monkeypatch.setattr(
+        application, "OperationStore", lambda *args, **kwargs: runtime.operations
+    )
+    with TestClient(application.create_app(), base_url=origin) as client:
+        assert client.get("/healthz").status_code == 200
+        assert (
+            client.get(
+                "/healthz", headers={"Host": version_origin.removeprefix("https://")}
+            ).status_code
+            == 200
+        )
+        assert (
+            client.get(
+                "/healthz",
+                headers={"Host": "other-dot-mcp-dot-zenbot-434517.uw.r.appspot.com"},
+            ).status_code
+            == 421
+        )
+        response = client.post(
+            version_origin + "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+        assert response.status_code == 401
+
+        def missing():
+            raise RuntimeError("Missing startup bundle")
+
+        monkeypatch.setattr(preparation, "load_bundle", missing)
+        assert client.get(version_origin + "/readyz").status_code == 503
+
+
+@pytest.mark.parametrize("version", ["", "*", "../escape", "a.b"])
+def test_smoke_host_never_expands_invalid_versions(monkeypatch, version):
+    from zb_mcp.app import allowed_hosts
+
+    monkeypatch.setenv("GAE_ENV", "standard")
+    monkeypatch.setenv("GAE_SERVICE", "mcp")
+    monkeypatch.setenv("GAE_VERSION", version)
+    host = "mcp-dot-zenbot-434517.uw.r.appspot.com"
+    assert allowed_hosts("https://" + host) == [host]

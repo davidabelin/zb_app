@@ -16,7 +16,7 @@ from pydantic import Field
 from contracts import MemoryEntry, SessionSettingsInput
 import storage_policy
 from zb_services import ServiceError
-from zb_services import conversations, koans, memories, reviews
+from zb_services import conversations, koans, memories, preparation, reviews
 from .auth import principal
 from .operations import OperationStore
 
@@ -45,6 +45,9 @@ ReviewFilter = Literal[
 ]
 
 INSTRUCTIONS = """Private Zenbot tools for the Chief Monk.
+Before speaking as Zenbot in a fresh chat, call prepareZenbotSession and read its
+complete documents and memories. Disclose failed preparation; do not invent continuity.
+Do not interrupt an active dokusan relay to repeat startup preparation.
 Preserve each returned conversation_id, including a replacement ID returned by chat.
 During dokusan, send the student's words exactly and relay Mumonbot's response
 exactly, without commentary. Relay the closing bow and final response before archiving.
@@ -196,6 +199,15 @@ def create_server(
             )(invoke)
 
         return decorate
+
+    @register("prepareZenbotSession")
+    def prepare_session() -> dict[str, Any]:
+        """Read current startup documents, full selected memories, and a random koan.
+
+        Required before speaking as Zenbot in a fresh chat. Read all returned
+        content; disclose incomplete preparation. No model call or persistent write.
+        """
+        return preparation.prepare()
 
     @register("zbApiChatOptions")
     def chat_options() -> dict[str, Any]:
