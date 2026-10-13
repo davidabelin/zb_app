@@ -12,25 +12,16 @@ def test_session_options_payload_exposes_defaults_presets_and_models():
     assert payload["defaults"]["preset_id"] == utilities.config.DEFAULT_BOTLING_ID
     assert any(preset["id"] == "balanced" for preset in payload["presets"])
     assert any(model["id"] == "gpt-5.5" for model in payload["models"])
-    assert any(model["id"] == "set03-bs2lr05e7" for model in payload["models"])
+    assert all(model["id"] != "set03-bs2lr05e7" for model in payload["models"])
 
     model = next(model for model in payload["models"] if model["id"] == default_model)
     assert model["supports_reasoning"] is True
     assert model["supports_sampling_controls"] is False
 
 
-def test_resolve_session_settings_accepts_sampling_controls_for_active_finetune():
-    settings = utilities.resolve_session_settings(
-        {
-            "model_name": "set03-bs2lr05e7",
-            "temperature": 0.4,
-            "top_p": 0.8,
-        }
-    )
-
-    assert settings["model_name"] == "set03-bs2lr05e7"
-    assert settings["temperature"] == 0.4
-    assert settings["top_p"] == 0.8
+def test_resolve_session_settings_rejects_unavailable_finetune():
+    with pytest.raises(ValueError, match="Unsupported model_name"):
+        utilities.resolve_session_settings({"model_name": "set03-bs2lr05e7"})
 
 
 def test_config_rejects_unregistered_openai_live_model():
@@ -41,14 +32,14 @@ def test_config_rejects_unregistered_openai_live_model():
         )
 
 
-def test_session_settings_from_legacy_metadata_backfills_snapshot():
+def test_session_settings_from_legacy_metadata_reassigns_unavailable_finetune():
     settings = utilities.session_settings_from_metadata(
         {
             "model_name": "set03-bs2lr05e7",
             "profile": "live",
             "botling_id": "fierce_barrier",
             "params": {
-                "model": utilities.config.MODELS_IN_USE["set03-bs2lr05e7"],
+                "model": "ft:retired-model",
                 "max_output_tokens": 777,
                 "temperature": 0.55,
                 "top_p": 0.75,
@@ -56,12 +47,12 @@ def test_session_settings_from_legacy_metadata_backfills_snapshot():
         }
     )
 
-    assert settings["preset_id"] == "fierce_barrier"
-    assert settings["model_name"] == "set03-bs2lr05e7"
-    assert settings["max_output_tokens"] == 777
-    assert settings["reasoning_effort"] == ""
-    assert settings["temperature"] == 0.55
-    assert settings["top_p"] == 0.75
+    assert settings["preset_id"] == "balanced"
+    assert settings["model_name"] == "gpt-5.5"
+    assert settings["max_output_tokens"] == 1000
+    assert settings["reasoning_effort"] == "medium"
+    assert settings["temperature"] is None
+    assert settings["top_p"] is None
 
 
 def test_chat_and_zb_api_options_routes_return_session_payload(monkeypatch):

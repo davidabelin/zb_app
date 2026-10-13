@@ -8,7 +8,6 @@ import pytest
 
 import utilities
 
-
 GENERIC_MODEL = "gpt-5.5"
 FINETUNED_MODEL = "set03-bs2lr05e7"
 
@@ -49,7 +48,12 @@ def test_generic_model_receives_exemplars_and_closing_rule():
     )
 
 
-def test_finetuned_model_skips_exemplars_but_keeps_closing_rule():
+def test_finetuned_model_skips_exemplars_but_keeps_closing_rule(monkeypatch):
+    monkeypatch.setattr(
+        utilities.config,
+        "MODELS_IN_USE",
+        {**utilities.config.MODELS_IN_USE, FINETUNED_MODEL: "ft:test-model"},
+    )
     text = utilities._response_instructions(_metadata_for(FINETUNED_MODEL))
 
     assert utilities._is_finetuned_model(FINETUNED_MODEL)

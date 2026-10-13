@@ -114,8 +114,9 @@ Responses API rather than Chat Completions.
 
 Implemented v3 runtime pieces:
 
-- deterministic live botling defaults sourced from `models.py`, including the
-  generic `gpt-5.5` baseline and the retained fine-tuned botlings
+- deterministic live botling defaults sourced from `models.py`, currently
+  using `gpt-5.5`; historical fine-tunes remain in the legacy catalog because
+  the current OpenAI project cannot access them
 - `gpt-5.6-sol` for asynchronous critic/judging, `gpt-4.1` reserved for
   post-training work
 - prompt caching via stable `prompt_cache_key` values
@@ -173,7 +174,7 @@ settings from the shell with:
 ```cmd
 python scripts/inspect_botlings.py --help
 python scripts/inspect_botlings.py
-python scripts/inspect_botlings.py --preset fierce_barrier --model set03-bs2lr05e7 --reasoning-effort medium
+python scripts/inspect_botlings.py --preset fierce_barrier --model gpt-5.5 --reasoning-effort medium
 ```
 
 The default vector-store sync helper is:

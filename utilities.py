@@ -86,6 +86,11 @@ except Exception:
 class ModelAPIError(Exception):
     """Raised when an OpenAI API call fails."""
 
+    def __init__(self, message: str, status_code: int | None = None):
+        """Keep the provider status available to retry and fallback callers."""
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class SessionSettingsLockedError(ValueError):
     """Raised when a request tries to mutate settings for an active conversation."""
@@ -1830,7 +1835,8 @@ def get_model_stream(
                     raise ModelAPIError("No model response received.")
             return
         except Exception as e:
-            is_last = attempt >= max_attempts
+            status_code = getattr(e, "status_code", None)
+            is_last = attempt >= max_attempts or status_code == 401
             if (
                 "previous_response_id" in str(e).lower()
                 and metadata is not None
@@ -1847,7 +1853,7 @@ def get_model_stream(
                 time.sleep(0.75 * attempt)
                 continue
             logging.error("OpenAI streaming error: %s", e)
-            raise ModelAPIError(str(e))
+            raise ModelAPIError(str(e), status_code=status_code)
 
 
 def get_model_reply(
@@ -1927,13 +1933,14 @@ def get_model_reply(
         except Exception as e:
             if storage_policy.is_strict():
                 raise
+            status_code = getattr(e, "status_code", None)
             if (
                 "previous_response_id" in str(e).lower()
                 and metadata is not None
                 and metadata.get("last_response_id")
             ):
                 metadata["last_response_id"] = ""
-            if attempt < max_attempts:
+            if attempt < max_attempts and status_code != 401:
                 logging.warning(
                     "Responses reply attempt %s/%s failed: %s",
                     attempt,
@@ -1943,7 +1950,7 @@ def get_model_reply(
                 time.sleep(0.75 * attempt)
                 continue
             logging.error("OpenAI error: %s", e)
-            raise ModelAPIError(str(e))
+            raise ModelAPIError(str(e), status_code=status_code)
     raise ModelAPIError("Model reply attempts exhausted without a response.")
 
 
@@ -1978,6 +1985,8 @@ def friendly_model_error_message(raw_error: str) -> str:
         return "OpenAI quota exceeded for the configured API key."
     if "rate limit" in text:
         return "OpenAI rate limit reached. Please retry shortly."
+    if "invalid_organization" in text:
+        return "Mumonbot's OpenAI organization access is unavailable. Please contact the site administrator."
     if "authentication" in text or "invalid_api_key" in text:
         return "OpenAI API key rejected. Check the configured key."
     if "unsupported parameter" in text and ("temperature" in text or "top_p" in text):
@@ -2050,12 +2059,20 @@ def prompt_and_stream(
                 yield _sse({"response": chunk})
     except Exception as e:
         stream_error = str(e)
-        logging.warning(
-            "stream failed conversation_id=%s error=%s; attempting fallback reply",
-            conversation_id,
-            e,
-        )
-        if not full_reply:
+        auth_failure = getattr(e, "status_code", None) == 401
+        if auth_failure:
+            logging.error(
+                "stream authentication failed conversation_id=%s error=%s",
+                conversation_id,
+                e,
+            )
+        else:
+            logging.warning(
+                "stream failed conversation_id=%s error=%s; attempting fallback reply",
+                conversation_id,
+                e,
+            )
+        if not full_reply and not auth_failure:
             try:
                 fallback_reply = get_model_reply(
                     messages,

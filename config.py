@@ -33,7 +33,7 @@ def _first_model_name() -> str:
 
 
 def _default_models_in_use() -> Dict[str, str]:
-    """Return the active generic-baseline and fine-tuned live-model registry."""
+    """Return the live models accessible to the production project."""
 
     if not MODELS_IN_USE:
         raise RuntimeError("MODELS_IN_USE must contain at least one live botling.")
@@ -272,9 +272,7 @@ class Config:
         default_factory=lambda: os.getenv("BUCKET_NAME", "zenbot_cloudstore")
     )
     SAMPLED_HISTORICAL_BUCKET_NAME: str = field(
-        default_factory=lambda: os.getenv(
-            "SAMPLED_HISTORICAL_BUCKET_NAME", ""
-        )
+        default_factory=lambda: os.getenv("SAMPLED_HISTORICAL_BUCKET_NAME", "")
     )
     MEMORY_LOGBOOK: str = field(
         default_factory=lambda: os.getenv("MEMORY_LOGBOOK", "memory_logbook.json")
