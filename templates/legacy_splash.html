@@ -11,7 +11,7 @@
             <section>
                 <h3>Dokusan Session with ZM Mumonbot</h3>
                 <ul>
-                    <p><li><a href="{{ url_for('chatter') }}">Enter the <i>sanzen</i> room to begin...</a></li></p>
+                    <p><li><a href="{{ url_for('web.chatter') }}">Enter the <i>sanzen</i> room to begin...</a></li></p>
                     <i>Or, choose a koan from the sources below to work on with ZM <s>Zenbot</s> <b>Mumonbot</b>.</i>
                 </ul>
             </section>
@@ -19,8 +19,8 @@
                 <h2><u>Original Sources</u></h2>
                 <p>Zenbot was trained to respond 'like' Mumon's original commentary and verse when given text 'like' these 48 (+1) classic canonical cases in the 'Gateless Gate' collection.</p>
                 <ul>
-                    <li><a href="{{ url_for('gg') }}">List of cases in <i>The Gateless Gate</i></a></li>
-                    <li><a href="{{ url_for('display_pdf') }}">List of cases in <i>Blue Cliff Record</i></a></li>
+                    <li><a href="{{ url_for('web.gg') }}">List of cases in <i>The Gateless Gate</i></a></li>
+                    <li><a href="{{ url_for('web.display_pdf') }}">List of cases in <i>Blue Cliff Record</i></a></li>
                 </ul>
             </section>
             <section>
@@ -49,8 +49,8 @@
                 <s><i>(may require login credentials)</i></s>
                 Archive of saved dokusan session transcripts:
                <ul>
-                    <li><a href="{{ url_for('admin_conversations') }}">Open the cloud-backed review dashboard.</a></li>
-                    <li><a href="{{ url_for('admin_review') }}">Jump to the unreviewed review queue.</a></li>
+                    <li><a href="{{ url_for('admin.admin_conversations') }}">Open the cloud-backed review dashboard.</a></li>
+                    <li><a href="{{ url_for('admin.admin_review') }}">Jump to the unreviewed review queue.</a></li>
                     <li><a href="https://x-checker-1721430104958.wm.r.appspot.com/"><s>Call XCbot -- ask to <i>factcheck a dog's buddha-nature!</i> ;)</s> Feature is clunky or not available.</a></li>
                </ul>
             </section>
@@ -58,6 +58,6 @@
     </div>
 {% endblock %}
 {% block footer %}
-    <p><a href="{{ url_for('privacy') }}">Standard-Issue <b>Privacy Policy</b> as per app-hosting and ChatGPT service requirements.</a></p>
+    <p><a href="{{ url_for('web.privacy') }}">Standard-Issue <b>Privacy Policy</b> as per app-hosting and ChatGPT service requirements.</a></p>
     <br>
 {% endblock %}

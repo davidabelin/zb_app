@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+- added public Sampled Sessions: five randomly selected complete Dokusan
+  dialogues, anonymous speaker labels, student-name replacement, and only model
+  and recorded date/time metadata
+- added a separate private historical archive importer with dry-run counts,
+  transcript deduplication, legacy text-block support, and conditional uploads
+- cached archive generations per worker for five minutes, with automatic new-save
+  inclusion and graceful empty/unavailable states
+- linked the page from public navigation and documented public sampling in the
+  privacy page and operator instructions
+
+## v3.2.6 - 2026-09-15
+
+- added Mumon exemplar context for non-fine-tuned live models: the Responses
+  `instructions` block for generic models now opens with the trainset03a
+  dokusan transcripts (`static/mumon_exemplars.jsonl`) and reading
+  instructions, kept as a static cacheable prefix outside the stored transcript
+- added an explicit dokusan closing rule for every model: a student's
+  standalone `(bows)` ends the session and gets one closing gesture, nothing
+  after it
+- composed the startup system prompt from the preset `description` plus
+  `instruction`, restoring the system prompt the fine-tunes were trained with,
+  and unified the preset descriptions around the Mumonbot persona
+- added `MUMON_EXEMPLARS_ENABLED` / `MUMON_EXEMPLARS_PATH`, prompt-cache usage
+  logging per Responses call, and `scripts/inspect_botlings.py
+  --show-instructions` for previewing the resolved instructions block
+- removed the unused `START_CHATS` opening prompt from `config.py`
+
+## v3.2.5 - 2026-07-28
+
+- restored generic `gpt-5.5` as a selectable live botling alongside retained
+  fine-tuned models
+- moved the optional asynchronous session critic to `gpt-5.6-sol` with an
+  explicit medium reasoning baseline and current prompt-cache options
+- documented critic enablement, submission behavior, and result polling
+- synchronized the release marker across app documentation and deployment
+  messaging
+
 ## v3.2.3 - 2026-04-17
 
 Admin/review workflow and operator-maintenance release for `zb_app`.

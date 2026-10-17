@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Sampled Sessions · Zenbot Zendo{% endblock %}
+{% block page_scripts %}{% endblock %}
+{% block content %}
+<main class="sampled-sessions">
+  <header class="sampled-heading" id="sampled-top">
+    <span class="entrance-kicker">From the Dokusan archive</span>
+    <h1>Sampled Sessions</h1>
+    <p>A random selection of recorded conversations with Mumonbot. Read each session from its opening to its final words.</p>
+    <p class="sampled-note">The student is called Student; student names are replaced wherever identified. All other recorded wording is preserved.</p>
+    <a class="entrance-button primary" href="{{ url_for('web.sampled_sessions_page') }}">Sample another five</a>
+    {% if sessions %}
+    <nav class="sampled-jumps" aria-label="Jump to a sampled session">
+      {% for session in sessions %}<a href="#sample-{{ loop.index }}">Session {{ loop.index }}</a>{% endfor %}
+    </nav>
+    {% endif %}
+  </header>
+  {% if unavailable %}
+  <section class="sampled-empty" role="status"><h2>The archive is temporarily unavailable</h2><p>Please try again shortly.</p></section>
+  {% elif not sessions %}
+  <section class="sampled-empty" role="status"><h2>No sessions are available yet</h2><p>Please visit again for conversations from the Dokusan archive.</p></section>
+  {% endif %}
+  {% for session in sessions %}
+  <article class="sampled-transcript" id="sample-{{ loop.index }}" aria-labelledby="sample-title-{{ loop.index }}">
+    <header class="sampled-session-heading">
+      <h2 id="sample-title-{{ loop.index }}">Session {{ loop.index }}</h2>
+      <dl><div><dt>Model</dt><dd>{{ session.model }}</dd></div><div><dt>Recorded</dt><dd>{{ session.date }}</dd></div></dl>
+    </header>
+    <ol class="sampled-dialogue">
+      {% for message in session.messages %}
+      <li class="sampled-message{% if message.speaker == 'System' %} sampled-system{% endif %}">
+        <strong class="sampled-speaker">{{ message.speaker }}</strong>
+        <div class="sampled-message-text">{% for part in message.parts %}<div class="sampled-text-part">{{ part }}</div>{% endfor %}</div>
+      </li>
+      {% endfor %}
+    </ol>
+    <a class="sampled-back" href="#sampled-top">Back to session choices ↑</a>
+  </article>
+  {% endfor %}
+</main>
+{% endblock %}

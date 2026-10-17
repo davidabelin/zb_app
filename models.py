@@ -8,20 +8,24 @@ training-pipeline work.
 
 from __future__ import annotations
 
-
-# Active live list. Keep this small while evaluating fresh botlings.
+# Models accessible to the current production OpenAI project.
 MODELS_IN_USE = {
-    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
-    "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
+    "gpt-5.5": "gpt-5.5",
 }
 
-# Legacy finetunes are retained for reference and offline evaluation.
+# Historical fine-tunes are retained for reference and offline evaluation.
+# They belong to earlier OpenAI organizations and are unavailable to the
+# current production project.
 LEGACY_FINETUNES = {
+    "set03-bs2lr05e7": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03-bs2lr05e7:DJg4yCUT",
+    "set03a-bs5lr05e5": "ft:gpt-4.1-2025-04-14:aix-protodyne:set03a-bs5lr05e5:DKBGq1NX",
+    "mmnk-bows-ble513": "ft:gpt-4o-2024-08-06:chatbot-tuners:mmnk-bows-ble513:AVXPlofK",
+    "mmnk-bows-ble5053": "ft:gpt-4o-2024-08-06:chatbot-tuners:mmnk-bows-ble5053:AVXUbfHM",
+    "bs8lr08e4-set00-02": "ft:gpt-4o-2024-08-06:dca:bs8lr08e4-set00-02:BIzpjOBE",
+    "cntxt-bs8lr08e3": "ft:gpt-4o-2024-08-06:dca:cntxt-bs8lr08e3:BD220aUe",
     "mmnk_ble824": "ft:gpt-4o-mini-2024-07-18:chatbot-tuners:mmnk-ble824:A7q3grXA",
     "mmnk_ble5053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble5053:ATHGiQEV",
     "mmnk_ble8053_cntxt": "ft:gpt-4o-2024-08-06:chatbot-tuners:zenbot-context-ble8053:AV7mu6NG",
-    "mmnk-bows-ble513": "ft:gpt-4o-2024-08-06:chatbot-tuners:mmnk-bows-ble513:AVXPlofK",
-    "mmnk-bows-ble5053": "ft:gpt-4o-2024-08-06:chatbot-tuners:mmnk-bows-ble5053:AVXUbfHM",
     "zbset01-bs3-lr15-ne2": "ft:gpt-4o-2024-08-06:dca:set01-bs3-lr15-ne2:AyP4ENFm",
     "zbset01-bs3-lr075-ne2": "ft:gpt-4o-2024-08-06:dca:zbset01-bs3-lr075-ne2:AyMDelJ3",
     "zbset01-bs5-lr1-ne3": "ft:gpt-4o-2024-08-06:dca:set01-bs5-lr1-ne3-av7ncsif-s20:B3ntgBgb",
@@ -31,13 +35,12 @@ LEGACY_FINETUNES = {
     "base-bs8lr08e3-cntxt-bs8lr08e3": "ft:gpt-4o-2024-08-06:dca:cntxt-bs8lr08e3:BD1fEeyM",
     "base-bs8lr05e2-cntxt-bs8lr08e3": "ft:gpt-4o-2024-08-06:dca:base-bs8lr05e2-cntxt-bs8lr08e3:BD1eYc2n",
     "base-bs6lr01e2-cntxt-bs8lr08e3": "ft:gpt-4o-2024-08-06:dca:cntxt-bs8lr08e3:BD1p2sLf",
-    "cntxt-bs8lr08e3": "ft:gpt-4o-2024-08-06:dca:cntxt-bs8lr08e3:BD220aUe",
-    "bs8lr08e4-set00-02": "ft:gpt-4o-2024-08-06:dca:bs8lr08e4-set00-02:BIzpjOBE",
     "set00-02mix-bs10lr05e2": "ft:gpt-4o-2024-08-06:dca:bd1eyc2n-set00-02mix-bs10lr05e2:BJ02Ragt",
     "set00-02mix-bs6lr06e3": "ft:gpt-4o-2024-08-06:dca:b9khhy0v-set00-02mix-bs6lr06e3:BJ09MKSB",
 }
 
 MODEL_LOSSES = {
+    "gpt-5.5": 0.0,
     "gpt-5.4-mini": 0.0,
     "gpt-5.4": 0.0,
     "gpt-4.1": 0.0,

@@ -65,8 +65,8 @@ when the critic request is unavailable.
 
 ## 7) Auth Contract Reminder
 
-All `/zb_api/*` routes and `/appendMemoryLogbookEntry` require the action/admin
-token in the `Authorization` header. Preferred format:
+All `/zb_api/*` routes require the action/admin token in the `Authorization`
+header. Preferred format:
 
 ```text
 Authorization: Bearer <ACTION_API_TOKEN>
