@@ -295,7 +295,7 @@ function sanitizeSessionSettings(settings, options) {
   if (!model.supports_reasoning) {
     resolved.reasoning_effort = "";
   }
-  if (!model.supports_sampling_controls) {
+  if (!model.supports_sampling_controls || resolved.reasoning_effort !== "none") {
     resolved.temperature = null;
     resolved.top_p = null;
   }
@@ -315,6 +315,8 @@ function sessionSettingsSummary(settings, options) {
     preset ? preset.label : resolved.preset_id,
     resolved.model_name,
     resolved.reasoning_effort ? `reasoning ${resolved.reasoning_effort}` : "",
+    resolved.temperature !== null ? `temp ${resolved.temperature}` : "",
+    resolved.top_p !== null ? `top_p ${resolved.top_p}` : "",
     resolved.max_output_tokens ? `${resolved.max_output_tokens} max tokens` : "",
     enabledTools.length ? enabledTools.join(", ") : "no extra tools",
   ].filter(Boolean);
@@ -330,6 +332,10 @@ function getSessionSettingsElements() {
     model: document.getElementById("sessionModel"),
     reasoningWrap: document.getElementById("sessionReasoningWrap"),
     reasoning: document.getElementById("sessionReasoning"),
+    temperatureWrap: document.getElementById("sessionTemperatureWrap"),
+    temperature: document.getElementById("sessionTemperature"),
+    topPWrap: document.getElementById("sessionTopPWrap"),
+    topP: document.getElementById("sessionTopP"),
     maxTokens: document.getElementById("sessionMaxTokens"),
   };
 }
@@ -343,6 +349,8 @@ function sessionSettingsInputElements(elements) {
     elements.preset,
     elements.model,
     elements.reasoning,
+    elements.temperature,
+    elements.topP,
     elements.maxTokens,
   ].filter(Boolean);
 }
@@ -410,6 +418,14 @@ function readIntegerInputValue(input) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function readNumericInputValue(input) {
+  if (!input) return null;
+  const raw = String(input.value || "").trim();
+  if (!raw) return null;
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function readSessionSettingsFromPanel(options) {
   const elements = getSessionSettingsElements();
   if (!elements.panel) {
@@ -422,6 +438,8 @@ function readSessionSettingsFromPanel(options) {
       preset_id: elements.preset?.value || "",
       model_name: elements.model?.value || "",
       reasoning_effort: elements.reasoning?.value || "",
+      temperature: readNumericInputValue(elements.temperature),
+      top_p: readNumericInputValue(elements.topP),
       max_output_tokens: readIntegerInputValue(elements.maxTokens),
       enable_function_tools: Boolean(toolSettings.enable_function_tools),
       enable_file_search: Boolean(toolSettings.enable_file_search),
@@ -455,6 +473,12 @@ function applySessionSettingsToPanel(settings, options) {
   if (elements.model) elements.model.value = resolved.model_name || "";
   if (elements.maxTokens) {
     elements.maxTokens.value = String(resolved.max_output_tokens || "");
+  }
+  if (elements.temperature) {
+    elements.temperature.value = resolved.temperature === null ? "" : String(resolved.temperature);
+  }
+  if (elements.topP) {
+    elements.topP.value = resolved.top_p === null ? "" : String(resolved.top_p);
   }
 
   const model = findModelOption(options, resolved.model_name);
@@ -506,6 +530,14 @@ function refreshSessionSettingsPanel(options) {
   if (elements.reasoningWrap) {
     elements.reasoningWrap.hidden = !model.supports_reasoning;
   }
+  const samplingAvailable = model.supports_sampling_controls &&
+    elements.reasoning?.value === "none";
+  if (elements.temperatureWrap) elements.temperatureWrap.hidden = !samplingAvailable;
+  if (elements.topPWrap) elements.topPWrap.hidden = !samplingAvailable;
+  if (samplingAvailable) {
+    if (elements.temperature && !elements.temperature.value) elements.temperature.value = "0.9";
+    if (elements.topP && !elements.topP.value) elements.topP.value = "1";
+  }
   sessionSettingsInputElements(elements).forEach((input) => {
     if (!input) return;
     input.disabled = locked;
@@ -513,8 +545,12 @@ function refreshSessionSettingsPanel(options) {
   if (elements.reasoning) {
     elements.reasoning.disabled = locked || !model.supports_reasoning;
   }
+  if (elements.temperature) elements.temperature.disabled = locked || !samplingAvailable;
+  if (elements.topP) elements.topP.disabled = locked || !samplingAvailable;
   if (elements.summary) {
-    elements.summary.textContent = sessionSettingsSummary(current, options);
+    elements.summary.textContent = sessionSettingsSummary(
+      readSessionSettingsFromPanel(options), options
+    );
   }
 }
 
@@ -639,6 +675,8 @@ function bindSessionSettingsPanel(options) {
 
   [
     elements.reasoning,
+    elements.temperature,
+    elements.topP,
     elements.maxTokens,
   ]
     .filter(Boolean)

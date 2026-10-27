@@ -341,6 +341,10 @@
   color: #1c361f;
 }
 
+.session-field[hidden] {
+  display: none;
+}
+
 .session-field span {
   font-weight: bold;
 }

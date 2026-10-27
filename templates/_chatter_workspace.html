@@ -92,6 +92,14 @@
           <span>Reasoning <small>(thinking effort; higher uses more time and tokens)</small></span>
           <select id="sessionReasoning"></select>
         </label>
+        <label id="sessionTemperatureWrap" class="session-field" hidden>
+          <span>Temperature <small>(Mumonbot's wording: 0 steadier, 2 more varied)</small></span>
+          <input id="sessionTemperature" type="number" min="0" max="2" step="0.1">
+        </label>
+        <label id="sessionTopPWrap" class="session-field" hidden>
+          <span>Top P <small>(word choice: 0.01 narrow, 1 broad)</small></span>
+          <input id="sessionTopP" type="number" min="0.01" max="1" step="0.01">
+        </label>
         <label class="session-field">
           <span>Max Tokens <small>(Mumonbot's reply + thinking limit; too low may cut it off)</small></span>
           <input id="sessionMaxTokens" type="number" min="1" max="4096" step="128">

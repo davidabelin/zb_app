@@ -1,0 +1,44 @@
+{% extends "admin_logbook_base.html" %}
+{% block title %}Memory Logbook{% endblock %}
+{% block content %}
+  <header class="page-header">
+    <p class="eyebrow">For administrative use only</p>
+    <h1>Memory Logbook</h1>
+    <p class="intro">{{ total }} entr{{ "y" if total == 1 else "ies" }} · newest first</p>
+  </header>
+
+  {% if rows %}
+    <section class="entry-list" aria-label="Memory entries">
+      {% for position, entry in rows %}
+        <article class="entry-card">
+          <a class="entry-link" href="{{ url_for('admin.admin_logbook_entry', position=position) }}">
+            <div class="entry-heading">
+              <span class="entry-number">#{{ entry.serial_number }}</span>
+              <span class="entry-date">{{ entry.date }}{% if entry.time != "unknown" %} · {{ entry.time }}{% endif %}</span>
+            </div>
+            <h2>{{ entry.title }}</h2>
+            <p class="entry-summary">{{ entry.response_summary | truncate(320, True, "…") }}</p>
+            <span class="read-link">Read full entry →</span>
+          </a>
+        </article>
+      {% endfor %}
+    </section>
+  {% else %}
+    <section class="empty-state">
+      <h2>No entries yet</h2>
+      <p>The memory logbook is empty.</p>
+    </section>
+  {% endif %}
+
+  {% if page_count > 1 %}
+    <nav class="page-nav" aria-label="Logbook pages">
+      {% if page > 1 %}
+        <a href="{{ url_for('admin.admin_logbook', page=page-1) }}">← Newer entries</a>
+      {% endif %}
+      <span>Page {{ page }} of {{ page_count }}</span>
+      {% if page < page_count %}
+        <a href="{{ url_for('admin.admin_logbook', page=page+1) }}">Older entries →</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+{% endblock %}

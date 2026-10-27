@@ -280,13 +280,13 @@ def _params_from_session_settings(
         "truncation": "auto",
         "max_output_tokens": settings["max_output_tokens"],
     }
-    if config._supports_sampling_controls(resolved_model):
+    effort = config._normalize_reasoning_effort(settings.get("reasoning_effort", ""))
+    if config._supports_sampling_controls(resolved_model, effort):
         if settings.get("temperature") is not None:
             params["temperature"] = settings["temperature"]
         if settings.get("top_p") is not None:
             params["top_p"] = settings["top_p"]
 
-    effort = config._normalize_reasoning_effort(settings.get("reasoning_effort", ""))
     if effort and config._supports_reasoning(resolved_model):
         params["reasoning"] = {
             "effort": effort,
@@ -347,7 +347,9 @@ def resolve_session_settings(
             raise ValueError(f"reasoning_effort is not supported by {model_name}.")
         resolved["reasoning_effort"] = ""
 
-    if model_caps["supports_sampling_controls"]:
+    if config._supports_sampling_controls(
+        config.MODELS_IN_USE[model_name], requested_reasoning
+    ):
         if resolved.get("temperature") is None and "temperature" in default_profile:
             resolved["temperature"] = default_profile["temperature"]
         if resolved.get("top_p") is None and "top_p" in default_profile:

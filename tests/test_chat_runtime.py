@@ -121,8 +121,8 @@ def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(
     assert 'id="sessionEnableFileSearch"' not in body
     assert 'id="sessionEnableWebSearch"' not in body
     assert 'id="sessionEnableBackgroundCritic"' not in body
-    assert 'id="sessionTemperature"' not in body
-    assert 'id="sessionTopP"' not in body
+    assert 'id="sessionTemperature"' in body
+    assert 'id="sessionTopP"' in body
     assert "(persona/context prompt)" in body
     assert "(post-trained LLM)" in body
     assert 'id="chatResults"' in body

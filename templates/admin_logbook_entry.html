@@ -1,0 +1,81 @@
+{% extends "admin_logbook_base.html" %}
+{% block title %}Memory {{ entry.serial_number }}{% endblock %}
+{% block content %}
+  <nav class="entry-nav" aria-label="Memory navigation">
+    <a href="{{ url_for('admin.admin_logbook', page=page) }}">← Back to list</a>
+    <span class="entry-nav-pair">
+      {% if older_position %}<a href="{{ url_for('admin.admin_logbook_entry', position=older_position) }}">← Older</a>{% endif %}
+      {% if newer_position %}<a href="{{ url_for('admin.admin_logbook_entry', position=newer_position) }}">Newer →</a>{% endif %}
+    </span>
+  </nav>
+
+  <article class="full-entry">
+    <header class="page-header detail-header">
+      <div>
+        <p class="eyebrow">Memory {{ entry.serial_number }} of {{ total }}</p>
+        <h1>{{ entry.title }}</h1>
+        <p class="intro">{{ entry.date }}{% if entry.time != "unknown" %} · {{ entry.time }}{% endif %}</p>
+      </div>
+      <button type="button" class="edit-button" disabled title="Editing is not available yet">Edit</button>
+    </header>
+
+    <section class="entry-section">
+      <h2>Koans used</h2>
+      {% if entry.koans_used %}
+        <ul>{% for koan in entry.koans_used %}<li>{{ koan }}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">None recorded.</p>{% endif %}
+    </section>
+    <section class="entry-section">
+      <h2>User problem or questions</h2>
+      <p class="entry-text">{{ entry.user_problem_or_questions }}</p>
+    </section>
+    <section class="entry-section">
+      <h2>Response summary</h2>
+      <p class="entry-text">{{ entry.response_summary }}</p>
+    </section>
+    <section class="entry-section">
+      <h2>Session evaluations</h2>
+      {% if entry.session_evaluations %}
+        <div class="evaluation-list">
+          {% for evaluation in entry.session_evaluations %}
+            <div class="evaluation">
+              <h3>{{ evaluation.case }}</h3>
+              <p class="evaluation-meta">{{ evaluation.evaluation }}{% if evaluation.conversation_id %} · Session {{ evaluation.conversation_id }}{% endif %}</p>
+              <p class="entry-text">{{ evaluation.notes }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}<p class="muted">None recorded.</p>{% endif %}
+    </section>
+    <section class="entry-section">
+      <h2>Key insights</h2>
+      {% if entry.key_insights %}
+        <ul>{% for insight in entry.key_insights %}<li class="entry-text">{{ insight }}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">None recorded.</p>{% endif %}
+    </section>
+    <section class="entry-section">
+      <h2>Lessons learned</h2>
+      {% if entry.lessons_learned %}
+        <ul>{% for lesson in entry.lessons_learned %}<li class="entry-text">{{ lesson }}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">None recorded.</p>{% endif %}
+    </section>
+    <section class="entry-section">
+      <h2>Final outcome</h2>
+      <p class="entry-text">{{ entry.final_outcome }}</p>
+    </section>
+    <section class="entry-section">
+      <h2>User instructions</h2>
+      {% if entry.user_instructions %}
+        <ul>{% for instruction in entry.user_instructions %}<li class="entry-text">{{ instruction }}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">None recorded.</p>{% endif %}
+    </section>
+  </article>
+
+  <nav class="entry-nav bottom-nav" aria-label="Memory navigation">
+    <a href="{{ url_for('admin.admin_logbook', page=page) }}">← Back to list</a>
+    <span class="entry-nav-pair">
+      {% if older_position %}<a href="{{ url_for('admin.admin_logbook_entry', position=older_position) }}">← Older</a>{% endif %}
+      {% if newer_position %}<a href="{{ url_for('admin.admin_logbook_entry', position=newer_position) }}">Newer →</a>{% endif %}
+    </span>
+  </nav>
+{% endblock %}

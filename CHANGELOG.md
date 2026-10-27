@@ -7,9 +7,12 @@
 - limited the Sanzen teacherbot model chooser to GPT-5.6 Sol, GPT-6 Sol, and
   GPT-6.1 Sol, with model-specific reasoning effort choices
 - added short settings hints for Botling, Model, Reasoning, and Max Tokens;
-  removed Temperature, Top P, and the four tool toggles from the room
+  Temperature and Top P appear and are sent only with `none` reasoning on
+  GPT-5.6 Sol or GPT-6 Sol; removed the four tool toggles from the room
 - preserved preset tool settings and the API session settings contract while
   simplifying the browser controls
+- added a gated, read-only `/admin/logbook` index and full-entry pages with
+  paging, adjacent-entry links, and an inactive Edit button
 - added public Sampled Sessions: five randomly selected complete Dokusan
   dialogues, anonymous speaker labels, student-name replacement, and only model
   and recorded date/time metadata

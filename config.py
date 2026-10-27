@@ -462,9 +462,19 @@ class Config:
         return model_name.startswith(prefixes)
 
     @staticmethod
-    def _supports_sampling_controls(model_name: str) -> bool:
-        """Return whether temperature/top-p style controls should be sent."""
+    def _supports_sampling_controls(
+        model_name: str, reasoning_effort: str | None = None
+    ) -> bool:
+        """Return whether a model can accept sampling at the selected effort.
 
+        With no effort supplied, report whether the model can ever offer the
+        controls, for the browser's model capability list.
+        """
+
+        if model_name in {"gpt-5.6-sol", "gpt-6-sol"}:
+            return reasoning_effort is None or reasoning_effort == "none"
+        if model_name == "gpt-6.1-sol":
+            return False
         prefixes = ("gpt-5", "gpt-6", "o1", "o3", "o4")
         return not model_name.startswith(prefixes)
 
@@ -536,7 +546,10 @@ class Config:
             "store": True,
             "truncation": "auto",
         }
-        if self._supports_sampling_controls(resolved_model):
+        effort = self._normalize_reasoning_effort(
+            str(profile_config.get("reasoning_effort", self.OPENAI_REASONING_EFFORT))
+        )
+        if self._supports_sampling_controls(resolved_model, effort):
             if "temperature" in profile_config:
                 params["temperature"] = profile_config["temperature"]
             if "top_p" in profile_config:
@@ -544,9 +557,6 @@ class Config:
         if "max_output_tokens" in profile_config:
             params["max_output_tokens"] = profile_config["max_output_tokens"]
 
-        effort = self._normalize_reasoning_effort(
-            str(profile_config.get("reasoning_effort", self.OPENAI_REASONING_EFFORT))
-        )
         if effort and self._supports_reasoning(resolved_model):
             params["reasoning"] = {
                 "effort": effort,

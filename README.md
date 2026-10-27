@@ -120,6 +120,8 @@ Implemented v3 runtime pieces:
   the current OpenAI project cannot access them
 - `gpt-5.6-sol` for asynchronous critic/judging, `gpt-4.1` reserved for
   post-training work
+- Sanzen Temperature and Top P controls for GPT-5.6 Sol and GPT-6 Sol only
+  when reasoning is set to `none`; other reasoning settings omit them
 - prompt caching via stable `prompt_cache_key` values
 - Mumon exemplar context for non-fine-tuned live models: the Responses
   `instructions` block for generic models such as `gpt-5.6-sol` opens with the
@@ -144,6 +146,11 @@ Implemented v3 runtime pieces:
   - `enqueue_review`
   - `report_ui_status`
 - optional background session critic submissions
+
+The admin Session Review Queue links to `/admin/logbook`. That read-only area
+lists normalized memory entries newest first, with summaries and links to full
+entries. It uses the same admin login gate as the review queue. The Edit button
+on an entry is currently a disabled placeholder.
 
 ### Background critic
 

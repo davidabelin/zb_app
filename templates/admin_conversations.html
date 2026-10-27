@@ -109,6 +109,19 @@
       border-color: rgba(155, 44, 44, 0.28);
     }
 
+    .status-card-link {
+      display: block;
+      color: inherit;
+      transition: border-color 0.15s ease, transform 0.15s ease;
+    }
+
+    .status-card-link:hover,
+    .status-card-link:focus-visible {
+      border-color: var(--accent);
+      text-decoration: none;
+      transform: translateY(-2px);
+    }
+
     .status-card label {
       display: block;
       color: var(--muted);
@@ -365,11 +378,20 @@
 
       <div class="status-grid" aria-label="Backend status">
         {% for item in backend_status %}
+          {% if item.label == "Memory Logbook" %}
+          <a class="status-card status-card-link {{ item.class }}" href="{{ url_for('admin.admin_logbook') }}">
+          {% else %}
           <div class="status-card {{ item.class }}">
+          {% endif %}
             <label>{{ item.label }}</label>
             <div class="status-state">{{ item.state }}</div>
             <div class="status-detail">{{ item.detail }}</div>
+          {% if item.label == "Memory Logbook" %}
+            <div class="status-detail">Open logbook →</div>
+          </a>
+          {% else %}
           </div>
+          {% endif %}
         {% endfor %}
       </div>
 

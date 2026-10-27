@@ -14,6 +14,7 @@ from flask import (
     Response,
     abort,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -32,6 +33,7 @@ import session_reviews
 import utilities as utipy
 
 admin_bp = Blueprint("admin", __name__)
+_LOGBOOK_PAGE_SIZE = 20
 
 
 @admin_bp.route("/admin/login", methods=["GET", "POST"])
@@ -500,6 +502,70 @@ def admin_conversations():
         ),
         storage=session_reviews.storage_metadata(),
         backend_status=_admin_backend_status(rows),
+    )
+
+
+def _load_admin_logbook() -> list[dict[str, Any]]:
+    """Load normalized logbook entries for read-only admin pages."""
+    try:
+        return utipy.load_memory_logbook()
+    except RuntimeError as exc:
+        logging.warning("Admin logbook unavailable: %s", exc)
+        abort(503, description="Memory logbook is unavailable.")
+
+
+def _render_admin_logbook(template: str, **context: Any) -> Response:
+    """Keep private memory pages out of browser and proxy caches."""
+    response = make_response(render_template(template, **context))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@admin_bp.get("/admin/logbook")
+def admin_logbook():
+    """List canonical memory entries, newest first, behind the admin gate."""
+    _require_admin_auth()
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        abort(400, description="Page must be a positive integer.")
+    if page < 1:
+        abort(400, description="Page must be a positive integer.")
+
+    entries = _load_admin_logbook()
+    total = len(entries)
+    page_count = max(1, (total + _LOGBOOK_PAGE_SIZE - 1) // _LOGBOOK_PAGE_SIZE)
+    if page > page_count:
+        abort(404)
+    start = (page - 1) * _LOGBOOK_PAGE_SIZE
+    newest_first = list(enumerate(entries, start=1))[::-1]
+    rows = newest_first[start : start + _LOGBOOK_PAGE_SIZE]
+    return _render_admin_logbook(
+        "admin_logbook.html",
+        rows=rows,
+        total=total,
+        page=page,
+        page_count=page_count,
+    )
+
+
+@admin_bp.get("/admin/logbook/<int:position>")
+def admin_logbook_entry(position: int):
+    """Show every normalized field of one canonical memory entry."""
+    _require_admin_auth()
+    entries = _load_admin_logbook()
+    if position < 1 or position > len(entries):
+        abort(404)
+    entry = entries[position - 1]
+    page = (len(entries) - position) // _LOGBOOK_PAGE_SIZE + 1
+    return _render_admin_logbook(
+        "admin_logbook_entry.html",
+        entry=entry,
+        position=position,
+        newer_position=position + 1 if position < len(entries) else None,
+        older_position=position - 1 if position > 1 else None,
+        page=page,
+        total=len(entries),
     )
 
 
