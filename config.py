@@ -458,20 +458,24 @@ class Config:
     def _supports_reasoning(model_name: str) -> bool:
         """Return whether a model name plausibly accepts reasoning options."""
 
-        prefixes = ("gpt-5", "o1", "o3", "o4")
+        prefixes = ("gpt-5", "gpt-6", "o1", "o3", "o4")
         return model_name.startswith(prefixes)
 
     @staticmethod
     def _supports_sampling_controls(model_name: str) -> bool:
         """Return whether temperature/top-p style controls should be sent."""
 
-        prefixes = ("gpt-5", "o1", "o3", "o4")
+        prefixes = ("gpt-5", "gpt-6", "o1", "o3", "o4")
         return not model_name.startswith(prefixes)
 
     @staticmethod
     def reasoning_effort_choices(model_name: str) -> list[str]:
         """Return the supported reasoning-effort values for one model."""
 
+        if model_name == "gpt-6.1-sol":
+            return ["low", "medium", "high", "xhigh", "max"]
+        if model_name in {"gpt-5.6-sol", "gpt-6-sol"}:
+            return ["none", "low", "medium", "high", "xhigh", "max"]
         if Config._supports_reasoning(model_name):
             return ["none", "low", "medium", "high", "xhigh"]
         return []

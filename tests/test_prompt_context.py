@@ -8,7 +8,7 @@ import pytest
 
 import utilities
 
-GENERIC_MODEL = "gpt-5.5"
+GENERIC_MODEL = "gpt-5.6-sol"
 FINETUNED_MODEL = "set03-bs2lr05e7"
 
 

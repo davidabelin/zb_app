@@ -11,17 +11,51 @@ def test_session_options_payload_exposes_defaults_presets_and_models():
     assert payload["settings_version"] == utilities.config.SESSION_SETTINGS_VERSION
     assert payload["defaults"]["preset_id"] == utilities.config.DEFAULT_BOTLING_ID
     assert any(preset["id"] == "balanced" for preset in payload["presets"])
-    assert any(model["id"] == "gpt-5.5" for model in payload["models"])
+    assert [model["id"] for model in payload["models"]] == [
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+    ]
     assert all(model["id"] != "set03-bs2lr05e7" for model in payload["models"])
 
     model = next(model for model in payload["models"] if model["id"] == default_model)
     assert model["supports_reasoning"] is True
     assert model["supports_sampling_controls"] is False
+    assert payload["models"][0]["reasoning_efforts"] == [
+        "none", "low", "medium", "high", "xhigh", "max"
+    ]
+    assert payload["models"][1]["reasoning_efforts"] == [
+        "none", "low", "medium", "high", "xhigh", "max"
+    ]
+    assert payload["models"][2]["reasoning_efforts"] == [
+        "low", "medium", "high", "xhigh", "max"
+    ]
 
 
 def test_resolve_session_settings_rejects_unavailable_finetune():
     with pytest.raises(ValueError, match="Unsupported model_name"):
         utilities.resolve_session_settings({"model_name": "set03-bs2lr05e7"})
+
+
+@pytest.mark.parametrize("model_name", ["gpt-5.6-sol", "gpt-6-sol", "gpt-6.1-sol"])
+def test_sol_session_params_use_reasoning_without_sampling_controls(model_name):
+    settings = utilities.resolve_session_settings(
+        {"model_name": model_name, "reasoning_effort": "high"}
+    )
+    params = utilities._params_from_session_settings(settings)
+
+    assert params["model"] == model_name
+    assert params["reasoning"]["effort"] == "high"
+    assert params["max_output_tokens"] == settings["max_output_tokens"]
+    assert "temperature" not in params
+    assert "top_p" not in params
+
+
+def test_gpt_6_1_sol_rejects_unsupported_none_reasoning():
+    with pytest.raises(ValueError, match="Unsupported reasoning_effort"):
+        utilities.resolve_session_settings(
+            {"model_name": "gpt-6.1-sol", "reasoning_effort": "none"}
+        )
 
 
 def test_config_rejects_unregistered_openai_live_model():
@@ -48,7 +82,7 @@ def test_session_settings_from_legacy_metadata_reassigns_unavailable_finetune():
     )
 
     assert settings["preset_id"] == "balanced"
-    assert settings["model_name"] == "gpt-5.5"
+    assert settings["model_name"] == "gpt-5.6-sol"
     assert settings["max_output_tokens"] == 1000
     assert settings["reasoning_effort"] == "medium"
     assert settings["temperature"] is None

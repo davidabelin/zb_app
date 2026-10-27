@@ -10,7 +10,9 @@ from __future__ import annotations
 
 # Models accessible to the current production OpenAI project.
 MODELS_IN_USE = {
-    "gpt-5.5": "gpt-5.5",
+    "gpt-5.6-sol": "gpt-5.6-sol",
+    "gpt-6-sol": "gpt-6-sol",
+    "gpt-6.1-sol": "gpt-6.1-sol",
 }
 
 # Historical fine-tunes are retained for reference and offline evaluation.
@@ -40,6 +42,9 @@ LEGACY_FINETUNES = {
 }
 
 MODEL_LOSSES = {
+    "gpt-5.6-sol": 0.0,
+    "gpt-6-sol": 0.0,
+    "gpt-6.1-sol": 0.0,
     "gpt-5.5": 0.0,
     "gpt-5.4-mini": 0.0,
     "gpt-5.4": 0.0,

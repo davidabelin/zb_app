@@ -81,46 +81,20 @@
       </div>
       <div class="session-settings-grid">
         <label class="session-field">
-          <span>Botling</span>
+          <span>Botling <small>(persona/context prompt)</small></span>
           <select id="sessionPreset"></select>
         </label>
         <label class="session-field">
-          <span>Model</span>
+          <span>Model <small>(post-trained LLM)</small></span>
           <select id="sessionModel"></select>
         </label>
         <label id="sessionReasoningWrap" class="session-field">
-          <span>Reasoning</span>
+          <span>Reasoning <small>(thinking effort; higher uses more time and tokens)</small></span>
           <select id="sessionReasoning"></select>
         </label>
-        <label id="sessionTemperatureWrap" class="session-field">
-          <span>Temperature</span>
-          <input id="sessionTemperature" type="number" min="0" max="2" step="0.1">
-        </label>
-        <label id="sessionTopPWrap" class="session-field">
-          <span>Top P</span>
-          <input id="sessionTopP" type="number" min="0.01" max="1" step="0.01">
-        </label>
         <label class="session-field">
-          <span>Max Tokens</span>
+          <span>Max Tokens <small>(Mumonbot's reply + thinking limit; too low may cut it off)</small></span>
           <input id="sessionMaxTokens" type="number" min="1" max="4096" step="128">
-        </label>
-      </div>
-      <div class="session-settings-toggles">
-        <label class="session-toggle">
-          <input id="sessionEnableFunctionTools" type="checkbox">
-          <span>Local tools</span>
-        </label>
-        <label class="session-toggle">
-          <input id="sessionEnableFileSearch" type="checkbox">
-          <span>File search</span>
-        </label>
-        <label class="session-toggle">
-          <input id="sessionEnableWebSearch" type="checkbox">
-          <span>Web search</span>
-        </label>
-        <label class="session-toggle">
-          <input id="sessionEnableBackgroundCritic" type="checkbox">
-          <span>Background critic</span>
         </label>
       </div>
     </section>

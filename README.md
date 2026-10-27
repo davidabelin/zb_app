@@ -1,6 +1,6 @@
 # ZB App
 
-Current app/repo release: `v3.2.6`
+Current app/repo release: `v3.3.0`
 
 `zb_app` is the web, API, and operator surface for Zenbot. In v3 it is a
 single App Engine application with an OpenAI-native runtime underneath:
@@ -31,7 +31,7 @@ single App Engine application with an OpenAI-native runtime underneath:
 
 ## Runtime Topology
 
-The v3.2 runtime is App Engine-only:
+The v3.3 runtime is App Engine-only:
 
 - one public App Engine service serves browser routes, SSE chat, admin pages,
   and authenticated API routes from the same host
@@ -114,14 +114,15 @@ Responses API rather than Chat Completions.
 
 Implemented v3 runtime pieces:
 
-- deterministic live botling defaults sourced from `models.py`, currently
-  using `gpt-5.5`; historical fine-tunes remain in the legacy catalog because
+- deterministic live botling defaults sourced from `models.py`, with
+  `gpt-5.6-sol`, `gpt-6-sol`, and `gpt-6.1-sol` in the Sanzen model chooser;
+  historical fine-tunes remain in the legacy catalog because
   the current OpenAI project cannot access them
 - `gpt-5.6-sol` for asynchronous critic/judging, `gpt-4.1` reserved for
   post-training work
 - prompt caching via stable `prompt_cache_key` values
 - Mumon exemplar context for non-fine-tuned live models: the Responses
-  `instructions` block for generic models such as `gpt-5.5` opens with the
+  `instructions` block for generic models such as `gpt-5.6-sol` opens with the
   trainset03a dokusan transcripts rendered as `Student:` / `Mumon:` lines
   (`static/mumon_exemplars.jsonl`, a snapshot of
   `../training/trainset03/trainset03a.jsonl` to re-copy when set05 lands),
@@ -155,8 +156,9 @@ result back into the review manifest automatically.
 
 Critic submission requires both `OPENAI_ENABLE_BACKGROUND_CRITIC=true` for the
 deployment and `enable_background_critic=true` in the session's locked
-settings. The browser session settings panel and API session settings payload
-expose the per-session choice. `OPENAI_JUDGE_MODEL` defaults to `gpt-5.6-sol`;
+settings. The API session settings payload retains the per-session choice;
+the Sanzen room uses its botling preset and does not show a critic toggle.
+`OPENAI_JUDGE_MODEL` defaults to `gpt-5.6-sol`;
 leave its `judge` profile at medium reasoning for the initial baseline, then
 evaluate a lower effort against representative archived sessions before tuning.
 `OPENAI_PROMPT_CACHE_RETENTION` supplies the critic request's cache TTL.
@@ -174,7 +176,7 @@ settings from the shell with:
 ```cmd
 python scripts/inspect_botlings.py --help
 python scripts/inspect_botlings.py
-python scripts/inspect_botlings.py --preset fierce_barrier --model gpt-5.5 --reasoning-effort medium
+python scripts/inspect_botlings.py --preset fierce_barrier --model gpt-6.1-sol --reasoning-effort medium
 ```
 
 The default vector-store sync helper is:

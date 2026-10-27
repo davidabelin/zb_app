@@ -345,6 +345,11 @@
   font-weight: bold;
 }
 
+.session-field small {
+  font-size: 0.9em;
+  font-weight: normal;
+}
+
 .session-field input,
 .session-field select {
   width: 100%;
@@ -355,33 +360,6 @@
   background: #fff;
   color: #142918;
   font-family: inherit;
-}
-
-.session-settings-toggles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 0.5em;
-  margin-top: 0.75em;
-}
-
-.session-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.55em;
-  padding: 0.5em 0.6em;
-  border: 1px solid #c7dcc9;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.65);
-  color: #1d341f;
-  font-size: 0.93em;
-}
-
-.session-toggle input {
-  margin: 0;
-}
-
-.session-toggle.is-disabled {
-  opacity: 0.62;
 }
 
   /* ========== Chat Message Bubbles ========== */
@@ -480,8 +458,7 @@
     .session-settings-topline {
       flex-direction: column;
     }
-    .session-settings-grid,
-    .session-settings-toggles {
+    .session-settings-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -1429,20 +1406,6 @@ footer a,
   background: #fffdf7;
 }
 
-.session-settings-toggles {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.session-toggle {
-  min-height: 29px;
-  padding: 5px 6px;
-  background: rgba(255, 253, 247, 0.78);
-  border-color: var(--z-line);
-  font-size: 0.82rem;
-}
-
 .zendo-context-form {
   margin-top: auto;
   padding-top: 14px;
@@ -1671,17 +1634,6 @@ footer a,
   font-size: var(--z-fs-xs);
 }
 
-.session-settings-toggles {
-  gap: 5px;
-  margin-top: 7px;
-}
-
-.session-toggle {
-  min-height: 24px;
-  padding: 3px 5px;
-  font-size: var(--z-fs-xs);
-}
-
 footer {
   padding: 6px;
   margin-top: 8px;
@@ -1805,8 +1757,7 @@ footer ul {
     text-align: left;
   }
 
-  .session-settings-grid,
-  .session-settings-toggles {
+  .session-settings-grid {
     grid-template-columns: 1fr;
   }
 

@@ -117,7 +117,14 @@ def test_chatter_renders_workspace_and_session_settings_in_non_streaming_mode(
     assert 'id="sessionSettingsPanel"' in body
     assert 'id="sessionPreset"' in body
     assert 'id="sessionModel"' in body
-    assert 'id="sessionEnableFunctionTools"' in body
+    assert 'id="sessionEnableFunctionTools"' not in body
+    assert 'id="sessionEnableFileSearch"' not in body
+    assert 'id="sessionEnableWebSearch"' not in body
+    assert 'id="sessionEnableBackgroundCritic"' not in body
+    assert 'id="sessionTemperature"' not in body
+    assert 'id="sessionTopP"' not in body
+    assert "(persona/context prompt)" in body
+    assert "(post-trained LLM)" in body
     assert 'id="chatResults"' in body
     assert 'id="chatInput"' in body
     assert 'id="chatSend"' in body

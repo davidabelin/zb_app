@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v3.3.0 - 2026-10-27
+
+- limited the Sanzen teacherbot model chooser to GPT-5.6 Sol, GPT-6 Sol, and
+  GPT-6.1 Sol, with model-specific reasoning effort choices
+- added short settings hints for Botling, Model, Reasoning, and Max Tokens;
+  removed Temperature, Top P, and the four tool toggles from the room
+- preserved preset tool settings and the API session settings contract while
+  simplifying the browser controls
 - added public Sampled Sessions: five randomly selected complete Dokusan
   dialogues, anonymous speaker labels, student-name replacement, and only model
   and recorded date/time metadata
