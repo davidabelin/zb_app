@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v3.3.3 - 2026-10-27
+
+- repaired the cloud session review queue: dual-review final counts, generation-checked
+  decisions and archive upserts, and a recoverable training export
+- reconciled archived transcripts with the review manifest while retaining prior decisions
+- improved the admin queue layout, filter groups, colors, wrapping, and pagination
+- aligned the app release display and deploy banner with `VERSION`
+
 ## v3.3.0 - 2026-10-27
 
 - limited the Sanzen teacherbot model chooser to GPT-5.6 Sol, GPT-6 Sol, and

@@ -1659,7 +1659,8 @@
         "record",
         "next_unreviewed_index",
         "summary",
-        "progress_summary"
+        "progress_summary",
+        "training_export_synced"
       ],
       "properties": {
         "status": {
@@ -1680,6 +1681,10 @@
         },
         "progress_summary": {
           "$ref": "#/components/schemas/ReviewProgressSummary"
+        },
+        "training_export_synced": {
+          "type": "boolean",
+          "description": "Whether the derived sessions-to-train export was refreshed after saving the decision."
         }
       }
     },

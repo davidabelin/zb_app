@@ -69,6 +69,10 @@
       flex-wrap: wrap;
     }
 
+    .topline > div:first-child { min-width: 0; flex: 1 1 360px; }
+    h1 { font-size: clamp(2rem, 5vw, 3rem); margin-bottom: 8px; }
+    h2 { color: #254255; }
+
     .eyebrow {
       color: var(--muted);
       font-size: 0.95rem;
@@ -82,14 +86,22 @@
 
     .summary {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
-      min-width: min(520px, 100%);
+      width: 100%;
+      margin-top: 12px;
     }
+
+    .summary .pill { justify-content: space-between; border-width: 1px 1px 1px 5px; min-width: 0; }
+    .summary .pill strong { font-size: 1.25rem; }
+    .pill.use-tone { border-left-color: var(--use); background: #eaf5ee; }
+    .pill.alter-tone { border-left-color: var(--alter); background: #fff3db; }
+    .pill.reject-tone { border-left-color: var(--reject); background: #fbeceb; }
+    .pill.pending-tone { border-left-color: var(--accent); background: #eaf2f7; }
 
     .status-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
       gap: 10px;
       margin-top: 18px;
     }
@@ -138,6 +150,7 @@
       color: var(--muted);
       font-size: 0.9rem;
       line-height: 1.35;
+      overflow-wrap: anywhere;
     }
 
     .pill,
@@ -167,6 +180,26 @@
       gap: 10px;
       margin-top: 16px;
     }
+
+    .filter-groups { display: grid; gap: 14px; margin-top: 22px; }
+    .filter-group { border-top: 1px solid var(--line); padding-top: 14px; }
+    .filter-group-title { color: var(--muted); font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .filter-row { margin-top: 8px; }
+    .filter-pill { padding: 8px 13px; font-size: .9rem; transition: background .15s ease, border-color .15s ease; }
+    .filter-pill:hover { background: #eaf2f7; border-color: var(--accent); text-decoration: none; }
+    .filter-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .filter-pill.final-use { border-color: var(--use); color: var(--use); }
+    .filter-pill.final-alter { border-color: var(--alter); color: #855a10; }
+    .filter-pill.final-reject { border-color: var(--reject); color: var(--reject); }
+    .filter-pill.active.final-use { background: var(--use); color: #fff; }
+    .filter-pill.active.final-alter { background: var(--alter); color: #fff; }
+    .filter-pill.active.final-reject { background: var(--reject); color: #fff; }
+    .action-row { align-items: center; padding-top: 16px; border-top: 1px solid var(--line); }
+    .action-row.utilities { margin-top: 10px; padding-top: 0; border: 0; }
+    .action-link, .action-button { min-height: 43px; }
+    .action-link:hover, .action-button:hover { filter: brightness(.94); text-decoration: none; }
+    .action-link.secondary { background: #eaf2f7; border-color: #aac7da; color: #204d70; }
+    .action-button.maintenance { background: #f7ecd9; border-color: #d0ad74; color: #604113; }
 
     .filter-pill.active {
       background: #efe4cf;
@@ -204,7 +237,7 @@
 
     .queue {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
       gap: 14px;
       margin-top: 18px;
     }
@@ -223,6 +256,7 @@
       color: inherit;
       text-decoration: none;
       height: 100%;
+      overflow-wrap: anywhere;
     }
 
     .card-link:hover {
@@ -237,9 +271,11 @@
       align-items: flex-start;
     }
 
+    .card-top > div { min-width: 0; }
+
     .card-top h3 {
       margin-bottom: 6px;
-      word-break: break-word;
+      overflow-wrap: anywhere;
     }
 
     .badge {
@@ -247,7 +283,8 @@
       color: #fff;
       font-size: 0.86rem;
       padding: 7px 10px;
-      white-space: nowrap;
+      flex: 0 1 auto;
+      text-align: center;
     }
 
     .badge.Use { background: var(--use); }
@@ -259,6 +296,7 @@
     .preview {
       margin-top: 14px;
       line-height: 1.45;
+      overflow-wrap: anywhere;
     }
 
     .preview strong {
@@ -278,6 +316,8 @@
     .meta div {
       padding-top: 10px;
       border-top: 1px solid #eadfcf;
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     .meta label {
@@ -292,6 +332,7 @@
       color: var(--muted);
       font-size: 0.92rem;
       line-height: 1.45;
+      overflow-wrap: anywhere;
     }
 
     .empty {
@@ -306,6 +347,10 @@
       margin: 0;
     }
 
+    .pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .pagination a { border: 1px solid var(--line); border-radius: 999px; background: #fff; padding: 8px 14px; }
+    .pagination a:hover { background: #eaf2f7; text-decoration: none; }
+
     @media (max-width: 760px) {
       main {
         padding: 14px;
@@ -319,6 +364,15 @@
       .meta {
         grid-template-columns: 1fr;
       }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .card-top { flex-wrap: wrap; }
+    }
+
+    @media (max-width: 420px) {
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary .pill { align-items: flex-start; flex-direction: column; gap: 3px; border-radius: 12px; font-size: .82rem; padding: 9px 11px; }
+      .summary .pill strong { margin: 0; }
+      .action-row > *, .action-row .action-link, .action-row .action-button { width: 100%; justify-content: center; }
     }
   </style>
 </head>
@@ -333,14 +387,14 @@
           <p class="subtle">Cloud-backed archived conversations live here, with review decisions shared across browser admins and Zenbot.</p>
         </div>
         <div class="summary">
-          <div class="pill">Final Use <strong>{{ summary.Use }}</strong></div>
-          <div class="pill">Final Alter <strong>{{ summary.Alter }}</strong></div>
-          <div class="pill">Final Reject <strong>{{ summary.Reject }}</strong></div>
-          <div class="pill">Awaiting Final <strong>{{ summary.unreviewed }}</strong></div>
-          <div class="pill">CM Reviewed <strong>{{ progress_summary.cm_reviewed }}</strong></div>
-          <div class="pill">ZB Reviewed <strong>{{ progress_summary.zb_reviewed }}</strong></div>
-          <div class="pill">Awaiting Other Review <strong>{{ progress_summary.awaiting_other_review }}</strong></div>
-          <div class="pill">Not Yet Touched <strong>{{ progress_summary.not_started }}</strong></div>
+          <div class="pill use-tone">Final Use <strong>{{ summary.Use }}</strong></div>
+          <div class="pill alter-tone">Final Alter <strong>{{ summary.Alter }}</strong></div>
+          <div class="pill reject-tone">Final Reject <strong>{{ summary.Reject }}</strong></div>
+          <div class="pill pending-tone">Awaiting Final <strong>{{ summary.unreviewed }}</strong></div>
+          <div class="pill pending-tone">CM Reviewed <strong>{{ progress_summary.cm_reviewed }}</strong></div>
+          <div class="pill pending-tone">ZB Reviewed <strong>{{ progress_summary.zb_reviewed }}</strong></div>
+          <div class="pill pending-tone">Awaiting Other <strong>{{ progress_summary.awaiting_other_review }}</strong></div>
+          <div class="pill pending-tone">Not Yet Touched <strong>{{ progress_summary.not_started }}</strong></div>
         </div>
       </div>
 
@@ -369,6 +423,7 @@
           Current status: <strong>{{ request.args.get("saved_status", "Awaiting Other Review") }}</strong>.
           <a href="{{ url_for('admin.review_page', index=request.args.get('saved_index', 0), evaluation=evaluation) }}">Reopen saved record.</a>
           Final Use/Alter/Reject counts only change after both reviewer decisions are present.
+          {% if request.args.get("export_warning") == "1" %}The decision is saved; the training export needs a retry.{% endif %}
         </div>
       {% elif status == "empty" %}
         <div class="notice">
@@ -395,33 +450,40 @@
         {% endfor %}
       </div>
 
-      <div class="filter-row">
+      <div class="filter-groups" aria-label="Queue filters">
+      <div class="filter-group"><div class="filter-group-title">Review work</div><nav class="filter-row" aria-label="Review work filters">
         <a class="filter-pill{% if evaluation == 'needs_cm_review' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='needs_cm_review') }}">Need CM Review</a>
         <a class="filter-pill{% if evaluation == 'needs_zb_review' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='needs_zb_review') }}">Need ZB Review</a>
         <a class="filter-pill{% if evaluation == 'unreviewed' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='unreviewed') }}">Awaiting Final</a>
         <a class="filter-pill{% if evaluation == 'not_started' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='not_started') }}">Not Yet Touched</a>
         <a class="filter-pill{% if evaluation == 'awaiting_other_review' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='awaiting_other_review') }}">Awaiting Other Review</a>
+      </nav></div>
+      <div class="filter-group"><div class="filter-group-title">Reviewer progress</div><nav class="filter-row" aria-label="Reviewer progress filters">
         <a class="filter-pill{% if evaluation == 'cm_reviewed' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='cm_reviewed') }}">CM Reviewed</a>
         <a class="filter-pill{% if evaluation == 'zb_reviewed' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='zb_reviewed') }}">ZB Reviewed</a>
-        <a class="filter-pill{% if evaluation == 'Use' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Use') }}">Use</a>
-        <a class="filter-pill{% if evaluation == 'Alter' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Alter') }}">Alter</a>
-        <a class="filter-pill{% if evaluation == 'Reject' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Reject') }}">Reject</a>
+      </nav></div>
+      <div class="filter-group"><div class="filter-group-title">Final outcome</div><nav class="filter-row" aria-label="Final outcome filters">
+        <a class="filter-pill final-use{% if evaluation == 'Use' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Use') }}">Use</a>
+        <a class="filter-pill final-alter{% if evaluation == 'Alter' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Alter') }}">Alter</a>
+        <a class="filter-pill final-reject{% if evaluation == 'Reject' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='Reject') }}">Reject</a>
         <a class="filter-pill{% if evaluation == 'all' %} active{% endif %}" href="{{ url_for('admin.admin_conversations', evaluation='all') }}">All</a>
-      </div>
+      </nav></div></div>
 
       <div class="action-row">
         {% if next_cm_review_index is not none %}
           <a class="action-link primary" href="{{ url_for('admin.review_page', index=next_cm_review_index, evaluation='needs_cm_review') }}">Open Next CM Review</a>
         {% endif %}
         {% if review_rows %}
-          <a class="action-link" href="{{ url_for('admin.review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
+          <a class="action-link secondary" href="{{ url_for('admin.review_page', index=review_rows[0].index, evaluation=evaluation) }}">Open First In This View</a>
         {% endif %}
+      </div>
+      <div class="action-row utilities">
         <a class="action-link" href="{{ url_for('admin.admin_session_settings') }}">Session Settings</a>
         {% if is_local %}
           <a class="action-link" href="{{ url_for('admin.admin_memory_logbook_download') }}">Download Memory Logbook</a>
           <form class="inline" method="post" action="{{ url_for('admin.download_chats') }}">
             <input type="hidden" name="action" value="sync_local_remote">
-            <button class="action-button primary" type="submit">Sync Local/Remote Sessions</button>
+            <button class="action-button maintenance" type="submit">Sync Local/Remote Sessions</button>
           </form>
         {% endif %}
         <form class="inline" method="post" action="{{ url_for('admin.admin_logout') }}">
@@ -464,7 +526,7 @@
           {% else %}
             <h2>{{ evaluation }} Sessions</h2>
           {% endif %}
-          <p class="subtle">{{ review_rows|length }} session(s) in this view.</p>
+          <p class="subtle">{{ filtered_count }} session(s) match. Showing page {{ page }} of {{ total_pages }}.</p>
         </div>
       </div>
 
@@ -510,6 +572,13 @@
         <div class="empty">
           No sessions match this filter yet.
         </div>
+      {% endif %}
+      {% if total_pages > 1 %}
+        <nav class="pagination" aria-label="Queue pages">
+          {% if page > 1 %}<a href="{{ url_for('admin.admin_conversations', evaluation=evaluation, page=page-1) }}">← Previous page</a>{% else %}<span></span>{% endif %}
+          <span>Page {{ page }} of {{ total_pages }}</span>
+          {% if page < total_pages %}<a href="{{ url_for('admin.admin_conversations', evaluation=evaluation, page=page+1) }}">Next page →</a>{% endif %}
+        </nav>
       {% endif %}
     </section>
   </main>

@@ -365,6 +365,9 @@ def set_decision(index: int):
 
     if index < 0 or index >= len(rows):
         abort(404, description="Record index out of range")
+    conversation_id = request.form.get("conversation_id", "").strip()
+    if conversation_id and conversation_id != rows[index]["conversation_id"]:
+        abort(409, description="This queue position changed. Refresh the record before saving.")
 
     try:
         evaluation = session_reviews.normalize_evaluation(
@@ -381,11 +384,13 @@ def set_decision(index: int):
     except ValueError as exc:
         abort(400, description=str(exc))
 
-    rows[index] = session_reviews.apply_reviewer_decision(
-        rows[index], reviewer, evaluation
-    )
+    try:
+        rows, index, export_synced = session_reviews.save_reviewer_decision(
+            rows[index]["conversation_id"], reviewer, evaluation
+        )
+    except ValueError as exc:
+        abort(409, description=str(exc))
     saved_row = dict(rows[index])
-    session_reviews.save_review_state(rows)
 
     dashboard_filter = _normalize_review_filter(
         request.form.get("dashboard_filter", "needs_cm_review")
@@ -399,6 +404,7 @@ def set_decision(index: int):
         "saved_reviewer": reviewer,
         "saved_evaluation": evaluation,
         "saved_status": session_reviews.status_label(saved_row),
+        "export_warning": "0" if export_synced else "1",
     }
     if redirect_index is None and dashboard_filter == "needs_cm_review":
         return redirect(
@@ -490,19 +496,34 @@ def admin_conversations():
     evaluation = _normalize_review_filter(
         request.args.get("evaluation", "needs_cm_review")
     )
-    review_rows = session_reviews.list_dashboard_rows(rows, evaluation)
-    return render_template(
+    filtered_rows = session_reviews.list_dashboard_rows(rows, evaluation)
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        abort(400, description="Page must be a positive integer")
+    if page < 1:
+        abort(400, description="Page must be a positive integer")
+    page_size = 24
+    total_pages = max(1, (len(filtered_rows) + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    review_rows = filtered_rows[(page - 1) * page_size : page * page_size]
+    response = make_response(render_template(
         "admin_conversations.html",
         summary=session_reviews.build_summary(rows),
         progress_summary=session_reviews.build_progress_summary(rows),
         evaluation=evaluation,
         review_rows=review_rows,
+        filtered_count=len(filtered_rows),
+        page=page,
+        total_pages=total_pages,
         next_cm_review_index=session_reviews.first_index_needing_reviewer(
             rows, session_reviews.FORM_REVIEWER_DEFAULT
         ),
         storage=session_reviews.storage_metadata(),
         backend_status=_admin_backend_status(rows),
-    )
+    ))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 def _load_admin_logbook() -> list[dict[str, Any]]:

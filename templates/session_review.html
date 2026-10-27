@@ -301,18 +301,21 @@
 
       <div class="decision-row">
         <form method="post" action="{{ url_for('admin.set_decision', index=record.index) }}">
+          <input type="hidden" name="conversation_id" value="{{ record.metadata.conversation_id }}">
           <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
           <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
           <input type="hidden" name="evaluation" value="Use">
           <button class="use" type="submit">Use</button>
         </form>
         <form method="post" action="{{ url_for('admin.set_decision', index=record.index) }}">
+          <input type="hidden" name="conversation_id" value="{{ record.metadata.conversation_id }}">
           <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
           <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
           <input type="hidden" name="evaluation" value="Alter">
           <button class="alter" type="submit">Alter</button>
         </form>
         <form method="post" action="{{ url_for('admin.set_decision', index=record.index) }}">
+          <input type="hidden" name="conversation_id" value="{{ record.metadata.conversation_id }}">
           <input type="hidden" name="dashboard_filter" value="{{ dashboard_filter }}">
           <input type="hidden" name="reviewer" value="CM" class="reviewer-input">
           <input type="hidden" name="evaluation" value="Reject">

@@ -39,6 +39,82 @@ def test_apply_reviewer_decision_recomputes_final_from_dual_reviews():
     assert updated["evaluation"] == "Use"
 
 
+def test_single_alter_waits_for_other_review_and_counts_as_pending():
+    row = _review_row("single-alter", review_cm="Alter", evaluation="Alter")
+    normalized = session_reviews._normalize_review_row(row)
+
+    assert normalized["evaluation"] == ""
+    assert session_reviews.status_label(normalized) == "Awaiting Other Review"
+    assert session_reviews.build_summary([row])["Alter"] == 0
+    assert session_reviews.build_progress_summary([row])["awaiting_other_review"] == 1
+
+
+def test_concurrent_review_write_retries_without_losing_other_decision(
+    monkeypatch, fake_bucket
+):
+    monkeypatch.setattr(utilities, "BUCKET", fake_bucket)
+    for conversation_id in ("concurrent-a", "concurrent-b"):
+        messages = [{"role": "user", "content": "hello"}]
+        fake_bucket.blob(f"zbchats/{conversation_id}.jsonl").upload_from_string(
+            json.dumps(messages[0]) + "\n"
+        )
+        session_reviews.upsert_review_record_from_session(
+            conversation_id, messages, {"conversation_id": conversation_id}
+        )
+
+    original_write = session_reviews._write_jsonl_blob
+    injected = False
+
+    def concurrent_write(name, rows, **kwargs):
+        nonlocal injected
+        if name == session_reviews.REVIEW_INDEX_BLOB and not injected:
+            injected = True
+            current = session_reviews.load_review_state()
+            current[0] = session_reviews.apply_reviewer_decision(
+                current[0], "ZB", "Reject"
+            )
+            original_write(name, current)
+        return original_write(name, rows, **kwargs)
+
+    monkeypatch.setattr(session_reviews, "_write_jsonl_blob", concurrent_write)
+    rows, index, synced = session_reviews.save_reviewer_decision(
+        "concurrent-a", "CM", "Use"
+    )
+
+    assert synced
+    assert rows[index]["review_cm"] == "Use"
+    assert sum(bool(row["review_zb"]) for row in rows) == 1
+    assert sum(bool(row["review_cm"]) for row in rows) == 1
+
+
+def test_export_failure_does_not_report_a_saved_decision_as_failed(
+    monkeypatch, fake_bucket
+):
+    monkeypatch.setattr(utilities, "BUCKET", fake_bucket)
+    messages = [{"role": "user", "content": "hello"}]
+    fake_bucket.blob("zbchats/export-failure.jsonl").upload_from_string(
+        json.dumps(messages[0]) + "\n"
+    )
+    session_reviews.upsert_review_record_from_session(
+        "export-failure", messages, {"conversation_id": "export-failure"}
+    )
+    original_write = session_reviews._write_jsonl_blob
+
+    def fail_export(name, rows, **kwargs):
+        if name == session_reviews.SESSIONS_TO_TRAIN_BLOB:
+            raise RuntimeError("simulated export outage")
+        return original_write(name, rows, **kwargs)
+
+    monkeypatch.setattr(session_reviews, "_write_jsonl_blob", fail_export)
+    rows, index, synced = session_reviews.save_reviewer_decision(
+        "export-failure", "CM", "Reject"
+    )
+
+    assert not synced
+    assert rows[index]["review_cm"] == "Reject"
+    assert session_reviews.load_review_state()[index]["review_cm"] == "Reject"
+
+
 def test_build_progress_summary_counts_partial_reviews():
     rows = [
         {

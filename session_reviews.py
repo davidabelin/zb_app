@@ -12,9 +12,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import random
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from google.api_core.exceptions import PreconditionFailed
 
 import utilities as utipy
 
@@ -75,6 +78,9 @@ def derive_final_evaluation(review_zb: Any, review_cm: Any) -> str:
     zb = normalize_evaluation(review_zb)
     cm = normalize_evaluation(review_cm)
 
+    if not zb or not cm:
+        return ""
+
     if zb == "Use" and cm == "Use":
         return "Use"
     if zb == "Reject" and cm == "Reject":
@@ -122,14 +128,16 @@ def _read_jsonl_blob(blob_name: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _write_jsonl_blob(blob_name: str, rows: list[dict[str, Any]]) -> None:
+def _write_jsonl_blob(
+    blob_name: str, rows: list[dict[str, Any]], *, if_generation_match: int | None = None
+) -> None:
     """Write a list of JSON objects back to one JSONL blob."""
     payload = "\n".join(json.dumps(row, ensure_ascii=False) for row in rows)
     if payload:
         payload += "\n"
+    options = {"if_generation_match": if_generation_match} if if_generation_match is not None else {}
     _require_bucket().blob(blob_name).upload_from_string(
-        payload,
-        content_type="application/jsonl",
+        payload, content_type="application/jsonl", **options
     )
 
 
@@ -243,7 +251,7 @@ def _normalize_review_row(row: dict[str, Any]) -> dict[str, Any]:
     elif legacy_evaluation:
         review_version = DUAL_REVIEW_VERSION
         review_cm = legacy_evaluation
-        evaluation = legacy_evaluation
+        evaluation = ""
     else:
         review_version = DUAL_REVIEW_VERSION
         evaluation = ""
@@ -369,7 +377,7 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, int]:
     """Count review states across the full manifest."""
     summary = {"total": len(rows), "Use": 0, "Alter": 0, "Reject": 0, "unreviewed": 0}
     for row in rows:
-        evaluation = normalize_evaluation(row.get("evaluation", ""))
+        evaluation = _normalize_review_row(row)["evaluation"]
         if evaluation in REVIEW_CHOICES:
             summary[evaluation] += 1
         else:
@@ -414,6 +422,22 @@ def load_review_state() -> list[dict[str, Any]]:
     return _sort_rows(rows)
 
 
+def _load_review_snapshot() -> tuple[list[dict[str, Any]], int]:
+    """Load a manifest with the GCS generation needed for a conditional save."""
+    blob = _require_bucket().get_blob(REVIEW_INDEX_BLOB)
+    if blob is None:
+        return [], 0
+    rows = []
+    for line_number, line in enumerate(blob.download_as_text().splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            rows.append(_normalize_review_row(json.loads(line)))
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"{REVIEW_INDEX_BLOB}: invalid row {line_number}: {exc}") from exc
+    return _sort_rows(rows), int(blob.generation)
+
+
 def _build_sessions_to_train(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build the training export from manifest rows tagged Use."""
     train_rows: list[dict[str, Any]] = []
@@ -425,11 +449,61 @@ def _build_sessions_to_train(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
     return train_rows
 
 
-def save_review_state(rows: list[dict[str, Any]]) -> None:
-    """Write the manifest and the derived training export back to GCS."""
+def _commit_review_state(rows: list[dict[str, Any]], generation: int) -> bool:
+    """Commit authoritative reviews first; report a separate export failure."""
     normalized_rows = _sort_rows([_normalize_review_row(row) for row in rows])
-    _write_jsonl_blob(REVIEW_INDEX_BLOB, normalized_rows)
-    _write_jsonl_blob(SESSIONS_TO_TRAIN_BLOB, _build_sessions_to_train(normalized_rows))
+    _build_sessions_to_train(normalized_rows)  # Validate before committing the manifest.
+    _write_jsonl_blob(REVIEW_INDEX_BLOB, normalized_rows, if_generation_match=generation)
+    try:
+        for _attempt in range(6):
+            current_rows, current_generation = _load_review_snapshot()
+            _write_jsonl_blob(
+                SESSIONS_TO_TRAIN_BLOB, _build_sessions_to_train(current_rows)
+            )
+            _latest_rows, latest_generation = _load_review_snapshot()
+            if current_generation == latest_generation:
+                return True
+        raise RuntimeError("Review index kept changing during training export refresh")
+    except Exception:
+        logging.exception("Review manifest saved, but training export update failed")
+        return False
+
+
+def save_review_state(rows: list[dict[str, Any]]) -> bool:
+    """Save a complete manifest only if it has not changed since loading."""
+    _current, generation = _load_review_snapshot()
+    return _commit_review_state(rows, generation)
+
+
+def mutate_review_state(
+    mutate: Callable[[list[dict[str, Any]]], tuple[list[dict[str, Any]], Any]],
+) -> tuple[list[dict[str, Any]], Any, bool]:
+    """Retry a targeted edit when another cloud writer changes the manifest."""
+    for _attempt in range(6):
+        rows, generation = _load_review_snapshot()
+        updated_rows, result = mutate(rows)
+        try:
+            export_synced = _commit_review_state(updated_rows, generation)
+        except PreconditionFailed:
+            continue
+        return _sort_rows([_normalize_review_row(row) for row in updated_rows]), result, export_synced
+    raise RuntimeError("Review manifest changed repeatedly; retry the decision.")
+
+
+def save_reviewer_decision(
+    conversation_id: str, reviewer: str, evaluation: str
+) -> tuple[list[dict[str, Any]], int, bool]:
+    """Save a decision by stable conversation ID and return its current index."""
+    def mutate(rows):
+        for index, row in enumerate(rows):
+            if row["conversation_id"] == conversation_id:
+                rows[index] = apply_reviewer_decision(row, reviewer, evaluation)
+                return rows, conversation_id
+        raise ValueError("Review record no longer exists; refresh the queue.")
+
+    rows, _, export_synced = mutate_review_state(mutate)
+    index = next(i for i, row in enumerate(rows) if row["conversation_id"] == conversation_id)
+    return rows, index, export_synced
 
 
 def apply_reviewer_decision(
@@ -704,19 +778,18 @@ def upsert_review_record_from_session(
 ) -> dict[str, Any]:
     """Upsert one manifest row immediately after a session is archived."""
     cleaned_messages = validate_messages(messages)
-    rows = load_review_state()
-    by_conversation_id = {row["conversation_id"]: row for row in rows}
     transcript_blob_name = f"{TRANSCRIPTS_PREFIX}{conversation_id}.jsonl"
-    updated = _manifest_row_from_transcript(
-        transcript_blob_name,
-        {**transcript_metadata, "conversation_id": conversation_id},
-        cleaned_messages,
-        previous_state=by_conversation_id.get(conversation_id),
-    )
+    def mutate(rows):
+        previous = next((row for row in rows if row["conversation_id"] == conversation_id), None)
+        updated = _manifest_row_from_transcript(
+            transcript_blob_name,
+            {**transcript_metadata, "conversation_id": conversation_id},
+            cleaned_messages,
+            previous_state=previous,
+        )
+        return [row for row in rows if row["conversation_id"] != conversation_id] + [updated], updated
 
-    kept_rows = [row for row in rows if row["conversation_id"] != conversation_id]
-    kept_rows.append(updated)
-    save_review_state(kept_rows)
+    _rows, updated, _export_synced = mutate_review_state(mutate)
     return updated
 
 
@@ -785,13 +858,9 @@ def _load_legacy_review_state_by_hash(repo_root: Path) -> dict[str, dict[str, An
 
 def backfill_review_state(repo_root: Path) -> dict[str, int | str]:
     """Rebuild the review manifest from archived transcripts without deleting data."""
-    rows = load_review_state()
-    current_by_id = {row["conversation_id"]: row for row in rows}
     legacy_by_hash = _load_legacy_review_state_by_hash(repo_root.resolve())
 
-    rebuilt_rows: list[dict[str, Any]] = []
-    preserved_current = 0
-    preserved_legacy = 0
+    transcripts = []
     transcript_blobs = sorted(
         blob.name
         for blob in _require_bucket().list_blobs(prefix=TRANSCRIPTS_PREFIX)
@@ -805,28 +874,34 @@ def backfill_review_state(repo_root: Path) -> dict[str, int | str]:
             _normalize_string(transcript_metadata.get("conversation_id"))
             or Path(blob_name).stem
         )
-        previous_state = current_by_id.get(conversation_id)
-        if previous_state and (
-            previous_state.get("evaluation")
-            or previous_state.get("review_zb")
-            or previous_state.get("review_cm")
-        ):
-            preserved_current += 1
-        if previous_state is None:
-            previous_state = legacy_by_hash.get(transcript_hash)
-            if previous_state:
-                preserved_legacy += 1
+        transcripts.append((blob_name, transcript_metadata, messages, transcript_hash, conversation_id))
 
-        rebuilt_rows.append(
-            _manifest_row_from_transcript(
-                blob_name,
-                transcript_metadata,
-                messages,
-                previous_state=previous_state,
-            )
-        )
+    def mutate(rows):
+        current_by_id = {row["conversation_id"]: row for row in rows}
+        rebuilt_rows = []
+        preserved_current = 0
+        preserved_legacy = 0
+        for blob_name, metadata, messages, transcript_hash, conversation_id in transcripts:
+            previous_state = current_by_id.get(conversation_id)
+            if previous_state and any(
+                previous_state.get(field)
+                for field in ("evaluation", "review_zb", "review_cm")
+            ):
+                preserved_current += 1
+            if previous_state is None:
+                previous_state = legacy_by_hash.get(transcript_hash)
+                if previous_state:
+                    preserved_legacy += 1
+            rebuilt_rows.append(_manifest_row_from_transcript(
+                blob_name, metadata, messages, previous_state=previous_state,
+            ))
+        known_ids = {row["conversation_id"] for row in rebuilt_rows}
+        rebuilt_rows.extend(row for row in rows if row["conversation_id"] not in known_ids)
+        return rebuilt_rows, (preserved_current, preserved_legacy)
 
-    save_review_state(rebuilt_rows)
+    rebuilt_rows, (preserved_current, preserved_legacy), export_synced = mutate_review_state(mutate)
+    if not export_synced:
+        logging.warning("Review backfill saved, but training export needs regeneration")
     train_rows = _build_sessions_to_train(rebuilt_rows)
     return {
         "status": "backfilled",

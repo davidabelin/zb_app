@@ -135,13 +135,18 @@ def decision(
         reviewer = reviews.normalize_reviewer(reviewer)
     except ValueError as exc:
         raise ServiceError("bad_request", str(exc), index=index) from exc
-    rows[index] = reviews.apply_reviewer_decision(rows[index], reviewer, evaluation)
-    reviews.save_review_state(rows)
+    try:
+        rows, index, export_synced = reviews.save_reviewer_decision(
+            actual_id, reviewer, evaluation
+        )
+    except ValueError as exc:
+        raise ServiceError("review_record_mismatch", str(exc), 409, index=index) from exc
     return {
         "record": reviews.serialize_record(rows, index),
         "next_unreviewed_index": reviews.next_unreviewed_after(rows, index),
         "summary": reviews.build_summary(rows),
         "progress_summary": reviews.build_progress_summary(rows),
+        "training_export_synced": export_synced,
     }
 
 
