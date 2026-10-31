@@ -4,5 +4,5 @@
 
 {% block content %}
     <h2>Commentary from '<i>Secrets of the Blue Cliff Record</i>'</h2>
-    <iframe src="{{ url_for('serve_pdf', filename='bcr_commentaries.pdf') }}" width="100%" height="800px"></iframe>
+    <iframe src="{{ url_for('web.serve_pdf', filename='bcr_commentaries.pdf') }}" width="100%" height="800px"></iframe>
 {% endblock %}

@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased
+
+## v3.3.3 - 2026-10-27
+
+- repaired the cloud session review queue: dual-review final counts, generation-checked
+  decisions and archive upserts, and a recoverable training export
+- reconciled archived transcripts with the review manifest while retaining prior decisions
+- improved the admin queue layout, filter groups, colors, wrapping, and pagination
+- aligned the app release display and deploy banner with `VERSION`
+
+## v3.3.0 - 2026-10-27
+
+- limited the Sanzen teacherbot model chooser to GPT-5.6 Sol, GPT-6 Sol, and
+  GPT-6.1 Sol, with model-specific reasoning effort choices
+- added short settings hints for Botling, Model, Reasoning, and Max Tokens;
+  Temperature and Top P appear and are sent only with `none` reasoning on
+  GPT-5.6 Sol or GPT-6 Sol; removed the four tool toggles from the room
+- preserved preset tool settings and the API session settings contract while
+  simplifying the browser controls
+- added a gated, read-only `/admin/logbook` index and full-entry pages with
+  paging, adjacent-entry links, and an inactive Edit button
+- added public Sampled Sessions: five randomly selected complete Dokusan
+  dialogues, anonymous speaker labels, student-name replacement, and only model
+  and recorded date/time metadata
+- added a separate private historical archive importer with dry-run counts,
+  transcript deduplication, legacy text-block support, and conditional uploads
+- cached archive generations per worker for five minutes, with automatic new-save
+  inclusion and graceful empty/unavailable states
+- linked the page from public navigation and documented public sampling in the
+  privacy page and operator instructions
+
+## v3.2.6 - 2026-09-15
+
+- added Mumon exemplar context for non-fine-tuned live models: the Responses
+  `instructions` block for generic models now opens with the trainset03a
+  dokusan transcripts (`static/mumon_exemplars.jsonl`) and reading
+  instructions, kept as a static cacheable prefix outside the stored transcript
+- added an explicit dokusan closing rule for every model: a student's
+  standalone `(bows)` ends the session and gets one closing gesture, nothing
+  after it
+- composed the startup system prompt from the preset `description` plus
+  `instruction`, restoring the system prompt the fine-tunes were trained with,
+  and unified the preset descriptions around the Mumonbot persona
+- added `MUMON_EXEMPLARS_ENABLED` / `MUMON_EXEMPLARS_PATH`, prompt-cache usage
+  logging per Responses call, and `scripts/inspect_botlings.py
+  --show-instructions` for previewing the resolved instructions block
+- removed the unused `START_CHATS` opening prompt from `config.py`
+
+## v3.2.5 - 2026-07-28
+
+- restored generic `gpt-5.5` as a selectable live botling alongside retained
+  fine-tuned models
+- moved the optional asynchronous session critic to `gpt-5.6-sol` with an
+  explicit medium reasoning baseline and current prompt-cache options
+- documented critic enablement, submission behavior, and result polling
+- synchronized the release marker across app documentation and deployment
+  messaging
+
 ## v3.2.3 - 2026-04-17
 
 Admin/review workflow and operator-maintenance release for `zb_app`.

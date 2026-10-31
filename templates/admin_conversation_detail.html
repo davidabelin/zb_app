@@ -11,10 +11,10 @@
 </header>
 <section>
   <div class="nav">
-    <a href="{{ url_for('admin_conversations') }}">Back to Review Dashboard</a>
+    <a href="{{ url_for('admin.admin_conversations') }}">Back to Review Dashboard</a>
     {% if review_index is not none %}
       &nbsp;|&nbsp;
-      <a href="{{ url_for('review_page', index=review_index) }}">Open Review Detail</a>
+      <a href="{{ url_for('admin.review_page', index=review_index) }}">Open Review Detail</a>
     {% endif %}
   </div>
   <br>

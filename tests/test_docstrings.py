@@ -8,6 +8,10 @@ from pathlib import Path
 
 CORE_MODULES = [
     "main.py",
+    "app_support.py",
+    "web_routes.py",
+    "zb_api.py",
+    "admin_routes.py",
     "utilities.py",
     "config.py",
     "models.py",

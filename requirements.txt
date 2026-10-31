@@ -20,3 +20,4 @@ h11==0.16.0
 pyyaml
 # Keep versions explicit to avoid deep dependency backtracking in Cloud Build.
 pydantic==2.12.4
+-r requirements-mcp.txt

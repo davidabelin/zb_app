@@ -73,6 +73,7 @@ def test_admin_conversations_shows_review_dashboard(monkeypatch, fake_bucket):
     assert "Archive Storage" in body
     assert "Review Manifest" in body
     assert "Memory Logbook" in body
+    assert 'href="/admin/logbook"' in body
     assert "Vector Store" in body
     assert "Hot-State Backend" in body
     assert "Need ZB Review" in body
@@ -118,6 +119,82 @@ def test_admin_memory_logbook_download_returns_json_attachment(monkeypatch):
     assert json.loads(response.get_data(as_text=True)) == [
         {"serial_number": "001", "summary": "memory"}
     ]
+
+
+def test_admin_logbook_requires_auth_before_reading(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", False)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret")
+
+    def unexpected_read():
+        raise AssertionError("unauthenticated request read the logbook")
+
+    monkeypatch.setattr(main.utipy, "load_memory_logbook", unexpected_read)
+    client = main.app.test_client()
+
+    for path in ("/admin/logbook", "/admin/logbook/1"):
+        response = client.get(path)
+        assert response.status_code == 302
+        assert "/admin/login" in response.headers["Location"]
+
+
+def test_admin_logbook_index_and_detail_are_readable(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", False)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "secret")
+    entries = [
+        utilities.normalize_memory_entry(
+            {
+                "serial_number": f"{index:03d}",
+                "title": f"Memory {index}",
+                "date": "2026-10-27",
+                "response_summary": f"Summary {index}",
+                "key_insights": ["<script>alert('x')</script>"],
+                "lessons_learned": ["Keep the full lesson."],
+                "user_instructions": ["Remember this instruction."],
+            }
+        )
+        for index in range(1, 23)
+    ]
+    monkeypatch.setattr(main.utipy, "load_memory_logbook", lambda: entries)
+    client = main.app.test_client()
+    with client.session_transaction() as admin_session:
+        admin_session["admin_authenticated"] = True
+
+    index_response = client.get("/admin/logbook")
+    index_body = index_response.get_data(as_text=True)
+    assert index_response.status_code == 200
+    assert index_response.headers["Cache-Control"] == "private, no-store"
+    assert "Summary 22" in index_body
+    assert ">Summary 2<" not in index_body
+    assert 'href="/admin/logbook/22"' in index_body
+    assert 'href="/admin/logbook?page=2"' in index_body
+
+    older_page = client.get("/admin/logbook?page=2")
+    assert older_page.status_code == 200
+    assert "Summary 2" in older_page.get_data(as_text=True)
+
+    detail_response = client.get("/admin/logbook/22")
+    detail_body = detail_response.get_data(as_text=True)
+    assert detail_response.status_code == 200
+    assert detail_response.headers["Cache-Control"] == "private, no-store"
+    assert "Keep the full lesson." in detail_body
+    assert "Remember this instruction." in detail_body
+    assert "&lt;script&gt;" in detail_body
+    assert "<script>alert('x')</script>" not in detail_body
+    assert 'href="/admin/logbook/21"' in detail_body
+    assert '<button type="button" class="edit-button" disabled' in detail_body
+    assert client.post("/admin/logbook/22").status_code == 405
+
+
+def test_admin_logbook_handles_empty_and_missing_pages(monkeypatch):
+    monkeypatch.setattr(main.utipy.config, "LOCAL", True)
+    monkeypatch.setattr(main.utipy.config, "ACTION_API_TOKEN", "")
+    monkeypatch.setattr(main.utipy, "load_memory_logbook", lambda: [])
+    client = main.app.test_client()
+
+    assert "No entries yet" in client.get("/admin/logbook").get_data(as_text=True)
+    assert client.get("/admin/logbook?page=bad").status_code == 400
+    assert client.get("/admin/logbook?page=2").status_code == 404
+    assert client.get("/admin/logbook/1").status_code == 404
 
 
 def test_admin_memory_logbook_download_is_local_only(monkeypatch):

@@ -14,6 +14,35 @@ scripts\deploy.bat
 
 Use this for App Engine code changes.
 
+## Import historical Sampled Sessions
+
+All 455 unique historical dialogues were already present in the current cloud
+archive at the October 1, 2026 check, so the public page needs no initial import.
+Use this workflow only when adding historical files through a separate bucket.
+
+The historical destination must already exist as a private bucket, with
+`roles/storage.objectViewer` granted to the deployed web service account. See
+the README's Sampled Sessions section for the runtime bucket setting.
+
+Preview the import; this only reads source files and checks existing objects:
+
+```cmd
+venv\Scripts\python.exe scripts\import_sampled_sessions.py
+```
+
+Then upload the missing recordings without modifying originals or admin data:
+
+```cmd
+venv\Scripts\python.exe scripts\import_sampled_sessions.py --apply
+```
+
+Repeat after collecting additional historical files. New web saves join
+automatically within five minutes. Validate the public page and archive routes:
+
+```cmd
+venv\Scripts\python.exe -m pytest tests/test_sampled_sessions.py tests/test_admin_archives.py tests/test_session_settings.py -q
+```
+
 ## Update docs/settings/search context
 
 Run:

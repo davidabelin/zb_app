@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Memory Logbook{% endblock %} · Zenbot Admin</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin_logbook.css') }}">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <main id="main-content">
+    <nav class="top-nav" aria-label="Admin navigation">
+      <a href="{{ url_for('admin.admin_conversations') }}">Session Review Queue</a>
+      <a href="{{ url_for('admin.admin_logbook') }}" aria-current="page">Memory Logbook</a>
+      <form method="post" action="{{ url_for('admin.admin_logout') }}">
+        <button type="submit">Log out</button>
+      </form>
+    </nav>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

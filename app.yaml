@@ -9,6 +9,7 @@ handlers:
 env_variables:
   # Project and browser origin settings.
   GOOGLE_CLOUD_PROJECT: zenbot-434517
+  # Set SAMPLED_HISTORICAL_BUCKET_NAME only when using a separate private import bucket.
   # Secret indirection names; values are resolved at runtime from Secret Manager.
   OPENAI_API_KEY_SECRET_NAME: zb-openai-api-key
   FLASK_SECRET_KEY_SECRET_NAME: zb-flask-secret-key

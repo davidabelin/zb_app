@@ -12,6 +12,7 @@ const SESSION_SETTINGS_STORAGE_KEY = "zenbot.session_settings";
 const ACTIVE_SESSION_SETTINGS_STORAGE_KEY = "zenbot.active_session_settings";
 
 let chatOptionsPromise = null;
+let panelToolSettings = null;
 
 function embeddedChatOptions() {
   const options = window.PUBLIC_SESSION_OPTIONS;
@@ -128,7 +129,11 @@ function renderMarkdownSafe(markdownText) {
   if (typeof marked === "undefined") {
     return escapeHtml(markdownText);
   }
-  return marked.parse(escapeHtml(markdownText));
+  const escaped = escapeHtml(markdownText);
+  if (typeof marked.parseInline === "function") {
+    return marked.parseInline(escaped);
+  }
+  return marked.parse(escaped);
 }
 
 function appendThinkingIndicator() {
@@ -154,11 +159,63 @@ function setPrefacePanelVisibility(visible) {
   prefacePanel.hidden = !visible;
 }
 
+function setCaseContextNote(koan) {
+  const note = document.getElementById("caseContextNote");
+  if (!note) return;
+
+  if (!koan) {
+    note.innerHTML =
+      'Choose a case from <a href="/gg">The Gateless Gate</a>, or enter without a case and let the exchange find its own barrier.';
+    return;
+  }
+
+  const title = String(koan.title || "").trim();
+  const id = String(koan.id || "").trim();
+  note.textContent = `You have chosen Case #${id}${title ? `, "${title},"` : ""} for this session.`;
+}
+
 function removeThinkingIndicator(node) {
   if (node && node.parentNode) {
     node.parentNode.removeChild(node);
   }
 }
+
+/* Temporarily disabled with the Chatter page End gesture button.
+function insertGestureText(gesture) {
+  const chatInput = document.getElementById("chatInput");
+  const text = String(gesture || "").trim();
+  if (!chatInput || !text) return;
+
+  const start = Number.isInteger(chatInput.selectionStart)
+    ? chatInput.selectionStart
+    : chatInput.value.length;
+  const end = Number.isInteger(chatInput.selectionEnd)
+    ? chatInput.selectionEnd
+    : chatInput.value.length;
+  const before = chatInput.value.slice(0, start);
+  const after = chatInput.value.slice(end);
+  const prefix = before && !/\s$/.test(before) ? " " : "";
+  const suffix = after && !/^\s/.test(after) ? " " : "";
+  const insertion = `${prefix}${text}${suffix}`;
+
+  chatInput.value = `${before}${insertion}${after}`;
+  chatInput.focus();
+  const cursor = before.length + insertion.length;
+  if (typeof chatInput.setSelectionRange === "function") {
+    chatInput.setSelectionRange(cursor, cursor);
+  }
+}
+
+function bindGestureButtons() {
+  document.querySelectorAll("[data-gesture]").forEach((button) => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => {
+      insertGestureText(button.dataset.gesture);
+    });
+  });
+}
+*/
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -227,6 +284,10 @@ function sanitizeSessionSettings(settings, options) {
       false,
   };
 
+  if (!findModelOption(options, resolved.model_name)) {
+    resolved.model_name = defaults.model_name || options?.models?.[0]?.id || "";
+  }
+
   const model = findModelOption(options, resolved.model_name) || {
     supports_reasoning: false,
     supports_sampling_controls: false,
@@ -234,7 +295,7 @@ function sanitizeSessionSettings(settings, options) {
   if (!model.supports_reasoning) {
     resolved.reasoning_effort = "";
   }
-  if (!model.supports_sampling_controls) {
+  if (!model.supports_sampling_controls || resolved.reasoning_effort !== "none") {
     resolved.temperature = null;
     resolved.top_p = null;
   }
@@ -276,10 +337,6 @@ function getSessionSettingsElements() {
     topPWrap: document.getElementById("sessionTopPWrap"),
     topP: document.getElementById("sessionTopP"),
     maxTokens: document.getElementById("sessionMaxTokens"),
-    enableFunctionTools: document.getElementById("sessionEnableFunctionTools"),
-    enableFileSearch: document.getElementById("sessionEnableFileSearch"),
-    enableWebSearch: document.getElementById("sessionEnableWebSearch"),
-    enableBackgroundCritic: document.getElementById("sessionEnableBackgroundCritic"),
   };
 }
 
@@ -295,10 +352,6 @@ function sessionSettingsInputElements(elements) {
     elements.temperature,
     elements.topP,
     elements.maxTokens,
-    elements.enableFunctionTools,
-    elements.enableFileSearch,
-    elements.enableWebSearch,
-    elements.enableBackgroundCritic,
   ].filter(Boolean);
 }
 
@@ -357,14 +410,6 @@ function populateSessionSettingsPanel(options) {
   return elements;
 }
 
-function readNumericInputValue(input) {
-  if (!input) return null;
-  const raw = String(input.value || "").trim();
-  if (!raw) return null;
-  const numeric = Number(raw);
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
 function readIntegerInputValue(input) {
   if (!input) return null;
   const raw = String(input.value || "").trim();
@@ -373,11 +418,21 @@ function readIntegerInputValue(input) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function readNumericInputValue(input) {
+  if (!input) return null;
+  const raw = String(input.value || "").trim();
+  if (!raw) return null;
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function readSessionSettingsFromPanel(options) {
   const elements = getSessionSettingsElements();
   if (!elements.panel) {
     return sanitizeSessionSettings(options?.defaults || {}, options);
   }
+  const toolSettings = panelToolSettings ||
+    findPresetOption(options, elements.preset?.value)?.settings || options?.defaults || {};
   return sanitizeSessionSettings(
     {
       preset_id: elements.preset?.value || "",
@@ -386,10 +441,10 @@ function readSessionSettingsFromPanel(options) {
       temperature: readNumericInputValue(elements.temperature),
       top_p: readNumericInputValue(elements.topP),
       max_output_tokens: readIntegerInputValue(elements.maxTokens),
-      enable_function_tools: Boolean(elements.enableFunctionTools?.checked),
-      enable_file_search: Boolean(elements.enableFileSearch?.checked),
-      enable_web_search: Boolean(elements.enableWebSearch?.checked),
-      enable_background_critic: Boolean(elements.enableBackgroundCritic?.checked),
+      enable_function_tools: Boolean(toolSettings.enable_function_tools),
+      enable_file_search: Boolean(toolSettings.enable_file_search),
+      enable_web_search: Boolean(toolSettings.enable_web_search),
+      enable_background_critic: Boolean(toolSettings.enable_background_critic),
     },
     options
   );
@@ -400,31 +455,30 @@ function applySessionSettingsToPanel(settings, options) {
   if (!elements.panel) return;
 
   const resolved = sanitizeSessionSettings(settings, options);
+  panelToolSettings = {
+    enable_function_tools: Boolean(
+      resolved.enable_function_tools && options?.tool_caps?.enable_function_tools
+    ),
+    enable_file_search: Boolean(
+      resolved.enable_file_search && options?.tool_caps?.enable_file_search
+    ),
+    enable_web_search: Boolean(
+      resolved.enable_web_search && options?.tool_caps?.enable_web_search
+    ),
+    enable_background_critic: Boolean(
+      resolved.enable_background_critic && options?.tool_caps?.enable_background_critic
+    ),
+  };
   if (elements.preset) elements.preset.value = resolved.preset_id || "";
   if (elements.model) elements.model.value = resolved.model_name || "";
   if (elements.maxTokens) {
     elements.maxTokens.value = String(resolved.max_output_tokens || "");
   }
   if (elements.temperature) {
-    elements.temperature.value =
-      resolved.temperature === null ? "" : String(resolved.temperature);
+    elements.temperature.value = resolved.temperature === null ? "" : String(resolved.temperature);
   }
   if (elements.topP) {
     elements.topP.value = resolved.top_p === null ? "" : String(resolved.top_p);
-  }
-  if (elements.enableFunctionTools) {
-    elements.enableFunctionTools.checked = Boolean(resolved.enable_function_tools);
-  }
-  if (elements.enableFileSearch) {
-    elements.enableFileSearch.checked = Boolean(resolved.enable_file_search);
-  }
-  if (elements.enableWebSearch) {
-    elements.enableWebSearch.checked = Boolean(resolved.enable_web_search);
-  }
-  if (elements.enableBackgroundCritic) {
-    elements.enableBackgroundCritic.checked = Boolean(
-      resolved.enable_background_critic
-    );
   }
 
   const model = findModelOption(options, resolved.model_name);
@@ -444,45 +498,6 @@ function applySessionSettingsToPanel(settings, options) {
   refreshSessionSettingsPanel(options);
 }
 
-function updateToolToggleAvailability(elements, options, locked) {
-  const caps = options?.tool_caps || {};
-  const items = [
-    {
-      input: elements.enableFunctionTools,
-      cap: Boolean(caps.enable_function_tools),
-      title: "Local Zenbot function tools",
-    },
-    {
-      input: elements.enableFileSearch,
-      cap: Boolean(caps.enable_file_search),
-      title: "OpenAI file search",
-    },
-    {
-      input: elements.enableWebSearch,
-      cap: Boolean(caps.enable_web_search),
-      title: "OpenAI web search",
-    },
-    {
-      input: elements.enableBackgroundCritic,
-      cap: Boolean(caps.enable_background_critic),
-      title: "Background critic",
-    },
-  ];
-
-  items.forEach(({ input, cap, title }) => {
-    if (!input) return;
-    input.disabled = locked || !cap;
-    const wrapper = input.closest(".session-toggle");
-    if (wrapper) {
-      wrapper.classList.toggle("is-disabled", !cap);
-      wrapper.title = cap ? title : `${title} unavailable in this deployment`;
-    }
-    if (!cap) {
-      input.checked = false;
-    }
-  });
-}
-
 function refreshSessionSettingsPanel(options) {
   const elements = getSessionSettingsElements();
   if (!elements.panel) return;
@@ -492,7 +507,6 @@ function refreshSessionSettingsPanel(options) {
   const model = findModelOption(options, current.model_name) || {
     supports_reasoning: false,
     reasoning_efforts: [],
-    supports_sampling_controls: false,
   };
   if (elements.reasoning) {
     const reasoningChoices =
@@ -516,31 +530,27 @@ function refreshSessionSettingsPanel(options) {
   if (elements.reasoningWrap) {
     elements.reasoningWrap.hidden = !model.supports_reasoning;
   }
-  if (elements.temperatureWrap) {
-    elements.temperatureWrap.hidden = !model.supports_sampling_controls;
+  const samplingAvailable = model.supports_sampling_controls &&
+    elements.reasoning?.value === "none";
+  if (elements.temperatureWrap) elements.temperatureWrap.hidden = !samplingAvailable;
+  if (elements.topPWrap) elements.topPWrap.hidden = !samplingAvailable;
+  if (samplingAvailable) {
+    if (elements.temperature && !elements.temperature.value) elements.temperature.value = "0.9";
+    if (elements.topP && !elements.topP.value) elements.topP.value = "1";
   }
-  if (elements.topPWrap) {
-    elements.topPWrap.hidden = !model.supports_sampling_controls;
-  }
-
   sessionSettingsInputElements(elements).forEach((input) => {
     if (!input) return;
     input.disabled = locked;
   });
-  updateToolToggleAvailability(elements, options, locked);
-
   if (elements.reasoning) {
     elements.reasoning.disabled = locked || !model.supports_reasoning;
   }
-  if (elements.temperature) {
-    elements.temperature.disabled = locked || !model.supports_sampling_controls;
-  }
-  if (elements.topP) {
-    elements.topP.disabled = locked || !model.supports_sampling_controls;
-  }
-
+  if (elements.temperature) elements.temperature.disabled = locked || !samplingAvailable;
+  if (elements.topP) elements.topP.disabled = locked || !samplingAvailable;
   if (elements.summary) {
-    elements.summary.textContent = sessionSettingsSummary(current, options);
+    elements.summary.textContent = sessionSettingsSummary(
+      readSessionSettingsFromPanel(options), options
+    );
   }
 }
 
@@ -552,7 +562,7 @@ function sessionStatusText(settings, locked, pendingSnapshot) {
     if (settings?.enable_function_tools) {
       return "Locked to this session. Local function tools are enabled, so replies arrive after tool work completes. Reset to change settings.";
     }
-    return "Locked to this session. Reset to change model or tool settings.";
+    return "Locked to this session. Reset to change settings.";
   }
   if (settings?.enable_function_tools) {
     return "Session Setup will lock on first turn. Local function tools are enabled, so replies arrive as one completed chunk.";
@@ -668,10 +678,6 @@ function bindSessionSettingsPanel(options) {
     elements.temperature,
     elements.topP,
     elements.maxTokens,
-    elements.enableFunctionTools,
-    elements.enableFileSearch,
-    elements.enableWebSearch,
-    elements.enableBackgroundCritic,
   ]
     .filter(Boolean)
     .forEach((input) => {
@@ -717,9 +723,9 @@ function appendChatMessage(sender, message) {
   try {
     const text = String(message ?? "");
     const htmlContent = renderMarkdownSafe(text);
-    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong><br>${htmlContent}`;
+    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}:</strong> ${htmlContent}`;
   } catch (error) {
-    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}</strong> caused error:<br>${escapeHtml(error?.message || String(error))}`;
+    messageDiv.innerHTML = `<strong>${escapeHtml(sender)}</strong> caused error: ${escapeHtml(error?.message || String(error))}`;
   } finally {
     chatResults.appendChild(messageDiv);
     chatResults.scrollTop = chatResults.scrollHeight;
@@ -746,6 +752,7 @@ function renderKoanPreface(koan) {
   koanDiv.appendChild(bodyDiv);
   preface.appendChild(koanDiv);
   setPrefacePanelVisibility(true);
+  setCaseContextNote(koan);
 }
 
 async function loadKoanPreface(caseId) {
@@ -770,6 +777,7 @@ function clearChatDom() {
   if (chatInput) chatInput.value = "";
   if (chatPreface) chatPreface.innerHTML = "";
   setPrefacePanelVisibility(false);
+  setCaseContextNote(null);
 }
 
 async function resetChatUi() {
@@ -796,6 +804,7 @@ function initGGList() {
       if (!tocDiv) return;
       tocDiv.innerHTML = "";
       const ul = document.createElement("ul");
+      ul.className = "gg-case-grid";
       data.cases.forEach((koan) => {
         const li = document.createElement("li");
         const a = document.createElement("a");
@@ -822,9 +831,16 @@ function initGGCasePage() {
   const container = document.getElementById("koan-container");
   if (!container) return;
 
-  let caseId = getSessionValue("case_id");
+  // The leaf page's own case is authoritative: /gg/<id> must always render
+  // <id>, even when an earlier "Bring to a Dokusan Session" click left a
+  // different case_id in storage. Fall back to the stored case only when the
+  // page was rendered without one.
+  const pageCaseId = (container.getAttribute("data-case-id") || "").trim();
+  const caseId =
+    pageCaseId && pageCaseId !== "0" ? pageCaseId : getSessionValue("case_id");
   if (!caseId) {
-    caseId = container.getAttribute("data-case-id");
+    container.textContent = "No koan selected.";
+    return;
   }
 
   fetch("/static/mmnk.json")
@@ -880,28 +896,10 @@ function initGGCasePage() {
         discussBtn.disabled = true;
         setSessionStatus("Opening dokusan session...", "pending");
         try {
-          const options = await getChatOptions();
-          const settings = sanitizeSessionSettings(options.defaults || {}, options);
-          const response = await fetch(`/chat_case/${koan.id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ case_id: caseId, settings }),
-            credentials: "include",
-          });
-          if (!response.ok) {
-            await parseErrorResponse(response, options);
-          }
-          const res = await response.json();
-          if (res.error) {
-            throw new Error(res?.message || res?.error || "Unable to start dokusan session.");
-          }
-
-          setSessionValue("conversation_id", res.conversation_id);
-          setSessionValue("case_id", res.case_id);
-          if (res.session_settings) {
-            adoptLockedSessionSettings(res.session_settings, options);
-          }
-          setSessionStatus("Dokusan session ready. Entering the sanzen room...", "success");
+          clearSessionValue("conversation_id");
+          clearActiveSessionSettings();
+          setSessionValue("case_id", String(koan.id));
+          setSessionStatus("Case selected. Entering the sanzen room...", "success");
           window.location.href = "/chatter";
         } catch (err) {
           console.error("Error starting Koan chat:", err);
@@ -929,6 +927,9 @@ async function initChatterPage() {
   const chatButton = document.getElementById("chatSend");
   const endChatButton = document.getElementById("chatEnd");
   const saveChatButton = document.getElementById("chatSave");
+
+  // Temporarily disabled with the Chatter page End gesture button.
+  // bindGestureButtons();
 
   try {
     await ensureSessionSettingsPanel();
@@ -989,16 +990,19 @@ async function parseErrorResponse(response, options) {
 
 async function handleStreamResponse(response, thinkingNode, options) {
   const chatResults = document.getElementById("chatResults");
-  const messageDiv = document.createElement("div");
-  messageDiv.className = "zenbot-message";
-  messageDiv.innerHTML =
-    '<strong>Mumonbot:</strong><br><span class="message-content"></span>';
-  const contentEl = messageDiv.querySelector(".message-content");
+  let messageDiv = null;
+  let contentEl = null;
 
-  if (chatResults) {
+  const ensureResponseMessage = () => {
+    if (messageDiv || !chatResults) return;
+    messageDiv = document.createElement("div");
+    messageDiv.className = "zenbot-message";
+    messageDiv.innerHTML =
+      '<strong>Mumonbot:</strong> <span class="message-content"></span>';
+    contentEl = messageDiv.querySelector(".message-content");
     chatResults.appendChild(messageDiv);
     chatResults.scrollTop = chatResults.scrollHeight;
-  }
+  };
 
   let buffer = "";
   let fullText = "";
@@ -1015,7 +1019,6 @@ async function handleStreamResponse(response, thinkingNode, options) {
         adoptLockedSessionSettings(data.session_settings, options);
       }
       setSaveButtonState();
-      removeThinkingIndicator(thinkingNode);
       return;
     }
 
@@ -1032,6 +1035,7 @@ async function handleStreamResponse(response, thinkingNode, options) {
 
     if (typeof chunk === "string" && chunk) {
       removeThinkingIndicator(thinkingNode);
+      ensureResponseMessage();
       if (data?.event === "fallback") {
         fullText = chunk;
       } else {
@@ -1104,6 +1108,7 @@ async function startChat(prompt) {
       body: JSON.stringify({
         message: prompt,
         conversation_id: getSessionValue("conversation_id") || "",
+        case_id: getSessionValue("case_id") || "",
         settings: requestSettings,
       }),
       credentials: "include",
@@ -1141,6 +1146,9 @@ async function startChat(prompt) {
     }
   } catch (error) {
     removeThinkingIndicator(thinkingNode);
+    if (chatInput && !chatInput.value) {
+      chatInput.value = prompt;
+    }
     appendChatMessage("System", `Error: ${error?.message || String(error)}`);
     handleError(error, "chatPreface", "Error starting chat.");
   } finally {
