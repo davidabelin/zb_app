@@ -177,12 +177,23 @@ available.
 
 ## Contract maintenance and boundaries
 
-`zb_mcp/output_schemas.json` is a checked-in snapshot of the current Actions
-output contracts. MCP converts the older OpenAPI `nullable` fields into actual
-JSON Schema null branches. The deployed service does not read the sibling
-knowledge repository. Regenerate the snapshot with
+The browser's `/chat/options` payload and the shared conversation workflow are
+the authority for dokusan settings and lifecycle behavior. MCP's
+`zbApiChatOptions` exposes those live defaults, model and preset choices, and
+tool capability limits. Supply optional settings when creating a session, then
+reuse each returned `conversation_id` and omit settings on subsequent turns.
+The first `zbApiChat` turn can include `case_id`; `zbApiChatCase` can instead
+create a koan session before any turn. `getConversation` returns the complete
+archive: its first `messages` item is metadata with `case_id` and locked
+`session_settings`, followed by every transcript message in order.
+
+`zb_mcp/output_schemas.json` is a checked-in output-schema snapshot. MCP
+converts older OpenAPI `nullable` fields into JSON Schema null branches and
+adds the current archive-row description in its schema adapter. The
+deployed service does not read the sibling knowledge repository. Check the
+snapshot against current workflow results and regenerate it with
 `python scripts/export_mcp_output_schemas.py` when intentionally updating the
-Actions contract, and rerun parity tests.
+Actions contract; rerun parity and lifecycle tests.
 
 The tools retain the existing operation IDs. MCP additionally exposes
 `replaceMemoryLogbook` and `getOperationStatus`; review decisions require both

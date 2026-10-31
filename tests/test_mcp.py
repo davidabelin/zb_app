@@ -291,6 +291,195 @@ def test_discovery_and_schema_snapshot(runtime):
     )
 
 
+def test_dokusan_tool_schema_matches_live_session_setup(runtime):
+    tools = {tool.name: tool for tool in asyncio.run(runtime.server.list_tools())}
+    chat = tools["zbApiChat"].parameters["properties"]
+    settings = chat["settings"]["anyOf"][0]["properties"]
+    options = call(runtime, "zbApiChatOptions").structured_content
+    browser_options = main.app.test_client().get("/chat/options").get_json()
+
+    assert {key for key in settings} == set(options["defaults"])
+    token_limit = settings["max_output_tokens"]["anyOf"]
+    assert (
+        next(branch for branch in token_limit if branch["type"] == "integer")["maximum"]
+        == 4096
+    )
+    assert "function" in settings["enable_function_tools"]["description"]
+    assert "canonical" in chat["conversation_id"]["description"].lower()
+    archive = adapter.output_schema("getConversation")
+    assert "case_id" in archive["properties"]["messages"]["description"]
+    assert options == {"status": "success", **browser_options}
+    assert [model["id"] for model in options["models"]] == [
+        "gpt-5.6-sol",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+    ]
+
+
+def test_mcp_first_turn_case_continuity_and_complete_archive(runtime, monkeypatch):
+    monkeypatch.setattr(utilities, "get_cid", lambda *args: "case-session")
+    settings = {
+        "preset_id": "austere_abbot",
+        "model_name": "gpt-6-sol",
+        "reasoning_effort": "low",
+        "max_output_tokens": 777,
+        "enable_function_tools": False,
+    }
+    first = call(
+        runtime,
+        "zbApiChat",
+        {
+            "operation_id": "case-turn-1",
+            "message": "  Where is the gate?\n",
+            "case_id": "1",
+            "student": "A visitor",
+            "settings": settings,
+        },
+    ).structured_content
+    assert first["conversation_status"] == "created"
+    assert first["conversation_id"] == "case-session"
+    assert all(
+        first["session_settings"][key] == value for key, value in settings.items()
+    )
+
+    for operation_id, message in (
+        ("case-turn-2", "I cannot find it."),
+        ("case-closing", "(bows)"),
+    ):
+        result = call(
+            runtime,
+            "zbApiChat",
+            {
+                "operation_id": operation_id,
+                "conversation_id": first["conversation_id"],
+                "message": message,
+            },
+        ).structured_content
+        assert result["conversation_status"] == "continued"
+        assert result["conversation_id"] == first["conversation_id"]
+        assert result["session_settings"] == first["session_settings"]
+
+    hot_messages, hot_metadata = utilities.get_conversation_state("case-session")
+    assert hot_metadata["case_id"] == "1"
+    assert hot_metadata["student"] == "A visitor"
+    assert [m["content"] for m in hot_messages if m["role"] == "user"][-3:] == [
+        "  Where is the gate?\n",
+        "I cannot find it.",
+        "(bows)",
+    ]
+
+    archived = call(
+        runtime,
+        "zbApiSaveChat",
+        {"operation_id": "case-archive", "conversation_id": "case-session"},
+    ).structured_content
+    assert archived["conversation_id"] == "case-session"
+    assert archived["archived"] is True
+    fetched = call(
+        runtime, "getConversation", {"conversation_id": "case-session"}
+    ).structured_content
+    assert fetched["conversation_id"] == "case-session"
+    assert fetched["messages"][0]["conversation_id"] == "case-session"
+    assert fetched["messages"][0]["case_id"] == "1"
+    assert fetched["messages"][0]["session_settings"] == first["session_settings"]
+    assert fetched["messages"][1:] == hot_messages
+    listed = call(runtime, "listConversations", {"case_id": "1"}).structured_content
+    assert "case-session" in listed["conversation_ids"]
+    assert not utilities.get_conversation_state("case-session")[1]
+
+
+def test_mcp_case_start_locks_configuration_and_rejects_change(runtime, monkeypatch):
+    monkeypatch.setattr(utilities, "get_cid", lambda *args: "started-case")
+    started = call(
+        runtime,
+        "zbApiChatCase",
+        {
+            "operation_id": "start-case",
+            "case_id": "1",
+            "settings": {"preset_id": "fierce_barrier"},
+        },
+    ).structured_content
+    assert started["conversation_id"] == "started-case"
+    assert started["case_id"] == "1"
+    assert started["session_settings"]["preset_id"] == "fierce_barrier"
+
+    assert started["session_settings"]["enable_function_tools"] is True
+    for index, changed_settings in enumerate(
+        (
+            {"preset_id": "balanced"},
+            {"model_name": "gpt-6-sol"},
+            {"reasoning_effort": "high"},
+            {"max_output_tokens": 999},
+            {"enable_function_tools": False},
+        )
+    ):
+        mismatch = call(
+            runtime,
+            "zbApiChat",
+            {
+                "operation_id": f"wrong-settings-{index}",
+                "conversation_id": "started-case",
+                "message": "First turn",
+                "settings": changed_settings,
+            },
+        )
+        assert mismatch.is_error
+        assert mismatch.structured_content["error"] == "settings_locked"
+        assert (
+            mismatch.structured_content["session_settings"]
+            == started["session_settings"]
+        )
+
+    turn = call(
+        runtime,
+        "zbApiChat",
+        {
+            "operation_id": "start-case-turn",
+            "conversation_id": "started-case",
+            "message": "First turn",
+        },
+    ).structured_content
+    assert turn["conversation_id"] == "started-case"
+    assert turn["session_settings"] == started["session_settings"]
+    messages, metadata = utilities.get_conversation_state("started-case")
+    assert metadata["case_id"] == "1"
+    assert [m["content"] for m in messages if m["role"] == "user"][-1:] == [
+        "First turn"
+    ]
+
+
+def test_mcp_recreated_session_returns_id_to_use_for_continuation(runtime, monkeypatch):
+    monkeypatch.setattr(utilities, "get_cid", lambda *args: "replacement-case")
+    first = call(
+        runtime,
+        "zbApiChat",
+        {
+            "operation_id": "unknown-first",
+            "conversation_id": "missing-case",
+            "case_id": "1",
+            "message": "The first question",
+        },
+    ).structured_content
+    assert first["conversation_status"] == "recreated_from_unknown_id"
+    assert first["requested_conversation_id"] == "missing-case"
+    assert first["conversation_id"] == "replacement-case"
+
+    second = call(
+        runtime,
+        "zbApiChat",
+        {
+            "operation_id": "unknown-second",
+            "conversation_id": first["conversation_id"],
+            "message": "The second question",
+        },
+    ).structured_content
+    assert second["conversation_status"] == "continued"
+    assert second["conversation_id"] == first["conversation_id"]
+    assert second["session_settings"] == first["session_settings"]
+    assert not utilities.get_conversation_state("missing-case")[1]
+    assert utilities.get_conversation_state("replacement-case")[1]["case_id"] == "1"
+
+
 @pytest.mark.parametrize(
     "claims",
     [

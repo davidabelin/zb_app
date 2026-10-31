@@ -49,6 +49,9 @@ Before speaking as Zenbot in a fresh chat, call prepareZenbotSession and read it
 complete documents and memories. Disclose failed preparation; do not invent continuity.
 Do not interrupt an active dokusan relay to repeat startup preparation.
 Preserve each returned conversation_id, including a replacement ID returned by chat.
+Read zbApiChatOptions for current model, preset, reasoning, token, and tool
+capabilities. Supply settings on session creation; omit them on later turns to
+retain the locked settings. A first-turn case_id anchors the new session.
 During dokusan, send the student's words exactly and relay Mumonbot's response
 exactly, without commentary. Relay the closing bow and final response before archiving.
 Load memory summaries before selecting full entries. Fetch a review record before
@@ -88,7 +91,13 @@ def output_schema(name: str) -> dict[str, Any]:
             return [resolve(item) for item in value]
         return value
 
-    return resolve(document["operations"][name])
+    schema = resolve(document["operations"][name])
+    if name == "getConversation":
+        schema["properties"]["messages"]["description"] = (
+            "Complete archive rows: first the metadata record with case_id and "
+            "locked session_settings, then every transcript message in order."
+        )
+    return schema
 
 
 def create_server(
@@ -211,19 +220,39 @@ def create_server(
 
     @register("zbApiChatOptions")
     def chat_options() -> dict[str, Any]:
-        """Read available models, presets, capabilities, and session settings."""
+        """Read live session defaults, model and preset IDs, and tool capabilities."""
         return conversations.options()
 
     @register("zbApiChat", write=True, open_world=True, destructive=True)
     def chat(
         operation_id: OperationId,
         message: Message,
-        conversation_id: str = "",
-        student: str = "guest",
-        settings: SessionSettingsInput | None = None,
-        case_id: str = "",
+        conversation_id: Annotated[
+            str,
+            Field(
+                description="Canonical ID returned by the previous turn or zbApiChatCase. Omit only for a new session; always use a replacement ID returned by this tool."
+            ),
+        ] = "",
+        student: Annotated[
+            str,
+            Field(
+                description="Student name stored with a new session; defaults to guest."
+            ),
+        ] = "guest",
+        settings: Annotated[
+            SessionSettingsInput | None,
+            Field(
+                description="Session setup overrides from zbApiChatOptions. Supply on creation; omit on continuation to keep locked settings."
+            ),
+        ] = None,
+        case_id: Annotated[
+            str,
+            Field(
+                description="Koan case ID for a new session. Existing sessions keep their original case."
+            ),
+        ] = "",
     ) -> dict[str, Any]:
-        """Send one exact dokusan turn. Reuse operation_id only to retry this turn."""
+        """Create or continue one dokusan turn. Return the canonical conversation_id and locked settings; reuse operation_id only to retry this exact turn."""
         return conversations.chat(message, conversation_id, student, settings, case_id)
 
     @register("zbApiChatCase", write=True)
@@ -233,7 +262,7 @@ def create_server(
         student: str = "api-case",
         settings: SessionSettingsInput | None = None,
     ) -> dict[str, Any]:
-        """Start a koan-anchored session and return its conversation_id."""
+        """Create a koan session before the first turn, returning its canonical conversation_id and locked settings."""
         return conversations.start_case(case_id, student, settings)
 
     @register("zbApiSaveChat", write=True, destructive=True, open_world=True)
@@ -257,7 +286,7 @@ def create_server(
 
     @register("getConversation")
     def get_conversation(conversation_id: RecordId) -> dict[str, Any]:
-        """Fetch an archived transcript by conversation_id."""
+        """Fetch the complete archive by canonical conversation_id. The first messages item is archive metadata (including case_id and session_settings); subsequent items are transcript messages."""
         return conversations.get_archive(conversation_id)
 
     @register("searchExemplars")

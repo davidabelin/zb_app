@@ -44,6 +44,7 @@ def chat(
             effects_possible = True
             conversation_id, messages, metadata = utipy.create_conversation(
                 student=student,
+                case_id=case_id or None,
                 settings=settings,
             )
             conversation_status = (

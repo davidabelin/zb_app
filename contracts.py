@@ -31,15 +31,32 @@ class ConversationMessage(StrictModel):
 
 
 class SessionSettingsInput(StrictModel):
-    """Partial session settings supplied when starting or continuing a session."""
+    """Session setup overrides. Omit on later turns to retain the locked snapshot."""
 
-    preset_id: str = ""
-    model_name: str = ""
-    reasoning_effort: str = ""
+    preset_id: str = Field(
+        default="",
+        description="Botling preset ID from chat options; its settings provide the base values.",
+    )
+    model_name: str = Field(
+        default="",
+        description="Model ID from chat options. Availability is set by the current deployment.",
+    )
+    reasoning_effort: str = Field(
+        default="",
+        description="Effort supported by the chosen model, as listed in chat options.",
+    )
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
-    max_output_tokens: int | None = Field(default=None, ge=1, le=4096)
-    enable_function_tools: bool | None = None
+    max_output_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        le=4096,
+        description="Maximum output tokens, including hidden reasoning tokens; 1 to 4096.",
+    )
+    enable_function_tools: bool | None = Field(
+        default=None,
+        description="Enable local function tools when the deployment capability allows it. Preset defaults apply if omitted.",
+    )
     enable_file_search: bool | None = None
     enable_web_search: bool | None = None
     enable_background_critic: bool | None = None
